@@ -16,6 +16,7 @@ void SettingsManager::Begin()
 
 bool SettingsManager::LoadSettings(bool &dryer_running,
                                    DryerPhase &current_phase,
+                                   uint32_t &phase_elapsed_time_s,
                                    HeatingParams &heating_params,
                                    PhaseParams &phase_params,
                                    uint32_t &total_duty_time_s,
@@ -30,6 +31,7 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
 
   dryer_running = settings_.dryer_running;
   current_phase = static_cast<DryerPhase>(settings_.current_phase);
+  phase_elapsed_time_s = settings_.phase_elapsed_time_s;
   heating_params = settings_.heating_params;
   phase_params = settings_.phase_params;
   total_duty_time_s = settings_.total_duty_time_s;
@@ -54,6 +56,7 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
 
 void SettingsManager::SaveSettings(bool dryer_running,
                                    DryerPhase current_phase,
+                                   uint32_t phase_elapsed_time_s,
                                    const HeatingParams &heating_params,
                                    const PhaseParams &phase_params,
                                    uint32_t total_duty_time_s,
@@ -62,6 +65,7 @@ void SettingsManager::SaveSettings(bool dryer_running,
   settings_.version = kSettingsVersion;
   settings_.dryer_running = dryer_running;
   settings_.current_phase = static_cast<uint8_t>(current_phase);
+  settings_.phase_elapsed_time_s = phase_elapsed_time_s;
   settings_.heating_params = heating_params;
   settings_.phase_params = phase_params;
   settings_.total_duty_time_s = total_duty_time_s;

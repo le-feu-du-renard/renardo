@@ -44,6 +44,9 @@ class MenuStructure {
   static float GetCirculationPhaseDuration(Dryer* dryer) { return dryer->GetCirculationPhaseDuration(); }
   static void SetCirculationPhaseDuration(Dryer* dryer, float value) { dryer->SetCirculationPhaseDuration(value); }
 
+  static float GetDryingSessionDuration(Dryer* dryer) { return dryer->GetDryingSessionDuration(); }
+  static void SetDryingSessionDuration(Dryer* dryer, float value) { dryer->SetDryingSessionDuration(value); }
+
   // Command handlers
   static void ExitMenuCommand(MenuSystem* menu);
 };

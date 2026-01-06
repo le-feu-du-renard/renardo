@@ -69,10 +69,18 @@ static NumberMenuItem cycle_item_recycling_rate(
   0.0f, 100.0f, 5.0f
 );
 
+static NumberMenuItem cycle_item_session_duration(
+  "Duree session",
+  MenuStructure::GetDryingSessionDuration,
+  MenuStructure::SetDryingSessionDuration,
+  3600.0f, 604800.0f, 3600.0f
+);
+
 static BackMenuItem cycle_back("Retour");
 
 static MenuItem* cycle_items[] = {
   &cycle_item_recycling_rate,
+  &cycle_item_session_duration,
   &cycle_back
 };
 

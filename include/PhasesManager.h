@@ -22,11 +22,13 @@ struct PhaseParams {
   uint32_t init_phase_duration_s;        // 5-7200s
   uint32_t extraction_phase_duration_s;  // 5-7200s
   uint32_t circulation_phase_duration_s; // 5-3600s
+  uint32_t drying_session_duration_s;    // 3600-604800s (1h-7days)
 
   PhaseParams()
     : init_phase_duration_s(DEFAULT_INIT_PHASE_DURATION),
       extraction_phase_duration_s(DEFAULT_EXTRACTION_PHASE_DURATION),
-      circulation_phase_duration_s(DEFAULT_CIRCULATION_PHASE_DURATION)
+      circulation_phase_duration_s(DEFAULT_CIRCULATION_PHASE_DURATION),
+      drying_session_duration_s(DEFAULT_DRYING_SESSION_DURATION)
   {}
 };
 
@@ -44,9 +46,12 @@ class PhasesManager {
   void SetPhase(DryerPhase phase);
   DryerPhase GetPhase() const { return current_phase_; }
   const char* GetPhaseName() const;
+  void RestorePhaseState(DryerPhase phase, uint32_t elapsed_time_s);
 
   // Phase timing
   unsigned long GetPhaseElapsedTime() const;
+  uint32_t GetCurrentPhaseDuration() const;
+  void RestorePhaseStartTime(uint32_t elapsed_time_s);
 
   // Parameters
   PhaseParams& GetParams() { return params_; }
@@ -82,9 +87,6 @@ class PhasesManager {
   // Save optimized values
   void SaveExtractionValues();
   void SaveCirculationValues();
-
-  // Get current phase duration
-  uint32_t GetCurrentPhaseDuration() const;
 };
 
 #endif  // PHASES_MANAGER_H

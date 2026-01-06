@@ -16,6 +16,7 @@ struct PersistentSettings {
   // Dryer state
   bool dryer_running;
   uint8_t current_phase;  // DryerPhase as uint8_t
+  uint32_t phase_elapsed_time_s;  // Time elapsed in current phase (seconds)
 
   // Heating parameters
   HeatingParams heating_params;
@@ -33,9 +34,10 @@ struct PersistentSettings {
   uint16_t checksum;
 
   PersistentSettings()
-    : version(1),
+    : version(3),
       dryer_running(false),
       current_phase(0),  // kStop
+      phase_elapsed_time_s(0),
       heating_params(),
       phase_params(),
       total_duty_time_s(0),
@@ -55,6 +57,7 @@ class SettingsManager {
   // Save all settings to EEPROM
   void SaveSettings(bool dryer_running,
                     DryerPhase current_phase,
+                    uint32_t phase_elapsed_time_s,
                     const HeatingParams& heating_params,
                     const PhaseParams& phase_params,
                     uint32_t total_duty_time_s,
@@ -63,6 +66,7 @@ class SettingsManager {
   // Load all settings from EEPROM
   bool LoadSettings(bool& dryer_running,
                     DryerPhase& current_phase,
+                    uint32_t& phase_elapsed_time_s,
                     HeatingParams& heating_params,
                     PhaseParams& phase_params,
                     uint32_t& total_duty_time_s,
@@ -76,7 +80,7 @@ class SettingsManager {
   void ResetToDefaults();
 
  private:
-  static constexpr uint16_t kSettingsVersion = 1;
+  static constexpr uint16_t kSettingsVersion = 3;
   static constexpr size_t kEepromSize = sizeof(PersistentSettings);
   static constexpr uint16_t kEepromAddress = 0;
 

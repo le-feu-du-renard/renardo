@@ -193,6 +193,7 @@ void Dryer::SaveSettings()
   settings_manager_.SaveSettings(
       running_,
       phases_manager_.GetPhase(),
+      phases_manager_.GetPhaseElapsedTime(),
       heaters_manager_.GetParams(),
       phases_manager_.GetParams(),
       total_duty_time_s_,
@@ -203,6 +204,7 @@ void Dryer::LoadSettings()
 {
   bool saved_running_state = false;
   DryerPhase saved_phase = DryerPhase::kStop;
+  uint32_t saved_phase_elapsed_time = 0;
   HeatingParams heating_params;
   PhaseParams phase_params;
   uint32_t saved_duty_time = 0;
@@ -211,6 +213,7 @@ void Dryer::LoadSettings()
   bool success = settings_manager_.LoadSettings(
       saved_running_state,
       saved_phase,
+      saved_phase_elapsed_time,
       heating_params,
       phase_params,
       saved_duty_time,
@@ -231,10 +234,8 @@ void Dryer::LoadSettings()
       running_ = true;
       start_time_ = millis();
       last_duty_time_save_ = millis();
-      phases_manager_.SetPhase(saved_phase);
+      phases_manager_.RestorePhaseState(saved_phase, saved_phase_elapsed_time);
       last_saved_phase_ = saved_phase;
-      Serial.print("Restored to phase: ");
-      Serial.println(static_cast<uint8_t>(saved_phase));
     }
 
     Serial.println("Settings restored from EEPROM");
@@ -364,5 +365,16 @@ float Dryer::GetCirculationPhaseDuration() const
 void Dryer::SetCirculationPhaseDuration(float value)
 {
   phases_manager_.GetParams().circulation_phase_duration_s = static_cast<uint32_t>(value);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetDryingSessionDuration() const
+{
+  return static_cast<float>(phases_manager_.GetParams().drying_session_duration_s);
+}
+
+void Dryer::SetDryingSessionDuration(float value)
+{
+  phases_manager_.GetParams().drying_session_duration_s = static_cast<uint32_t>(value);
   NotifySettingsChanged();
 }

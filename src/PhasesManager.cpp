@@ -74,6 +74,58 @@ unsigned long PhasesManager::GetPhaseElapsedTime() const {
   return (millis() - phase_start_time_) / 1000;  // Return in seconds
 }
 
+void PhasesManager::RestorePhaseState(DryerPhase phase, uint32_t elapsed_time_s) {
+  // Restore phase without calling SetPhase to avoid resetting phase_start_time_
+  current_phase_ = phase;
+
+  // Call the appropriate Enter phase to restore heater states
+  switch (phase) {
+    case DryerPhase::kStop:
+      EnterStopPhase();
+      break;
+    case DryerPhase::kInit:
+      EnterInitPhase();
+      break;
+    case DryerPhase::kExtraction:
+      EnterExtractionPhase();
+      break;
+    case DryerPhase::kCirculation:
+      EnterCirculationPhase();
+      break;
+  }
+
+  // Now restore the phase start time
+  RestorePhaseStartTime(elapsed_time_s);
+
+  Serial.print("Phase state restored to: ");
+  Serial.println(GetPhaseName());
+}
+
+void PhasesManager::RestorePhaseStartTime(uint32_t elapsed_time_s) {
+  // After a reboot, millis() starts at 0, so we need to set phase_start_time_
+  // as if the phase started elapsed_time_s seconds ago from now.
+  // This works because we only care about the *difference* between now and phase_start_time_.
+
+  unsigned long elapsed_ms = elapsed_time_s * 1000UL;
+  unsigned long now = millis();
+
+  // Since millis() just rebooted, now will be small (few seconds at most)
+  // We want: (now - phase_start_time_) / 1000 = elapsed_time_s
+  // So: phase_start_time_ = now - (elapsed_time_s * 1000)
+  //
+  // Since now is small and elapsed_time_s could be large, this will underflow,
+  // which is exactly what we want for unsigned arithmetic!
+  phase_start_time_ = now - elapsed_ms;
+
+  Serial.print("Restored phase start time with elapsed: ");
+  Serial.print(elapsed_time_s);
+  Serial.print("s (now=");
+  Serial.print(now);
+  Serial.print("ms, phase_start=");
+  Serial.print(phase_start_time_);
+  Serial.println("ms)");
+}
+
 void PhasesManager::EnterStopPhase() {
   // Turn off all heaters
   heaters_manager_->GetElectricHeater()->SetPower(0.0f);

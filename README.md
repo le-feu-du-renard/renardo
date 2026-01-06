@@ -16,8 +16,10 @@ pio test -vvv -e native
 
 TODO:
 
+- ajouter params cycle curation configurable
 - s'assurer que les barres de progression fonctionnent
 
+- améliorer le menu : ajouter des unités + mettre en heure certains parametres
 - probleme de valeur de l'hydraulic heater : 10% et non 100%
 - ne pas armer le lock si pas de modification sur les heaters
 

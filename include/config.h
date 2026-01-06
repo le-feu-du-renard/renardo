@@ -48,9 +48,9 @@
 #define CHT8305_OUTLET_ADDR 0x40
 
 // ========== TIMING CONSTANTS ==========
-#define SENSOR_UPDATE_INTERVAL 2000 // ms
-#define DISPLAY_UPDATE_INTERVAL 100 // ms
-#define CONTROL_LOOP_INTERVAL 1000  // ms
+#define SENSOR_UPDATE_INTERVAL 2000  // ms
+#define DISPLAY_UPDATE_INTERVAL 100  // ms
+#define CONTROL_LOOP_INTERVAL 1000   // ms
 #define SETTINGS_SAVE_INTERVAL 60000 // ms (60 seconds)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
@@ -64,9 +64,12 @@
 #define DEFAULT_HEATER_FULL_SCALE_DELTA 10.0 // °C (5-30)
 
 // Phase parameters
-#define DEFAULT_INIT_PHASE_DURATION 3600     // seconds (5-7200) = 1 hour
-#define DEFAULT_EXTRACTION_PHASE_DURATION 120 // seconds (5-7200) = 2 minutes
+#define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (5-7200) = 1 hour
+#define DEFAULT_EXTRACTION_PHASE_DURATION 120  // seconds (5-7200) = 2 minutes
 #define DEFAULT_CIRCULATION_PHASE_DURATION 300 // seconds (5-3600) = 5 minutes
+
+// Session parameters
+#define DEFAULT_DRYING_SESSION_DURATION 172800 // seconds (3600-604800) = 48 hours
 
 // Air recycling
 #define DEFAULT_RECYCLING_RATE 50.0 // % (0-100)

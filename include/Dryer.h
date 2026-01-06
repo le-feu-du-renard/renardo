@@ -96,6 +96,8 @@ public:
   void SetExtractionPhaseDuration(float value);
   float GetCirculationPhaseDuration() const;
   void SetCirculationPhaseDuration(float value);
+  float GetDryingSessionDuration() const;
+  void SetDryingSessionDuration(float value);
 
 private:
   // Components
