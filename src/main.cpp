@@ -3,6 +3,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <RotaryEncoder.h>
+#include <Bounce2.h>
 
 #include "config.h"
 #include <CHT8305.h>
@@ -37,14 +38,16 @@ RotaryEncoder encoder(ROTARY_ENCODER_CLK_PIN, ROTARY_ENCODER_DT_PIN, RotaryEncod
 // Menu System
 MenuSystem menu(&dryer, &display);
 
+// Debounce objects
+Bounce button_start = Bounce();
+Bounce button_encoder = Bounce();
+
 // ========== GLOBAL VARIABLES ==========
 
 unsigned long last_sensor_update = 0;
 unsigned long last_display_update = 0;
 unsigned long last_control_update = 0;
 
-bool button_start_pressed = false;
-bool last_button_state = HIGH;
 
 int encoder_position = 0;
 int last_encoder_position = 0;
@@ -58,9 +61,12 @@ void EncoderISR() {
 // ========== SETUP FUNCTIONS ==========
 
 void SetupPins() {
-  // Buttons
-  pinMode(BUTTON_START_PIN, INPUT_PULLUP);
-  pinMode(ROTARY_ENCODER_SW_PIN, INPUT_PULLUP);
+  // Buttons with debounce
+  button_start.attach(BUTTON_START_PIN, INPUT_PULLUP);
+  button_start.interval(50);  // 50ms debounce interval
+
+  button_encoder.attach(ROTARY_ENCODER_SW_PIN, INPUT_PULLUP);
+  button_encoder.interval(50);  // 50ms debounce interval
 
   // LEDs
   pinMode(STOP_LED_PIN, OUTPUT);
@@ -186,22 +192,19 @@ void UpdateSensors() {
 }
 
 void UpdateInputs() {
-  // Start/Stop button
-  bool current_button_state = digitalRead(BUTTON_START_PIN);
+  // Update debounce state
+  button_start.update();
+  button_encoder.update();
 
-  if (current_button_state == LOW && last_button_state == HIGH) {
-    // Button pressed
-    delay(50);  // Debounce
-    if (digitalRead(BUTTON_START_PIN) == LOW) {
-      if (dryer.IsRunning()) {
-        dryer.Stop();
-      } else {
-        dryer.Start();
-      }
+  // Start/Stop button
+  if (button_start.fell()) {
+    // Button pressed (transition from HIGH to LOW)
+    if (dryer.IsRunning()) {
+      dryer.Stop();
+    } else {
+      dryer.Start();
     }
   }
-
-  last_button_state = current_button_state;
 
   // Rotary Encoder
   encoder.tick();
@@ -236,21 +239,14 @@ void UpdateInputs() {
   }
 
   // Encoder button
-  static bool last_encoder_button_state = HIGH;
-  bool encoder_button_state = digitalRead(ROTARY_ENCODER_SW_PIN);
-
-  if (encoder_button_state == LOW && last_encoder_button_state == HIGH) {
-    delay(50);  // Debounce
-    if (digitalRead(ROTARY_ENCODER_SW_PIN) == LOW) {
-      if (menu.IsActive()) {
-        menu.Enter();
-      } else {
-        menu.Show();
-      }
+  if (button_encoder.fell()) {
+    // Button pressed (transition from HIGH to LOW)
+    if (menu.IsActive()) {
+      menu.Enter();
+    } else {
+      menu.Show();
     }
   }
-
-  last_encoder_button_state = encoder_button_state;
 }
 
 void UpdateOutputs() {
