@@ -5,7 +5,7 @@
 #include <RotaryEncoder.h>
 
 #include "config.h"
-#include "CHT8305.h"
+#include <CHT8305.h>
 #include "Display.h"
 #include "Dryer.h"
 #include "MenuSystem.h"
@@ -18,8 +18,8 @@ TwoWire i2c_bus_1(i2c0, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 TwoWire i2c_bus_2(i2c1, I2C_BUS_2_SDA_PIN, I2C_BUS_2_SCL_PIN);
 
 // Temperature/humidity sensors
-CHT8305 inlet_air_sensor(&i2c_bus_1, CHT8305_INLET_ADDR);
-CHT8305 outlet_air_sensor(&i2c_bus_2, CHT8305_OUTLET_ADDR);
+CHT8305 inlet_air_sensor(CHT8305_INLET_ADDR, &i2c_bus_1);
+CHT8305 outlet_air_sensor(CHT8305_OUTLET_ADDR, &i2c_bus_2);
 
 // OneWire for water temperature sensor
 OneWire one_wire(WATER_SENSOR_PIN);
@@ -94,12 +94,16 @@ void SetupI2C() {
 
 void SetupSensors() {
   // CHT8305 sensors
-  if (!inlet_air_sensor.Begin()) {
+  if (inlet_air_sensor.begin() != 0) {
     Serial.println("ERROR: Inlet air sensor not found!");
+  } else if (!inlet_air_sensor.isConnected()) {
+    Serial.println("ERROR: Inlet air sensor not connected!");
   }
 
-  if (!outlet_air_sensor.Begin()) {
+  if (outlet_air_sensor.begin() != 0) {
     Serial.println("ERROR: Outlet air sensor not found!");
+  } else if (!outlet_air_sensor.isConnected()) {
+    Serial.println("ERROR: Outlet air sensor not connected!");
   }
 
   // Water temperature sensor
@@ -151,14 +155,14 @@ void UpdateSensors() {
     last_sensor_update = now;
 
     // Update CHT8305 sensors
-    if (inlet_air_sensor.Update()) {
-      dryer.SetInletTemperature(inlet_air_sensor.GetTemperature());
-      dryer.SetInletHumidity(inlet_air_sensor.GetHumidity());
+    if (inlet_air_sensor.read() == CHT8305_OK) {
+      dryer.SetInletTemperature(inlet_air_sensor.getTemperature());
+      dryer.SetInletHumidity(inlet_air_sensor.getHumidity());
     }
 
-    if (outlet_air_sensor.Update()) {
-      dryer.SetOutletTemperature(outlet_air_sensor.GetTemperature());
-      dryer.SetOutletHumidity(outlet_air_sensor.GetHumidity());
+    if (outlet_air_sensor.read() == CHT8305_OK) {
+      dryer.SetOutletTemperature(outlet_air_sensor.getTemperature());
+      dryer.SetOutletHumidity(outlet_air_sensor.getHumidity());
     }
 
     // Update water temperature sensor
@@ -170,13 +174,13 @@ void UpdateSensors() {
 
     // Log values
     Serial.print("Inlet: ");
-    Serial.print(inlet_air_sensor.GetTemperature(), 1);
+    Serial.print(inlet_air_sensor.getTemperature(), 1);
     Serial.print("°C, ");
-    Serial.print(inlet_air_sensor.GetHumidity(), 0);
+    Serial.print(inlet_air_sensor.getHumidity(), 0);
     Serial.print("% | Outlet: ");
-    Serial.print(outlet_air_sensor.GetTemperature(), 1);
+    Serial.print(outlet_air_sensor.getTemperature(), 1);
     Serial.print("°C, ");
-    Serial.print(outlet_air_sensor.GetHumidity(), 0);
+    Serial.print(outlet_air_sensor.getHumidity(), 0);
     Serial.println("%");
   }
 }
@@ -290,11 +294,11 @@ void UpdateDisplay() {
       // Air data
       display.SetInletAirData(
         dryer.GetInletTemperature(),
-        inlet_air_sensor.GetHumidity()
+        inlet_air_sensor.getHumidity()
       );
       display.SetOutletAirData(
         dryer.GetOutletTemperature(),
-        outlet_air_sensor.GetHumidity()
+        outlet_air_sensor.getHumidity()
       );
 
       // Right side icons and values
