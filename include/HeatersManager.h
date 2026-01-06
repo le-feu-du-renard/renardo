@@ -2,6 +2,7 @@
 #define HEATERS_MANAGER_H
 
 #include <Arduino.h>
+#include "config.h"
 #include "ElectricHeater.h"
 #include "HydraulicHeater.h"
 
@@ -9,20 +10,20 @@
  * Heating parameters
  */
 struct HeatingParams {
-  float temperature_target;           // 20-45°C
-  float temperature_deadband;         // 0-2°C
-  float heating_action_min_wait_s;    // 1-120s
-  float heater_step_min;              // 1-10%
-  float heater_step_max;              // 2-10%
-  float heater_full_scale_delta;      // 10-30°C
+  float temperature_target;           // 20-80°C
+  float temperature_deadband;         // 0.5-10°C
+  float heating_action_min_wait_s;    // 5-120s
+  float heater_step_min;              // 0.01-0.5 ratio
+  float heater_step_max;              // 0.05-1.0 ratio
+  float heater_full_scale_delta;      // 5-30°C
 
   HeatingParams()
-    : temperature_target(40.0f),
-      temperature_deadband(0.5f),
-      heating_action_min_wait_s(10.0f),
-      heater_step_min(1.0f),
-      heater_step_max(10.0f),
-      heater_full_scale_delta(30.0f) {}
+    : temperature_target(DEFAULT_TEMPERATURE_TARGET),
+      temperature_deadband(DEFAULT_TEMPERATURE_DEADBAND),
+      heating_action_min_wait_s(DEFAULT_HEATING_ACTION_MIN_WAIT),
+      heater_step_min(DEFAULT_HEATER_STEP_MIN),
+      heater_step_max(DEFAULT_HEATER_STEP_MAX),
+      heater_full_scale_delta(DEFAULT_HEATER_FULL_SCALE_DELTA) {}
 };
 
 /**

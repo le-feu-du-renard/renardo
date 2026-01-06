@@ -16,8 +16,13 @@ pio test -vvv -e native
 
 TODO:
 
-- s'assurer que le global time fonctionne
-- s'assurer que les barres de progression fonctionne
+- s'assurer que les barres de progression fonctionnent
+
+- probleme de valeur de l'hydraulic heater : 10% et non 100%
+- ne pas armer le lock si pas de modification sur les heaters
+
+- long press pour reset sechoir
+
 - implementer support double coeur
 
 - permettre de gérer la strategy de chauffe par la config

@@ -2,6 +2,7 @@
 #define PHASES_MANAGER_H
 
 #include <Arduino.h>
+#include "config.h"
 #include "HeatersManager.h"
 
 /**
@@ -23,9 +24,9 @@ struct PhaseParams {
   uint32_t circulation_phase_duration_s; // 5-3600s
 
   PhaseParams()
-    : init_phase_duration_s(3600),      // 1 hour
-      extraction_phase_duration_s(120),  // 2 minutes
-      circulation_phase_duration_s(300)  // 5 minutes
+    : init_phase_duration_s(DEFAULT_INIT_PHASE_DURATION),
+      extraction_phase_duration_s(DEFAULT_EXTRACTION_PHASE_DURATION),
+      circulation_phase_duration_s(DEFAULT_CIRCULATION_PHASE_DURATION)
   {}
 };
 

@@ -9,6 +9,9 @@
 #include "SettingsManager.h"
 #include "AirRecyclingManager.h"
 
+// Callback type for settings changed notification
+typedef void (*SettingsChangedCallback)();
+
 /**
  * Main dryer controller
  * Coordinates managers and handles high-level logic
@@ -67,6 +70,10 @@ public:
   void SaveSettings();
   void LoadSettings();
 
+  // Settings change notification
+  void SetSettingsChangedCallback(SettingsChangedCallback callback) { settings_changed_callback_ = callback; }
+  void NotifySettingsChanged();
+
   // Menu parameter access
   // Heating parameters
   float GetTemperatureTarget() const;
@@ -106,7 +113,10 @@ private:
   unsigned long start_time_;
   uint32_t total_duty_time_s_;
   unsigned long last_duty_time_save_;
-  static constexpr unsigned long kDutyTimeSaveInterval = 60000; // Save every 60s
+  DryerPhase last_saved_phase_;
+
+  // Settings change callback
+  SettingsChangedCallback settings_changed_callback_;
 
   // Sensors
   float inlet_temperature_;

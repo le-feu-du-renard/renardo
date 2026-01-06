@@ -15,6 +15,7 @@ void SettingsManager::Begin()
 }
 
 bool SettingsManager::LoadSettings(bool &dryer_running,
+                                   DryerPhase &current_phase,
                                    HeatingParams &heating_params,
                                    PhaseParams &phase_params,
                                    uint32_t &total_duty_time_s,
@@ -28,6 +29,7 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
   }
 
   dryer_running = settings_.dryer_running;
+  current_phase = static_cast<DryerPhase>(settings_.current_phase);
   heating_params = settings_.heating_params;
   phase_params = settings_.phase_params;
   total_duty_time_s = settings_.total_duty_time_s;
@@ -36,6 +38,8 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
   Serial.println("Settings loaded from EEPROM:");
   Serial.print("  Dryer running: ");
   Serial.println(dryer_running ? "true" : "false");
+  Serial.print("  Current phase: ");
+  Serial.println(settings_.current_phase);
   Serial.print("  Target temperature: ");
   Serial.println(heating_params.temperature_target);
   Serial.print("  Total duty time: ");
@@ -49,6 +53,7 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
 }
 
 void SettingsManager::SaveSettings(bool dryer_running,
+                                   DryerPhase current_phase,
                                    const HeatingParams &heating_params,
                                    const PhaseParams &phase_params,
                                    uint32_t total_duty_time_s,
@@ -56,6 +61,7 @@ void SettingsManager::SaveSettings(bool dryer_running,
 {
   settings_.version = kSettingsVersion;
   settings_.dryer_running = dryer_running;
+  settings_.current_phase = static_cast<uint8_t>(current_phase);
   settings_.heating_params = heating_params;
   settings_.phase_params = phase_params;
   settings_.total_duty_time_s = total_duty_time_s;
@@ -74,47 +80,6 @@ void SettingsManager::SaveDryerState(bool running)
     WriteToEeprom();
     Serial.print("Dryer state saved: ");
     Serial.println(running ? "running" : "stopped");
-  }
-}
-
-void SettingsManager::SaveHeatingParams(const HeatingParams &params)
-{
-  if (ReadFromEeprom())
-  {
-    settings_.heating_params = params;
-    WriteToEeprom();
-    Serial.println("Heating parameters saved");
-  }
-}
-
-void SettingsManager::SavePhaseParams(const PhaseParams &params)
-{
-  if (ReadFromEeprom())
-  {
-    settings_.phase_params = params;
-    WriteToEeprom();
-    Serial.println("Phase parameters saved");
-  }
-}
-
-void SettingsManager::SaveDutyTime(uint32_t duty_time_s)
-{
-  if (ReadFromEeprom())
-  {
-    settings_.total_duty_time_s = duty_time_s;
-    WriteToEeprom();
-  }
-}
-
-void SettingsManager::SaveRecyclingRate(float rate)
-{
-  if (ReadFromEeprom())
-  {
-    settings_.recycling_rate = rate;
-    WriteToEeprom();
-    Serial.print("Recycling rate saved: ");
-    Serial.print(rate);
-    Serial.println("%");
   }
 }
 

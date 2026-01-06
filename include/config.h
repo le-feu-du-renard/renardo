@@ -51,10 +51,24 @@
 #define SENSOR_UPDATE_INTERVAL 2000 // ms
 #define DISPLAY_UPDATE_INTERVAL 100 // ms
 #define CONTROL_LOOP_INTERVAL 1000  // ms
+#define SETTINGS_SAVE_INTERVAL 60000 // ms (60 seconds)
 
-// ========== DRYER PARAMETERS ==========
-#define TARGET_TEMPERATURE_DEFAULT 50.0 // °C
-#define MAX_TEMPERATURE 80.0            // °C
-#define MIN_TEMPERATURE 20.0            // °C
+// ========== DRYER DEFAULT PARAMETERS ==========
+
+// Heating parameters
+#define DEFAULT_TEMPERATURE_TARGET 50.0      // °C (20-80)
+#define DEFAULT_TEMPERATURE_DEADBAND 2.0     // °C (0.5-10)
+#define DEFAULT_HEATING_ACTION_MIN_WAIT 10.0 // seconds (5-120)
+#define DEFAULT_HEATER_STEP_MIN 0.05         // ratio (0.01-0.5)
+#define DEFAULT_HEATER_STEP_MAX 0.2          // ratio (0.05-1.0)
+#define DEFAULT_HEATER_FULL_SCALE_DELTA 10.0 // °C (5-30)
+
+// Phase parameters
+#define DEFAULT_INIT_PHASE_DURATION 3600     // seconds (5-7200) = 1 hour
+#define DEFAULT_EXTRACTION_PHASE_DURATION 120 // seconds (5-7200) = 2 minutes
+#define DEFAULT_CIRCULATION_PHASE_DURATION 300 // seconds (5-3600) = 5 minutes
+
+// Air recycling
+#define DEFAULT_RECYCLING_RATE 50.0 // % (0-100)
 
 #endif // CONFIG_H

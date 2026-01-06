@@ -12,6 +12,8 @@ Dryer::Dryer(DFRobot_GP8403 *dac)
       start_time_(0),
       total_duty_time_s_(0),
       last_duty_time_save_(0),
+      last_saved_phase_(DryerPhase::kStop),
+      settings_changed_callback_(nullptr),
       inlet_temperature_(0.0f),
       outlet_temperature_(0.0f),
       water_temperature_(0.0f),
@@ -45,9 +47,13 @@ void Dryer::Start()
     start_time_ = millis();
     last_duty_time_save_ = millis();
     phases_manager_.SetPhase(DryerPhase::kInit);
+    last_saved_phase_ = DryerPhase::kInit;
 
-    // Save state to EEPROM
+    // Save state to EEPROM immediately
     settings_manager_.SaveDryerState(true);
+
+    // Trigger a full settings save
+    NotifySettingsChanged();
   }
 }
 
@@ -73,6 +79,8 @@ void Dryer::Update()
 
   if (running_)
   {
+    // Serial.println("Updating dryer...");
+
     // Update phases
     phases_manager_.Update();
 
@@ -87,6 +95,8 @@ void Dryer::Update()
 
     // Update duty time tracking
     UpdateDutyTime();
+
+    // Serial.println("Dryer updated!");
   }
 }
 
@@ -167,16 +177,14 @@ float Dryer::GetCirculatorOutput() const
 
 void Dryer::UpdateDutyTime()
 {
+  // Update duty time on every call for accurate UI display
   unsigned long now = millis();
+  unsigned long elapsed_since_last_update = (now - last_duty_time_save_) / 1000;
 
-  // Save duty time periodically (every 60 seconds)
-  if (now - last_duty_time_save_ >= kDutyTimeSaveInterval)
+  if (elapsed_since_last_update > 0)
   {
-    total_duty_time_s_ += (now - last_duty_time_save_) / 1000;
+    total_duty_time_s_ += elapsed_since_last_update;
     last_duty_time_save_ = now;
-
-    // Save to EEPROM
-    settings_manager_.SaveDutyTime(total_duty_time_s_);
   }
 }
 
@@ -184,6 +192,7 @@ void Dryer::SaveSettings()
 {
   settings_manager_.SaveSettings(
       running_,
+      phases_manager_.GetPhase(),
       heaters_manager_.GetParams(),
       phases_manager_.GetParams(),
       total_duty_time_s_,
@@ -193,6 +202,7 @@ void Dryer::SaveSettings()
 void Dryer::LoadSettings()
 {
   bool saved_running_state = false;
+  DryerPhase saved_phase = DryerPhase::kStop;
   HeatingParams heating_params;
   PhaseParams phase_params;
   uint32_t saved_duty_time = 0;
@@ -200,6 +210,7 @@ void Dryer::LoadSettings()
 
   bool success = settings_manager_.LoadSettings(
       saved_running_state,
+      saved_phase,
       heating_params,
       phase_params,
       saved_duty_time,
@@ -220,7 +231,10 @@ void Dryer::LoadSettings()
       running_ = true;
       start_time_ = millis();
       last_duty_time_save_ = millis();
-      phases_manager_.SetPhase(DryerPhase::kInit);
+      phases_manager_.SetPhase(saved_phase);
+      last_saved_phase_ = saved_phase;
+      Serial.print("Restored to phase: ");
+      Serial.println(static_cast<uint8_t>(saved_phase));
     }
 
     Serial.println("Settings restored from EEPROM");
@@ -234,14 +248,20 @@ void Dryer::LoadSettings()
 void Dryer::SetRecyclingRate(float rate)
 {
   air_recycling_manager_.SetRecyclingRate(rate);
-
-  // Save to EEPROM
-  settings_manager_.SaveRecyclingRate(rate);
+  NotifySettingsChanged();
 }
 
 float Dryer::GetRecyclingRate() const
 {
   return air_recycling_manager_.GetRecyclingRate();
+}
+
+void Dryer::NotifySettingsChanged()
+{
+  if (settings_changed_callback_ != nullptr)
+  {
+    settings_changed_callback_();
+  }
 }
 
 // ========== Menu Parameter Access ==========
@@ -255,6 +275,7 @@ float Dryer::GetTemperatureTarget() const
 void Dryer::SetTemperatureTarget(float value)
 {
   heaters_manager_.GetParams().temperature_target = value;
+  NotifySettingsChanged();
 }
 
 float Dryer::GetTemperatureDeadband() const
@@ -265,6 +286,7 @@ float Dryer::GetTemperatureDeadband() const
 void Dryer::SetTemperatureDeadband(float value)
 {
   heaters_manager_.GetParams().temperature_deadband = value;
+  NotifySettingsChanged();
 }
 
 float Dryer::GetHeatingActionMinWait() const
@@ -275,6 +297,7 @@ float Dryer::GetHeatingActionMinWait() const
 void Dryer::SetHeatingActionMinWait(float value)
 {
   heaters_manager_.GetParams().heating_action_min_wait_s = value;
+  NotifySettingsChanged();
 }
 
 float Dryer::GetHeaterStepMin() const
@@ -285,6 +308,7 @@ float Dryer::GetHeaterStepMin() const
 void Dryer::SetHeaterStepMin(float value)
 {
   heaters_manager_.GetParams().heater_step_min = value;
+  NotifySettingsChanged();
 }
 
 float Dryer::GetHeaterStepMax() const
@@ -295,6 +319,7 @@ float Dryer::GetHeaterStepMax() const
 void Dryer::SetHeaterStepMax(float value)
 {
   heaters_manager_.GetParams().heater_step_max = value;
+  NotifySettingsChanged();
 }
 
 float Dryer::GetHeaterFullScaleDelta() const
@@ -305,6 +330,7 @@ float Dryer::GetHeaterFullScaleDelta() const
 void Dryer::SetHeaterFullScaleDelta(float value)
 {
   heaters_manager_.GetParams().heater_full_scale_delta = value;
+  NotifySettingsChanged();
 }
 
 // Phase parameters
@@ -316,6 +342,7 @@ float Dryer::GetInitPhaseDuration() const
 void Dryer::SetInitPhaseDuration(float value)
 {
   phases_manager_.GetParams().init_phase_duration_s = static_cast<uint32_t>(value);
+  NotifySettingsChanged();
 }
 
 float Dryer::GetExtractionPhaseDuration() const
@@ -326,6 +353,7 @@ float Dryer::GetExtractionPhaseDuration() const
 void Dryer::SetExtractionPhaseDuration(float value)
 {
   phases_manager_.GetParams().extraction_phase_duration_s = static_cast<uint32_t>(value);
+  NotifySettingsChanged();
 }
 
 float Dryer::GetCirculationPhaseDuration() const
@@ -336,4 +364,5 @@ float Dryer::GetCirculationPhaseDuration() const
 void Dryer::SetCirculationPhaseDuration(float value)
 {
   phases_manager_.GetParams().circulation_phase_duration_s = static_cast<uint32_t>(value);
+  NotifySettingsChanged();
 }

@@ -15,6 +15,7 @@ struct PersistentSettings {
 
   // Dryer state
   bool dryer_running;
+  uint8_t current_phase;  // DryerPhase as uint8_t
 
   // Heating parameters
   HeatingParams heating_params;
@@ -34,6 +35,7 @@ struct PersistentSettings {
   PersistentSettings()
     : version(1),
       dryer_running(false),
+      current_phase(0),  // kStop
       heating_params(),
       phase_params(),
       total_duty_time_s(0),
@@ -52,6 +54,7 @@ class SettingsManager {
 
   // Save all settings to EEPROM
   void SaveSettings(bool dryer_running,
+                    DryerPhase current_phase,
                     const HeatingParams& heating_params,
                     const PhaseParams& phase_params,
                     uint32_t total_duty_time_s,
@@ -59,17 +62,15 @@ class SettingsManager {
 
   // Load all settings from EEPROM
   bool LoadSettings(bool& dryer_running,
+                    DryerPhase& current_phase,
                     HeatingParams& heating_params,
                     PhaseParams& phase_params,
                     uint32_t& total_duty_time_s,
                     float& recycling_rate);
 
-  // Individual save operations
+  // Individual save operations (deprecated - use SaveSettings instead)
+  // Only SaveDryerState is kept for immediate state changes in Start/Stop
   void SaveDryerState(bool running);
-  void SaveHeatingParams(const HeatingParams& params);
-  void SavePhaseParams(const PhaseParams& params);
-  void SaveDutyTime(uint32_t duty_time_s);
-  void SaveRecyclingRate(float rate);
 
   // Reset to factory defaults
   void ResetToDefaults();

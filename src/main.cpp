@@ -54,6 +54,8 @@ Bounce button_encoder = Bounce();
 unsigned long last_sensor_update = 0;
 unsigned long last_control_update = 0;
 unsigned long last_display_update = 0;
+unsigned long last_settings_save = 0;
+bool settings_need_save = false;
 
 // Water temperature sensor async variables
 unsigned long water_temp_request_time = 0;
@@ -69,6 +71,15 @@ int last_encoder_position = 0;
 void EncoderISR()
 {
   encoder.tick();
+}
+
+// ========== CALLBACKS ==========
+
+void OnSettingsChanged()
+{
+  settings_need_save = true;
+  last_settings_save = millis(); // Reset timer for immediate save
+  Serial.println("Settings changed, will save immediately");
 }
 
 // ========== SETUP FUNCTIONS ==========
@@ -236,6 +247,7 @@ void setup()
   SetupSensors();
 
   dryer.Begin();
+  dryer.SetSettingsChangedCallback(OnSettingsChanged);
   menu.Begin(MenuStructure::BuildMenu());
 
   Serial.println("Setup complete!");
@@ -468,12 +480,36 @@ void UpdateControl()
   }
 }
 
+void UpdateSettings()
+{
+  unsigned long now = millis();
+
+  // Check if we need to save settings (either changed or periodic)
+  if (settings_need_save || (now - last_settings_save >= SETTINGS_SAVE_INTERVAL))
+  {
+    last_settings_save = now;
+
+    if (settings_need_save)
+    {
+      Serial.println("Saving settings immediately (user changed)...");
+      settings_need_save = false;
+    }
+    else
+    {
+      Serial.println("Saving settings periodically...");
+    }
+
+    dryer.SaveSettings();
+  }
+}
+
 void loop()
 {
   UpdateSensors();
   UpdateInputs();
   UpdateEncoderInputs();
   UpdateControl();
+  UpdateSettings();
   UpdateOutputs();
   UpdateDisplay();
 

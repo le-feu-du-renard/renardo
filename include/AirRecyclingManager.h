@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <DFRobot_GP8403.h>
+#include "config.h"
 
 /**
  * Manages air recycling rate control using DAC GP8403
@@ -47,7 +48,7 @@ class AirRecyclingManager {
  private:
   static constexpr float kMinRecyclingRate = 0.0f;
   static constexpr float kMaxRecyclingRate = 100.0f;
-  static constexpr float kDefaultRecyclingRate = 50.0f;
+  static constexpr float kDefaultRecyclingRate = DEFAULT_RECYCLING_RATE;
   static constexpr uint16_t kMaxDacValue = 4095;  // 12-bit DAC
 
   DFRobot_GP8403* dac_;
