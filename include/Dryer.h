@@ -2,7 +2,6 @@
 #define DRYER_H
 
 #include <Arduino.h>
-#include <Wire.h>
 #include "ElectricHeater.h"
 #include "HydraulicHeater.h"
 #include "HeatersManager.h"
@@ -10,16 +9,14 @@
 #include "SettingsManager.h"
 #include "AirRecyclingManager.h"
 
-// Forward declaration
-class DFRobot_GP8403;
-
 /**
  * Main dryer controller
  * Coordinates managers and handles high-level logic
  */
-class Dryer {
- public:
-  Dryer();
+class Dryer
+{
+public:
+  Dryer(DFRobot_GP8403 *dac);
 
   void Begin();
   void Update();
@@ -30,7 +27,7 @@ class Dryer {
   bool IsRunning() const { return running_; }
 
   // State
-  const char* GetPhaseName() const;
+  const char *GetPhaseName() const;
   unsigned long GetElapsedTime() const;
 
   // Temperatures
@@ -58,10 +55,10 @@ class Dryer {
   float GetRecyclingRate() const;
 
   // Manager access
-  HeatersManager* GetHeatersManager() { return &heaters_manager_; }
-  PhasesManager* GetPhasesManager() { return &phases_manager_; }
-  SettingsManager* GetSettingsManager() { return &settings_manager_; }
-  AirRecyclingManager* GetAirRecyclingManager() { return &air_recycling_manager_; }
+  HeatersManager *GetHeatersManager() { return &heaters_manager_; }
+  PhasesManager *GetPhasesManager() { return &phases_manager_; }
+  SettingsManager *GetSettingsManager() { return &settings_manager_; }
+  AirRecyclingManager *GetAirRecyclingManager() { return &air_recycling_manager_; }
 
   // Duty time tracking
   uint32_t GetTotalDutyTime() const { return total_duty_time_s_; }
@@ -93,7 +90,7 @@ class Dryer {
   float GetCirculationPhaseDuration() const;
   void SetCirculationPhaseDuration(float value);
 
- private:
+private:
   // Components
   ElectricHeater electric_heater_;
   HydraulicHeater hydraulic_heater_;
@@ -102,8 +99,6 @@ class Dryer {
   SettingsManager settings_manager_;
 
   // I2C and DAC
-  TwoWire i2c_bus_2_;
-  DFRobot_GP8403 dac_;
   AirRecyclingManager air_recycling_manager_;
 
   // State
@@ -111,7 +106,7 @@ class Dryer {
   unsigned long start_time_;
   uint32_t total_duty_time_s_;
   unsigned long last_duty_time_save_;
-  static constexpr unsigned long kDutyTimeSaveInterval = 60000;  // Save every 60s
+  static constexpr unsigned long kDutyTimeSaveInterval = 60000; // Save every 60s
 
   // Sensors
   float inlet_temperature_;
@@ -125,7 +120,7 @@ class Dryer {
 
   // Control update intervals
   unsigned long last_heating_update_;
-  static constexpr unsigned long kHeatingUpdateInterval = 1000;  // 1s
+  static constexpr unsigned long kHeatingUpdateInterval = 1000; // 1s
 
   // Control logic
   void UpdateHeatingControl();
@@ -133,4 +128,4 @@ class Dryer {
   void UpdateDutyTime();
 };
 
-#endif  // DRYER_H
+#endif // DRYER_H

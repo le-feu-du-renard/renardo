@@ -47,7 +47,7 @@ inline const char *FormatTemperature(float temperature)
   }
   else
   {
-    snprintf(buf, sizeof(buf), "%.1f°", temperature);
+    snprintf(buf, sizeof(buf), "%.1f%cC", temperature, (char)247);
   }
 
   return buf;

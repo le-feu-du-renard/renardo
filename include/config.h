@@ -34,20 +34,27 @@
 #define START_LED_PIN 19
 #define ELECTRIC_HEATER_LED_PIN 18
 
+// Screen
+#define SCREEN_SSD1306_ADDR 0x3C
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define SCREEN_OLED_RESET -1
+
+// DAC
+#define DAC_GP8403_ADDR 0x58
+
 // ========== I2C ADDRESSES ==========
 #define CHT8305_INLET_ADDR 0x40
-#define CHT8305_OUTLET_ADDR 0x40  // Sur bus I2C différent
-#define SSD1306_ADDR 0x3C
-#define GP8403_DAC_ADDR 0x58
+#define CHT8305_OUTLET_ADDR 0x40
 
 // ========== TIMING CONSTANTS ==========
-#define SENSOR_UPDATE_INTERVAL 2000  // ms
-#define DISPLAY_UPDATE_INTERVAL 100  // ms
-#define CONTROL_LOOP_INTERVAL 1000   // ms
+#define SENSOR_UPDATE_INTERVAL 2000 // ms
+#define DISPLAY_UPDATE_INTERVAL 100 // ms
+#define CONTROL_LOOP_INTERVAL 1000  // ms
 
 // ========== DRYER PARAMETERS ==========
-#define TARGET_TEMPERATURE_DEFAULT 50.0  // °C
-#define MAX_TEMPERATURE 80.0             // °C
-#define MIN_TEMPERATURE 20.0             // °C
+#define TARGET_TEMPERATURE_DEFAULT 50.0 // °C
+#define MAX_TEMPERATURE 80.0            // °C
+#define MIN_TEMPERATURE 20.0            // °C
 
 #endif // CONFIG_H

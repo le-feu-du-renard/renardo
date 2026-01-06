@@ -26,14 +26,20 @@ CHT8305 outlet_air_sensor(CHT8305_OUTLET_ADDR, &i2c_bus_2);
 OneWire one_wire(WATER_SENSOR_PIN);
 DallasTemperature water_temperature_sensor(&one_wire);
 
-// Display
-Display display;
+// DAC
+DFRobot_GP8403 dac(&i2c_bus_2, DAC_GP8403_ADDR);
 
-// Dryer controller
-Dryer dryer;
+// OLED
+Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c_bus_1, SCREEN_OLED_RESET);
 
 // Rotary Encoder
 RotaryEncoder encoder(ROTARY_ENCODER_CLK_PIN, ROTARY_ENCODER_DT_PIN, RotaryEncoder::LatchMode::TWO03);
+
+// Display
+Display display(&oled);
+
+// Dryer controller
+Dryer dryer(&dac);
 
 // Menu System
 MenuSystem menu(&dryer, &display);
@@ -44,15 +50,17 @@ Bounce button_encoder = Bounce();
 
 // ========== GLOBAL VARIABLES ==========
 
+// Core 0 variables (sensors, control, outputs, display)
 unsigned long last_sensor_update = 0;
-unsigned long last_display_update = 0;
 unsigned long last_control_update = 0;
+unsigned long last_display_update = 0;
 
 // Water temperature sensor async variables
 unsigned long water_temp_request_time = 0;
 bool water_temp_conversion_started = false;
 static constexpr unsigned long WATER_TEMP_CONVERSION_TIME = 750; // 750ms for 12-bit resolution
 
+// Core 1 variables (encoder inputs)
 int encoder_position = 0;
 int last_encoder_position = 0;
 
@@ -94,15 +102,82 @@ void SetupPins()
   digitalWrite(ELECTRIC_HEATER_LED_PIN, LOW);
 }
 
+void ScanI2C(TwoWire &bus, const char *bus_name)
+{
+  Serial.print("Scanning ");
+  Serial.print(bus_name);
+  Serial.println("...");
+
+  int count = 0;
+  for (byte addr = 1; addr < 127; addr++)
+  {
+    bus.beginTransmission(addr);
+    if (bus.endTransmission() == 0)
+    {
+      Serial.print("  Found device at 0x");
+      if (addr < 16)
+        Serial.print("0");
+      Serial.println(addr, HEX);
+      count++;
+    }
+  }
+
+  if (count == 0)
+  {
+    Serial.println("  No devices found");
+  }
+  Serial.println();
+}
+
 void SetupI2C()
 {
   i2c_bus_1.begin();
   i2c_bus_1.setClock(400000);
+  Serial.println("I2C bus 1 initialized");
 
   i2c_bus_2.begin();
   i2c_bus_2.setClock(50000);
+  Serial.println("I2C bus 2 initialized");
 
-  Serial.println("I2C buses initialized");
+  // Scan all I2C buses
+  ScanI2C(i2c_bus_1, "i2c_bus_1");
+  ScanI2C(i2c_bus_2, "i2c_bus_2");
+}
+
+void SetupOLED()
+{
+  Serial.println("Initialize OLED...");
+
+  // Initialize display
+  if (!oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_SSD1306_ADDR))
+  {
+    Serial.println("ERROR: OLED initialization failed!");
+  }
+  else
+  {
+    Serial.println("SUCCESS: OLED initialized!");
+    oled.clearDisplay();
+    oled.display();
+    Serial.println("OLED cleared");
+  }
+
+  oled.setRotation(2); // 0=0°, 1=90°, 2=180°, 3=270°
+  Serial.println("OLED rotation set to 180°");
+}
+
+void SetupDAC()
+{
+  Serial.println("Initialize DAC...");
+
+  if (dac.begin() != 0)
+  {
+    Serial.println("Failed to initialize GP8403 DAC");
+  }
+  else
+  {
+    dac.setDACOutRange(DFRobot_GP8403::eOutputRange10V);
+    Serial.println("GP8403 DAC initialized with 0-10V range");
+  }
 }
 
 void SetupSensors()
@@ -134,7 +209,7 @@ void SetupSensors()
   Serial.println(" OneWire devices (async mode enabled)");
 }
 
-// ========== MAIN SETUP ==========
+// ========== MAIN SETUP (Core 0) ==========
 
 void setup()
 {
@@ -142,31 +217,20 @@ void setup()
   delay(1000);
 
   Serial.println("\n========================================");
-  Serial.println("    Dryer Controller - PlatformIO");
+  Serial.println("    Dryer Controller - MINIMAL TEST");
   Serial.println("========================================\n");
 
-  SetupPins();
   SetupI2C();
+  SetupOLED();
 
-  // Initialize display
-  if (!display.Begin())
-  {
-    Serial.println("ERROR: Display initialization failed!");
-  }
-
+  SetupPins();
+  SetupDAC();
   SetupSensors();
 
-  // Initialize controller
   dryer.Begin();
-
-  // Initialize menu system
   menu.Begin(MenuStructure::BuildMenu());
 
-  // Configure encoder interrupts
-  attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_CLK_PIN), EncoderISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_DT_PIN), EncoderISR, CHANGE);
-
-  Serial.println("System ready!\n");
+  Serial.println("Setup complete!");
 }
 
 // ========== LOOP FUNCTIONS ==========
@@ -226,9 +290,8 @@ void UpdateSensors()
 
 void UpdateInputs()
 {
-  // Update debounce state
+  // Update start/stop button debounce state
   button_start.update();
-  button_encoder.update();
 
   // Start/Stop button
   if (button_start.fell())
@@ -243,6 +306,12 @@ void UpdateInputs()
       dryer.Start();
     }
   }
+}
+
+void UpdateEncoderInputs()
+{
+  // Update encoder button debounce state
+  button_encoder.update();
 
   // Rotary Encoder
   encoder.tick();
@@ -327,13 +396,17 @@ void UpdateDisplay()
   {
     last_display_update = now;
 
+    Serial.println("Updating display...");
+
     if (menu.IsActive())
     {
       // Render menu
+      Serial.println("Rendering menu");
       menu.Render();
     }
     else
     {
+      Serial.println("Rendering home page");
       // Time tracking
       display.SetTotalDutyTime(dryer.GetTotalDutyTime());
       display.SetPhaseDutyTime(dryer.GetPhasesManager()->GetPhaseElapsedTime() / 1000);
@@ -366,6 +439,7 @@ void UpdateDisplay()
       display.SetElectricHeaterPower(dryer.GetHeaterOutput() > 0.5);
 
       display.Update();
+      Serial.println("Home page rendered");
     }
   }
 }
@@ -381,16 +455,22 @@ void UpdateControl()
   }
 }
 
-// ========== MAIN LOOP ==========
-
 void loop()
 {
+  // Serial.println("Loop");
+  // oled.clearDisplay();
+  // oled.setTextSize(1);
+  // oled.setTextColor(SSD1306_WHITE);
+  // oled.setCursor(0, 0);
+  // oled.println("Test direct");
+  // oled.display();
+  // delay(1000);
+
   UpdateSensors();
   UpdateInputs();
   UpdateControl();
   UpdateOutputs();
   UpdateDisplay();
 
-  // Small delay to avoid CPU overload
-  delay(10);
+  delay(500);
 }
