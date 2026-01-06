@@ -135,9 +135,12 @@ const char *Dryer::GetPhaseName() const
 
 unsigned long Dryer::GetElapsedTime() const
 {
-  if (!running_)
-    return 0;
-  return (millis() - start_time_) / 1000;
+  unsigned long current_session_time = 0;
+  if (running_)
+  {
+    current_session_time = (millis() - start_time_) / 1000;
+  }
+  return total_duty_time_s_ + current_session_time;
 }
 
 void Dryer::SetTargetTemperature(float temperature)
@@ -210,8 +213,16 @@ void Dryer::LoadSettings()
     total_duty_time_s_ = saved_duty_time;
     air_recycling_manager_.SetRecyclingRate(saved_recycling_rate);
 
-    // Note: We don't automatically restore running state for safety
-    // User must explicitly start the dryer
+    // Restore running state if dryer was running before reboot
+    if (saved_running_state)
+    {
+      Serial.println("Dryer was running before reboot, resuming...");
+      running_ = true;
+      start_time_ = millis();
+      last_duty_time_save_ = millis();
+      phases_manager_.SetPhase(DryerPhase::kInit);
+    }
+
     Serial.println("Settings restored from EEPROM");
   }
   else
