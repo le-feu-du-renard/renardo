@@ -10,14 +10,15 @@ pio run -t upload -t monitor -e pico_w
 pio test -vvv -e native
 ```
 
+## generate fonts
+
+## generate icons
+
 TODO:
-- faire fonctionner le systeme de base
-  - faire fonctionner le display
-    - values
-    - font
-    - image
-  - faire fonctionner le menu
-  - faire fonctionner le button start/stop
+
+- s'assurer que le global time fonctionne
+- s'assurer que les barres de progression fonctionne
+- implementer support double coeur
 
 - permettre de gérer la strategy de chauffe par la config
   - on ajoute les heaters
@@ -25,5 +26,6 @@ TODO:
 - ajouter relay pour deshumidificateur
   - ajouter en option
 - test coverage
-- ajouter test pour les heaters
+- ajouter scenario de tests pour s'assurer que ça fonctionne bien
 - ajouter test device : pour s'assurer que toutes les fonctionnalités sont OK
+- find a better font

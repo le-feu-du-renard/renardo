@@ -82,6 +82,14 @@ void SetupPins()
   button_encoder.attach(ROTARY_ENCODER_SW_PIN, INPUT_PULLUP);
   button_encoder.interval(50); // 50ms debounce interval
 
+  // Rotary encoder pins
+  pinMode(ROTARY_ENCODER_CLK_PIN, INPUT_PULLUP);
+  pinMode(ROTARY_ENCODER_DT_PIN, INPUT_PULLUP);
+
+  // Attach encoder interrupts
+  attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_CLK_PIN), EncoderISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_DT_PIN), EncoderISR, CHANGE);
+
   // LEDs
   pinMode(STOP_LED_PIN, OUTPUT);
   pinMode(START_LED_PIN, OUTPUT);
@@ -297,12 +305,15 @@ void UpdateInputs()
   if (button_start.fell())
   {
     // Button pressed (transition from HIGH to LOW)
+    Serial.println(">>> START BUTTON PRESSED <<<");
     if (dryer.IsRunning())
     {
+      Serial.println("Button stop press");
       dryer.Stop();
     }
     else
     {
+      Serial.println("Button start press");
       dryer.Start();
     }
   }
@@ -330,10 +341,12 @@ void UpdateEncoderInputs()
         // Adjust value in edit mode
         if (delta > 0)
         {
+          Serial.println("Encoder increment");
           menu.GetCurrentItem()->OnIncrement(&menu);
         }
         else
         {
+          Serial.println("Encoder decrement");
           menu.GetCurrentItem()->OnDecrement(&menu);
         }
       }
@@ -342,32 +355,32 @@ void UpdateEncoderInputs()
         // Navigate menu
         if (delta > 0)
         {
+          Serial.println("Encoder down");
           menu.Down();
         }
         else
         {
+          Serial.println("Encoder up");
           menu.Up();
         }
       }
-    }
-    else
-    {
-      // Adjust target temperature when menu not active
-      float new_target = dryer.GetTargetTemperature() + (delta * 0.5);
-      dryer.SetTargetTemperature(new_target);
     }
   }
 
   // Encoder button
   if (button_encoder.fell())
   {
+    Serial.println(">>> ENCODER BUTTON PRESSED <<<");
+
     // Button pressed (transition from HIGH to LOW)
     if (menu.IsActive())
     {
+      Serial.println("Menu enter");
       menu.Enter();
     }
     else
     {
+      Serial.println("Menu show");
       menu.Show();
     }
   }
@@ -396,17 +409,17 @@ void UpdateDisplay()
   {
     last_display_update = now;
 
-    Serial.println("Updating display...");
+    // Serial.println("Updating display...");
 
     if (menu.IsActive())
     {
       // Render menu
-      Serial.println("Rendering menu");
+      // Serial.println("Rendering menu");
       menu.Render();
     }
     else
     {
-      Serial.println("Rendering home page");
+      // Serial.println("Rendering home page");
       // Time tracking
       display.SetTotalDutyTime(dryer.GetTotalDutyTime());
       display.SetPhaseDutyTime(dryer.GetPhasesManager()->GetPhaseElapsedTime() / 1000);
@@ -439,7 +452,7 @@ void UpdateDisplay()
       display.SetElectricHeaterPower(dryer.GetHeaterOutput() > 0.5);
 
       display.Update();
-      Serial.println("Home page rendered");
+      // Serial.println("Home page rendered");
     }
   }
 }
@@ -457,20 +470,12 @@ void UpdateControl()
 
 void loop()
 {
-  // Serial.println("Loop");
-  // oled.clearDisplay();
-  // oled.setTextSize(1);
-  // oled.setTextColor(SSD1306_WHITE);
-  // oled.setCursor(0, 0);
-  // oled.println("Test direct");
-  // oled.display();
-  // delay(1000);
-
   UpdateSensors();
   UpdateInputs();
+  UpdateEncoderInputs();
   UpdateControl();
   UpdateOutputs();
   UpdateDisplay();
 
-  delay(500);
+  delay(10); // Short delay to prevent CPU hogging
 }

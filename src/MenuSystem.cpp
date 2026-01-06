@@ -192,13 +192,10 @@ void MenuSystem::Render() {
     bool selected = (item_index == current.selected_index);
 
     String line = "";
-    if (selected) {
-      line += editing_ ? ">" : "-";
-    } else {
-      line += " ";
+    if (selected && editing_) {
+      line += "> ";
     }
 
-    line += " ";
     line += item->GetText();
 
     // Add value for number items
