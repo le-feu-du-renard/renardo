@@ -12,6 +12,14 @@
 #include "../assets/icons/recycling.xbm"
 #include "../assets/icons/water.xbm"
 
+// Include custom fonts
+#include "../assets/fonts/Chicago3pt7b.h"
+#include "../assets/fonts/Chicago4pt7b.h"
+#include "../assets/fonts/Chicago5pt7b.h"
+#include "../assets/fonts/Chicago6pt7b.h"
+#include "../assets/fonts/Chicago7pt7b.h"
+#include "../assets/fonts/Chicago8pt7b.h"
+
 class Display
 {
 public:

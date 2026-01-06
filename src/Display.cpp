@@ -23,11 +23,11 @@ Display::Display(Adafruit_SSD1306 *oled)
 bool Display::Begin()
 {
   oled_->clearDisplay();
-  oled_->setTextSize(2);
+  oled_->setFont(&Chicago5pt7b);
   oled_->setTextColor(SSD1306_WHITE);
-  oled_->setCursor(0, 0);
+  oled_->setCursor(0, 15);
   oled_->println("DRYER");
-  oled_->setCursor(0, 20);
+  oled_->setCursor(0, 35);
   oled_->println("INIT...");
 
   Serial.println("About to refresh display with init message...");
@@ -67,11 +67,11 @@ void Display::RenderHomePage()
   uint32_t y = padding;
 
   // Init
-  oled_->setTextSize(1);
   oled_->setTextColor(SSD1306_WHITE);
 
   // Global elapsed time
-  oled_->setCursor(padding, y);
+  oled_->setFont(&Chicago5pt7b);
+  oled_->setCursor(padding, y + 10);
   oled_->print(FormatDuration(total_duty_time_));
 
   // Progress bar global
@@ -86,12 +86,13 @@ void Display::RenderHomePage()
   oled_->drawLine(padding + 1, y, bar_end, y, SSD1306_WHITE);
 
   // Phase name
-  y = y + 3U;
-  oled_->setCursor(padding, y);
+  y = y + 1U;
+  oled_->setFont(&Chicago5pt7b);
+  oled_->setCursor(padding, y + 11);
   oled_->print(phase_name_);
 
   // Progress bar phase
-  y = y + 13U;
+  y = y + 15U;
   oled_->drawRect(padding, y, progress_bar_width, progress_bar_height,
                   SSD1306_WHITE);
   y = y + 1U;
@@ -103,13 +104,15 @@ void Display::RenderHomePage()
 
   // Inlet air data
   y = y + 4U;
-  oled_->setCursor(padding, y);
+  oled_->setFont(&Chicago6pt7b);
+  oled_->setCursor(padding, y + 11);
   oled_->print(
       FormatTemperaturePercent(inlet_air_temperature_, inlet_air_humidity_));
 
   // Outlet air data
   y = y + 15U;
-  oled_->setCursor(padding, y);
+  oled_->setFont(&Chicago6pt7b);
+  oled_->setCursor(padding, y + 11);
   oled_->print(
       FormatTemperaturePercent(outlet_air_temperature_, outlet_air_humidity_));
 
@@ -122,16 +125,16 @@ void Display::RenderHomePage()
   uint32_t x_recycling = oled_->width() - padding - icon_recycling_width;
   oled_->drawXBitmap(x_recycling, y, icon_recycling_bits, icon_recycling_width,
                      icon_recycling_height, SSD1306_WHITE);
-  oled_->setTextSize(1);
-  PrintAlignedRight(x_recycling - 2U, y + 1U, FormatPercent(recycling_rate_));
+  oled_->setFont(&Chicago5pt7b);
+  PrintAlignedRight(x_recycling - 2U, y + 11, FormatPercent(recycling_rate_));
 
   // Ventilation icon and state
   y = y + icon_size + icon_vertical_margin;
   uint32_t x_fan = oled_->width() - padding - icon_fan_width;
   oled_->drawXBitmap(x_fan, y, icon_fan_bits, icon_fan_width, icon_fan_height,
                      SSD1306_WHITE);
-  oled_->setTextSize(1);
-  PrintAlignedRight(x_fan - 2U, y + 1U, FormatPercent(ventilation_state_));
+  oled_->setFont(&Chicago4pt7b);
+  PrintAlignedRight(x_fan - 2U, y + 10, GetStateStr(ventilation_state_));
 
   // Hydraulic heater icon, power, and temperature
   y = y + icon_size + icon_vertical_margin;
@@ -140,20 +143,20 @@ void Display::RenderHomePage()
                      icon_water_height, SSD1306_WHITE);
 
   // Hydraulic power percentage
-  oled_->setTextSize(1);
-  PrintAlignedRight(x_water - 1U, y - 4U, FormatPercent(hydraulic_heater_power_));
+  oled_->setFont(&Chicago5pt7b);
+  PrintAlignedRight(x_water - 1U, y + 6, FormatPercent(hydraulic_heater_power_));
 
   // Water temperature
-  oled_->setTextSize(1);
-  PrintAlignedRight(x_water - 2U, y - 3U + 10U, FormatTemperature(water_temperature_));
+  oled_->setFont(&Chicago5pt7b);
+  PrintAlignedRight(x_water - 2U, y + 17, FormatTemperature(water_temperature_));
 
   // Electric heater icon and state
   y = y + icon_size + icon_vertical_margin;
   uint32_t x_electric = oled_->width() - padding - icon_electric_width;
   oled_->drawXBitmap(x_electric, y, icon_electric_bits, icon_electric_width,
                      icon_electric_height, SSD1306_WHITE);
-  oled_->setTextSize(1);
-  PrintAlignedRight(x_electric - 2U, y + 3U, GetStateStr(electric_heater_state_));
+  oled_->setFont(&Chicago4pt7b);
+  PrintAlignedRight(x_electric - 2U, y + 12, GetStateStr(electric_heater_state_));
 
   oled_->display();
 }
@@ -259,13 +262,13 @@ void Display::DrawMenuLine(uint8_t line_index, const char *text, bool selected)
 
   uint8_t y_position = line_index * 12; // 12 pixels per line
 
-  oled_->setTextSize(1);
-  oled_->setCursor(0, y_position);
+  oled_->setFont(&Chicago5pt7b);
+  oled_->setCursor(0, y_position + 10);
 
   if (selected)
   {
     // Draw inverted rectangle for selected item
-    oled_->fillRect(0, y_position, oled_->width(), 10, SSD1306_WHITE);
+    oled_->fillRect(0, y_position, oled_->width(), 12, SSD1306_WHITE);
     oled_->setTextColor(SSD1306_BLACK, SSD1306_WHITE);
   }
   else
