@@ -51,26 +51,28 @@ unsigned long last_control_update = 0;
 // Water temperature sensor async variables
 unsigned long water_temp_request_time = 0;
 bool water_temp_conversion_started = false;
-static constexpr unsigned long WATER_TEMP_CONVERSION_TIME = 750;  // 750ms for 12-bit resolution
+static constexpr unsigned long WATER_TEMP_CONVERSION_TIME = 750; // 750ms for 12-bit resolution
 
 int encoder_position = 0;
 int last_encoder_position = 0;
 
 // ========== INTERRUPTS ==========
 
-void EncoderISR() {
+void EncoderISR()
+{
   encoder.tick();
 }
 
 // ========== SETUP FUNCTIONS ==========
 
-void SetupPins() {
+void SetupPins()
+{
   // Buttons with debounce
   button_start.attach(BUTTON_START_PIN, INPUT_PULLUP);
-  button_start.interval(50);  // 50ms debounce interval
+  button_start.interval(50); // 50ms debounce interval
 
   button_encoder.attach(ROTARY_ENCODER_SW_PIN, INPUT_PULLUP);
-  button_encoder.interval(50);  // 50ms debounce interval
+  button_encoder.interval(50); // 50ms debounce interval
 
   // LEDs
   pinMode(STOP_LED_PIN, OUTPUT);
@@ -92,7 +94,8 @@ void SetupPins() {
   digitalWrite(ELECTRIC_HEATER_LED_PIN, LOW);
 }
 
-void SetupI2C() {
+void SetupI2C()
+{
   i2c_bus_1.begin();
   i2c_bus_1.setClock(400000);
 
@@ -102,23 +105,30 @@ void SetupI2C() {
   Serial.println("I2C buses initialized");
 }
 
-void SetupSensors() {
+void SetupSensors()
+{
   // CHT8305 sensors
-  if (inlet_air_sensor.begin() != 0) {
+  if (inlet_air_sensor.begin() != 0)
+  {
     Serial.println("ERROR: Inlet air sensor not found!");
-  } else if (!inlet_air_sensor.isConnected()) {
+  }
+  else if (!inlet_air_sensor.isConnected())
+  {
     Serial.println("ERROR: Inlet air sensor not connected!");
   }
 
-  if (outlet_air_sensor.begin() != 0) {
+  if (outlet_air_sensor.begin() != 0)
+  {
     Serial.println("ERROR: Outlet air sensor not found!");
-  } else if (!outlet_air_sensor.isConnected()) {
+  }
+  else if (!outlet_air_sensor.isConnected())
+  {
     Serial.println("ERROR: Outlet air sensor not connected!");
   }
 
   // Water temperature sensor
   water_temperature_sensor.begin();
-  water_temperature_sensor.setWaitForConversion(false);  // Async mode
+  water_temperature_sensor.setWaitForConversion(false); // Async mode
   Serial.print("Found ");
   Serial.print(water_temperature_sensor.getDeviceCount());
   Serial.println(" OneWire devices (async mode enabled)");
@@ -126,7 +136,8 @@ void SetupSensors() {
 
 // ========== MAIN SETUP ==========
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   delay(1000);
 
@@ -138,7 +149,8 @@ void setup() {
   SetupI2C();
 
   // Initialize display
-  if (!display.Begin()) {
+  if (!display.Begin())
+  {
     Serial.println("ERROR: Display initialization failed!");
   }
 
@@ -159,36 +171,44 @@ void setup() {
 
 // ========== LOOP FUNCTIONS ==========
 
-void UpdateSensors() {
+void UpdateSensors()
+{
   unsigned long now = millis();
 
-  if (now - last_sensor_update >= SENSOR_UPDATE_INTERVAL) {
+  if (now - last_sensor_update >= SENSOR_UPDATE_INTERVAL)
+  {
     last_sensor_update = now;
 
     // Update CHT8305 sensors
-    if (inlet_air_sensor.read() == CHT8305_OK) {
+    if (inlet_air_sensor.read() == CHT8305_OK)
+    {
       dryer.SetInletTemperature(inlet_air_sensor.getTemperature());
       dryer.SetInletHumidity(inlet_air_sensor.getHumidity());
     }
 
-    if (outlet_air_sensor.read() == CHT8305_OK) {
+    if (outlet_air_sensor.read() == CHT8305_OK)
+    {
       dryer.SetOutletTemperature(outlet_air_sensor.getTemperature());
       dryer.SetOutletHumidity(outlet_air_sensor.getHumidity());
     }
 
     // Update water temperature sensor (async mode)
-    if (!water_temp_conversion_started) {
+    if (!water_temp_conversion_started)
+    {
       // Start temperature conversion (non-blocking)
       water_temperature_sensor.requestTemperatures();
       water_temp_request_time = millis();
       water_temp_conversion_started = true;
-    } else if (millis() - water_temp_request_time >= WATER_TEMP_CONVERSION_TIME) {
+    }
+    else if (millis() - water_temp_request_time >= WATER_TEMP_CONVERSION_TIME)
+    {
       // Read temperature after conversion time has elapsed
       float water_temperature = water_temperature_sensor.getTempCByIndex(0);
-      if (water_temperature != DEVICE_DISCONNECTED_C) {
+      if (water_temperature != DEVICE_DISCONNECTED_C)
+      {
         dryer.SetWaterTemperature(water_temperature);
       }
-      water_temp_conversion_started = false;  // Ready for next conversion
+      water_temp_conversion_started = false; // Ready for next conversion
     }
 
     // Log values
@@ -204,17 +224,22 @@ void UpdateSensors() {
   }
 }
 
-void UpdateInputs() {
+void UpdateInputs()
+{
   // Update debounce state
   button_start.update();
   button_encoder.update();
 
   // Start/Stop button
-  if (button_start.fell()) {
+  if (button_start.fell())
+  {
     // Button pressed (transition from HIGH to LOW)
-    if (dryer.IsRunning()) {
+    if (dryer.IsRunning())
+    {
       dryer.Stop();
-    } else {
+    }
+    else
+    {
       dryer.Start();
     }
   }
@@ -223,28 +248,41 @@ void UpdateInputs() {
   encoder.tick();
   encoder_position = encoder.getPosition();
 
-  if (encoder_position != last_encoder_position) {
+  if (encoder_position != last_encoder_position)
+  {
     int delta = encoder_position - last_encoder_position;
     last_encoder_position = encoder_position;
 
-    if (menu.IsActive()) {
+    if (menu.IsActive())
+    {
       // Menu navigation or value adjustment
-      if (menu.IsEditing()) {
+      if (menu.IsEditing())
+      {
         // Adjust value in edit mode
-        if (delta > 0) {
+        if (delta > 0)
+        {
           menu.GetCurrentItem()->OnIncrement(&menu);
-        } else {
+        }
+        else
+        {
           menu.GetCurrentItem()->OnDecrement(&menu);
         }
-      } else {
+      }
+      else
+      {
         // Navigate menu
-        if (delta > 0) {
+        if (delta > 0)
+        {
           menu.Down();
-        } else {
+        }
+        else
+        {
           menu.Up();
         }
       }
-    } else {
+    }
+    else
+    {
       // Adjust target temperature when menu not active
       float new_target = dryer.GetTargetTemperature() + (delta * 0.5);
       dryer.SetTargetTemperature(new_target);
@@ -252,17 +290,22 @@ void UpdateInputs() {
   }
 
   // Encoder button
-  if (button_encoder.fell()) {
+  if (button_encoder.fell())
+  {
     // Button pressed (transition from HIGH to LOW)
-    if (menu.IsActive()) {
+    if (menu.IsActive())
+    {
       menu.Enter();
-    } else {
+    }
+    else
+    {
       menu.Show();
     }
   }
 }
 
-void UpdateOutputs() {
+void UpdateOutputs()
+{
   // Update relays
   digitalWrite(ELECTRIC_HEATER_RELAY_PIN, dryer.GetHeaterOutput() > 0.5 ? HIGH : LOW);
   digitalWrite(FAN_RELAY_PIN, dryer.GetFanOutput() > 0.0 ? HIGH : LOW);
@@ -276,17 +319,21 @@ void UpdateOutputs() {
   digitalWrite(ELECTRIC_HEATER_LED_PIN, dryer.GetHeaterOutput() > 0.5 ? HIGH : LOW);
 }
 
-void UpdateDisplay() {
+void UpdateDisplay()
+{
   unsigned long now = millis();
 
-  if (now - last_display_update >= DISPLAY_UPDATE_INTERVAL) {
+  if (now - last_display_update >= DISPLAY_UPDATE_INTERVAL)
+  {
     last_display_update = now;
 
-    if (menu.IsActive()) {
+    if (menu.IsActive())
+    {
       // Render menu
       menu.Render();
-    } else {
-      // Render home page with ESPHome layout
+    }
+    else
+    {
       // Time tracking
       display.SetTotalDutyTime(dryer.GetTotalDutyTime());
       display.SetPhaseDutyTime(dryer.GetPhasesManager()->GetPhaseElapsedTime() / 1000);
@@ -302,13 +349,11 @@ void UpdateDisplay() {
 
       // Air data
       display.SetInletAirData(
-        dryer.GetInletTemperature(),
-        inlet_air_sensor.getHumidity()
-      );
+          dryer.GetInletTemperature(),
+          inlet_air_sensor.getHumidity());
       display.SetOutletAirData(
-        dryer.GetOutletTemperature(),
-        outlet_air_sensor.getHumidity()
-      );
+          dryer.GetOutletTemperature(),
+          outlet_air_sensor.getHumidity());
 
       // Right side icons and values
       display.SetRecyclingRate(dryer.GetRecyclingRate());
@@ -325,10 +370,12 @@ void UpdateDisplay() {
   }
 }
 
-void UpdateControl() {
+void UpdateControl()
+{
   unsigned long now = millis();
 
-  if (now - last_control_update >= CONTROL_LOOP_INTERVAL) {
+  if (now - last_control_update >= CONTROL_LOOP_INTERVAL)
+  {
     last_control_update = now;
     dryer.Update();
   }
@@ -336,7 +383,8 @@ void UpdateControl() {
 
 // ========== MAIN LOOP ==========
 
-void loop() {
+void loop()
+{
   UpdateSensors();
   UpdateInputs();
   UpdateControl();
