@@ -48,6 +48,10 @@ unsigned long last_sensor_update = 0;
 unsigned long last_display_update = 0;
 unsigned long last_control_update = 0;
 
+// Water temperature sensor async variables
+unsigned long water_temp_request_time = 0;
+bool water_temp_conversion_started = false;
+static constexpr unsigned long WATER_TEMP_CONVERSION_TIME = 750;  // 750ms for 12-bit resolution
 
 int encoder_position = 0;
 int last_encoder_position = 0;
@@ -114,9 +118,10 @@ void SetupSensors() {
 
   // Water temperature sensor
   water_temperature_sensor.begin();
+  water_temperature_sensor.setWaitForConversion(false);  // Async mode
   Serial.print("Found ");
   Serial.print(water_temperature_sensor.getDeviceCount());
-  Serial.println(" OneWire devices");
+  Serial.println(" OneWire devices (async mode enabled)");
 }
 
 // ========== MAIN SETUP ==========
@@ -171,11 +176,19 @@ void UpdateSensors() {
       dryer.SetOutletHumidity(outlet_air_sensor.getHumidity());
     }
 
-    // Update water temperature sensor
-    water_temperature_sensor.requestTemperatures();
-    float water_temperature = water_temperature_sensor.getTempCByIndex(0);
-    if (water_temperature != DEVICE_DISCONNECTED_C) {
-      dryer.SetWaterTemperature(water_temperature);
+    // Update water temperature sensor (async mode)
+    if (!water_temp_conversion_started) {
+      // Start temperature conversion (non-blocking)
+      water_temperature_sensor.requestTemperatures();
+      water_temp_request_time = millis();
+      water_temp_conversion_started = true;
+    } else if (millis() - water_temp_request_time >= WATER_TEMP_CONVERSION_TIME) {
+      // Read temperature after conversion time has elapsed
+      float water_temperature = water_temperature_sensor.getTempCByIndex(0);
+      if (water_temperature != DEVICE_DISCONNECTED_C) {
+        dryer.SetWaterTemperature(water_temperature);
+      }
+      water_temp_conversion_started = false;  // Ready for next conversion
     }
 
     // Log values
@@ -302,12 +315,8 @@ void UpdateDisplay() {
       display.SetVentilationState(dryer.GetFanOutput() > 0.0);
       display.SetHydraulicHeaterPower(dryer.GetCirculatorOutput() * 100.0);
 
-      // Get water temperature from sensor
-      water_temperature_sensor.requestTemperatures();
-      float water_temp = water_temperature_sensor.getTempCByIndex(0);
-      if (water_temp != DEVICE_DISCONNECTED_C) {
-        display.SetWaterTemperature(water_temp);
-      }
+      // Get water temperature from dryer (already updated in UpdateSensors)
+      display.SetWaterTemperature(dryer.GetWaterTemperature());
 
       display.SetElectricHeaterPower(dryer.GetHeaterOutput() > 0.5);
 

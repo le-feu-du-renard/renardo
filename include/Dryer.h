@@ -41,6 +41,7 @@ class Dryer {
 
   float GetInletTemperature() const { return inlet_temperature_; }
   float GetOutletTemperature() const { return outlet_temperature_; }
+  float GetWaterTemperature() const { return water_temperature_; }
   float GetTargetTemperature() const;
 
   // Humidity
