@@ -2,7 +2,7 @@
 #define AIR_RECYCLING_MANAGER_H
 
 #include <Arduino.h>
-#include "GP8403.h"
+#include <DFRobot_GP8403.h>
 
 /**
  * Manages air recycling rate control using DAC GP8403
@@ -17,10 +17,10 @@ class AirRecyclingManager {
  public:
   /**
    * Constructor
-   * @param dac Pointer to GP8403 DAC instance
-   * @param channel DAC channel to use (default: Channel 0)
+   * @param dac Pointer to DFRobot_GP8403 DAC instance
+   * @param channel DAC channel to use (0 or 1)
    */
-  AirRecyclingManager(GP8403* dac, GP8403::Channel channel = GP8403::kChannel0);
+  AirRecyclingManager(DFRobot_GP8403* dac, uint8_t channel = 0);
 
   /**
    * Initialize the air recycling manager
@@ -48,9 +48,10 @@ class AirRecyclingManager {
   static constexpr float kMinRecyclingRate = 0.0f;
   static constexpr float kMaxRecyclingRate = 100.0f;
   static constexpr float kDefaultRecyclingRate = 50.0f;
+  static constexpr uint16_t kMaxDacValue = 4095;  // 12-bit DAC
 
-  GP8403* dac_;
-  GP8403::Channel channel_;
+  DFRobot_GP8403* dac_;
+  uint8_t channel_;
   float recycling_rate_;
 
   void ApplyRecyclingRate();

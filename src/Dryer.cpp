@@ -28,7 +28,12 @@ void Dryer::Begin() {
   i2c_bus_2_.begin();
 
   // Initialize DAC
-  dac_.Begin(GP8403::kRange0To10V);
+  if (dac_.begin() != 0) {
+    Serial.println("Failed to initialize GP8403 DAC");
+  } else {
+    dac_.setDACOutRange(DFRobot_GP8403::eOutputRange10V);
+    Serial.println("GP8403 DAC initialized with 0-10V range");
+  }
 
   // Initialize managers
   heaters_manager_.Begin();

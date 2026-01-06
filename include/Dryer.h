@@ -8,8 +8,10 @@
 #include "HeatersManager.h"
 #include "PhasesManager.h"
 #include "SettingsManager.h"
-#include "GP8403.h"
 #include "AirRecyclingManager.h"
+
+// Forward declaration
+class DFRobot_GP8403;
 
 /**
  * Main dryer controller
@@ -100,7 +102,7 @@ class Dryer {
 
   // I2C and DAC
   TwoWire i2c_bus_2_;
-  GP8403 dac_;
+  DFRobot_GP8403 dac_;
   AirRecyclingManager air_recycling_manager_;
 
   // State

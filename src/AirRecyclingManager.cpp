@@ -1,6 +1,6 @@
 #include "AirRecyclingManager.h"
 
-AirRecyclingManager::AirRecyclingManager(GP8403* dac, GP8403::Channel channel)
+AirRecyclingManager::AirRecyclingManager(DFRobot_GP8403* dac, uint8_t channel)
   : dac_(dac),
     channel_(channel),
     recycling_rate_(kDefaultRecyclingRate) {
@@ -35,7 +35,8 @@ void AirRecyclingManager::Update() {
 }
 
 void AirRecyclingManager::ApplyRecyclingRate() {
-  // Convert recycling rate (0-100%) to DAC output
+  // Convert recycling rate (0-100%) to DAC value (0-4095)
   // The DAC will output a voltage proportional to the recycling rate
-  dac_->SetPercent(channel_, recycling_rate_);
+  uint16_t dac_value = static_cast<uint16_t>((recycling_rate_ / 100.0f) * kMaxDacValue);
+  dac_->setDACOutVoltage(dac_value, channel_);
 }
