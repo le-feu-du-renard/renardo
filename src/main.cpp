@@ -370,31 +370,57 @@ void UpdateEncoderInputs()
 
 void UpdateOutputs()
 {
-  // Update relays
+  // Static state to track previous values
+  static bool last_heater_state = LOW;
+  static bool last_fan_state = LOW;
+  static uint8_t last_circulator_pwm = 0;
+  static bool first_run = true;
+
+  // Calculate new states
   bool heater_state = dryer.GetHeaterOutput() > 0.5 ? HIGH : LOW;
   bool fan_state = dryer.GetFanOutput() > 0.0 ? HIGH : LOW;
-  digitalWrite(ELECTRIC_HEATER_RELAY_PIN, heater_state);
-  digitalWrite(FAN_RELAY_PIN, fan_state);
 
   // Update circulator PWM (0-255)
   // Signal is inverted because we use a PNP transistor (2N2222)
   uint8_t circulator_pwm = (1.0f - dryer.GetCirculatorOutput()) * 255;
-  analogWrite(WATER_CIRCULATOR_PWM_PIN, circulator_pwm);
 
-  // // Log output values
-  // Serial.print("Outputs - Heater: ");
-  // Serial.print(heater_state ? "ON" : "OFF");
-  // Serial.print(" (");
-  // Serial.print(dryer.GetHeaterOutput() * 100.0f);
-  // Serial.print("%), Fan: ");
-  // Serial.print(fan_state ? "ON" : "OFF");
-  // Serial.print(" (");
-  // Serial.print(dryer.GetFanOutput() * 100.0f);
-  // Serial.print("%), Circulator PWM: ");
-  // Serial.print(circulator_pwm);
-  // Serial.print("/255 (");
-  // Serial.print(dryer.GetCirculatorOutput() * 100.0f);
-  // Serial.println("%)");
+  // Update heater if changed
+  if (first_run || heater_state != last_heater_state) {
+    digitalWrite(ELECTRIC_HEATER_RELAY_PIN, heater_state);
+    last_heater_state = heater_state;
+
+    Serial.print("Output changed - Heater: ");
+    Serial.print(heater_state ? "ON" : "OFF");
+    Serial.print(" (");
+    Serial.print(dryer.GetHeaterOutput() * 100.0f);
+    Serial.println("%)");
+  }
+
+  // Update fan if changed
+  if (first_run || fan_state != last_fan_state) {
+    digitalWrite(FAN_RELAY_PIN, fan_state);
+    last_fan_state = fan_state;
+
+    Serial.print("Output changed - Fan: ");
+    Serial.print(fan_state ? "ON" : "OFF");
+    Serial.print(" (");
+    Serial.print(dryer.GetFanOutput() * 100.0f);
+    Serial.println("%)");
+  }
+
+  // Update circulator if changed (with tolerance of ±1 to avoid jitter)
+  if (first_run || abs(circulator_pwm - last_circulator_pwm) > 1) {
+    analogWrite(WATER_CIRCULATOR_PWM_PIN, circulator_pwm);
+    last_circulator_pwm = circulator_pwm;
+
+    Serial.print("Output changed - Circulator PWM: ");
+    Serial.print(circulator_pwm);
+    Serial.print("/255 (");
+    Serial.print(dryer.GetCirculatorOutput() * 100.0f);
+    Serial.println("%)");
+  }
+
+  first_run = false;
 }
 
 void UpdateDisplay()
