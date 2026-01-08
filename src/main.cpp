@@ -401,11 +401,29 @@ void UpdateEncoderInputs()
 void UpdateOutputs()
 {
   // Update relays
-  digitalWrite(ELECTRIC_HEATER_RELAY_PIN, dryer.GetHeaterOutput() > 0.5 ? HIGH : LOW);
-  digitalWrite(FAN_RELAY_PIN, dryer.GetFanOutput() > 0.0 ? HIGH : LOW);
+  bool heater_state = dryer.GetHeaterOutput() > 0.5 ? HIGH : LOW;
+  bool fan_state = dryer.GetFanOutput() > 0.0 ? HIGH : LOW;
+  digitalWrite(ELECTRIC_HEATER_RELAY_PIN, heater_state);
+  digitalWrite(FAN_RELAY_PIN, fan_state);
 
   // Update circulator PWM (0-255)
-  analogWrite(WATER_CIRCULATOR_PWM_PIN, dryer.GetCirculatorOutput() * 255);
+  uint8_t circulator_pwm = dryer.GetCirculatorOutput() * 255;
+  analogWrite(WATER_CIRCULATOR_PWM_PIN, circulator_pwm);
+
+  // // Log output values
+  // Serial.print("Outputs - Heater: ");
+  // Serial.print(heater_state ? "ON" : "OFF");
+  // Serial.print(" (");
+  // Serial.print(dryer.GetHeaterOutput() * 100.0f);
+  // Serial.print("%), Fan: ");
+  // Serial.print(fan_state ? "ON" : "OFF");
+  // Serial.print(" (");
+  // Serial.print(dryer.GetFanOutput() * 100.0f);
+  // Serial.print("%), Circulator PWM: ");
+  // Serial.print(circulator_pwm);
+  // Serial.print("/255 (");
+  // Serial.print(dryer.GetCirculatorOutput() * 100.0f);
+  // Serial.println("%)");
 
   // Update LEDs
   digitalWrite(STOP_LED_PIN, !dryer.IsRunning() ? HIGH : LOW);
