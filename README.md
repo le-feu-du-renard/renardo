@@ -12,10 +12,15 @@ pio test -vvv -e native
 
 ## generate fonts
 
+https://rop.nl/truetype2gfx/
+
 ## generate icons
 
 TODO:
 
+- enlever les leds
+- ajouter feature pour demarrer via le click du rotary encoder (qui servira a start/stop/pause/reset)
+supprimer le bouton start
 - ajouter params cycle curation configurable
 - s'assurer que les barres de progression fonctionnent
 
