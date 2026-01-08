@@ -377,7 +377,8 @@ void UpdateOutputs()
   digitalWrite(FAN_RELAY_PIN, fan_state);
 
   // Update circulator PWM (0-255)
-  uint8_t circulator_pwm = dryer.GetCirculatorOutput() * 255;
+  // Signal is inverted because we use a PNP transistor (2N2222)
+  uint8_t circulator_pwm = (1.0f - dryer.GetCirculatorOutput()) * 255;
   analogWrite(WATER_CIRCULATOR_PWM_PIN, circulator_pwm);
 
   // // Log output values
