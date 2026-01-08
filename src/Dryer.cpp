@@ -63,9 +63,16 @@ void Dryer::Stop()
   {
     Serial.println("Stopping dryer...");
     running_ = false;
-    phases_manager_.SetPhase(DryerPhase::kStop);
 
-    // Save final state and duty time to EEPROM
+    // Reset state (phase, duty times) but keep parameters
+    phases_manager_.SetPhase(DryerPhase::kStop);
+    total_duty_time_s_ = 0;
+    start_time_ = 0;
+    last_duty_time_save_ = 0;
+
+    Serial.println("Dryer state reset (duty times cleared, parameters preserved)");
+
+    // Save reset state to EEPROM
     SaveSettings();
   }
 }
