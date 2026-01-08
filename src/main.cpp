@@ -101,11 +101,6 @@ void SetupPins()
   attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_CLK_PIN), EncoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_DT_PIN), EncoderISR, CHANGE);
 
-  // LEDs
-  pinMode(STOP_LED_PIN, OUTPUT);
-  pinMode(START_LED_PIN, OUTPUT);
-  pinMode(ELECTRIC_HEATER_LED_PIN, OUTPUT);
-
   // Relays
   pinMode(ELECTRIC_HEATER_RELAY_PIN, OUTPUT);
   pinMode(FAN_RELAY_PIN, OUTPUT);
@@ -116,9 +111,6 @@ void SetupPins()
   // Initial output state
   digitalWrite(ELECTRIC_HEATER_RELAY_PIN, LOW);
   digitalWrite(FAN_RELAY_PIN, LOW);
-  digitalWrite(STOP_LED_PIN, HIGH);
-  digitalWrite(START_LED_PIN, LOW);
-  digitalWrite(ELECTRIC_HEATER_LED_PIN, LOW);
 }
 
 void ScanI2C(TwoWire &bus, const char *bus_name)
@@ -424,11 +416,6 @@ void UpdateOutputs()
   // Serial.print("/255 (");
   // Serial.print(dryer.GetCirculatorOutput() * 100.0f);
   // Serial.println("%)");
-
-  // Update LEDs
-  digitalWrite(STOP_LED_PIN, !dryer.IsRunning() ? HIGH : LOW);
-  digitalWrite(START_LED_PIN, dryer.IsRunning() ? HIGH : LOW);
-  digitalWrite(ELECTRIC_HEATER_LED_PIN, dryer.GetHeaterOutput() > 0.5 ? HIGH : LOW);
 }
 
 void UpdateDisplay()

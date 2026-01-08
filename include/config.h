@@ -29,11 +29,6 @@
 // OneWire (Water Temperature)
 #define WATER_SENSOR_PIN 6
 
-// LEDs
-#define STOP_LED_PIN 20
-#define START_LED_PIN 19
-#define ELECTRIC_HEATER_LED_PIN 18
-
 // Screen
 #define SCREEN_SSD1306_ADDR 0x3C
 #define SCREEN_WIDTH 128
