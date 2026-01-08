@@ -13,9 +13,6 @@
 #define I2C_BUS_2_SDA_PIN 10
 #define I2C_BUS_2_SCL_PIN 11
 
-// Buttons
-#define BUTTON_START_PIN 21
-
 // Rotary Encoder
 #define ROTARY_ENCODER_SW_PIN 7
 #define ROTARY_ENCODER_CLK_PIN 8

@@ -1,6 +1,60 @@
 #include "MenuStructure.h"
 
-// ========== S1 Chauffage (Heating) Menu ==========
+// ========== S1 Opérations Menu ==========
+// We need to dynamically build this menu based on dryer state
+// For now, we'll use a custom submenu class or rebuild logic
+
+class DynamicOperationsSubmenu : public SubmenuItem {
+public:
+  DynamicOperationsSubmenu()
+    : SubmenuItem("S1 Operations", nullptr, 0),
+      start_item_("Demarrer", MenuStructure::StartDryerCommand),
+      stop_item_("Arreter", MenuStructure::StopDryerCommand),
+      restart_item_("Redemarrer", MenuStructure::RestartDryerCommand),
+      back_item_("Retour") {}
+
+  void OnEnter(MenuSystem* menu) override {
+    // Rebuild menu items based on dryer state
+    Dryer* dryer = menu->GetDryer();
+    bool running = dryer->IsRunning();
+
+    items_buffer_[0] = nullptr;
+    items_buffer_[1] = nullptr;
+    items_buffer_[2] = nullptr;
+    items_buffer_[3] = nullptr;
+
+    uint8_t count = 0;
+
+    if (!running) {
+      // Show only "Demarrer" when stopped
+      items_buffer_[count++] = &start_item_;
+    } else {
+      // Show "Arreter" and "Redemarrer" when running
+      items_buffer_[count++] = &stop_item_;
+      items_buffer_[count++] = &restart_item_;
+    }
+
+    items_buffer_[count++] = &back_item_;
+
+    // Update parent class members
+    items_ = items_buffer_;
+    item_count_ = count;
+
+    // Call parent OnEnter
+    menu->EnterSubmenu(items_, item_count_);
+  }
+
+private:
+  CommandMenuItem start_item_;
+  CommandMenuItem stop_item_;
+  CommandMenuItem restart_item_;
+  BackMenuItem back_item_;
+  MenuItem* items_buffer_[4];
+};
+
+static DynamicOperationsSubmenu operations_submenu;
+
+// ========== S2 Chauffage (Heating) Menu ==========
 static NumberMenuItem heating_item_temperature_target(
   "T cible",
   MenuStructure::GetTemperatureTarget,
@@ -56,12 +110,12 @@ static MenuItem* heating_items[] = {
 };
 
 static SubmenuItem heating_submenu(
-  "S1 Chauffage",
+  "S2 Chauffage",
   heating_items,
   sizeof(heating_items) / sizeof(heating_items[0])
 );
 
-// ========== S2 Cycle Menu ==========
+// ========== S3 Cycle Menu ==========
 static NumberMenuItem cycle_item_recycling_rate(
   "Taux recyclage",
   MenuStructure::GetRecyclingRate,
@@ -85,12 +139,12 @@ static MenuItem* cycle_items[] = {
 };
 
 static SubmenuItem cycle_submenu(
-  "S2 Cycle",
+  "S3 Cycle",
   cycle_items,
   sizeof(cycle_items) / sizeof(cycle_items[0])
 );
 
-// ========== S3 Phases Menu ==========
+// ========== S4 Phases Menu ==========
 static NumberMenuItem phases_item_init(
   "Init",
   MenuStructure::GetInitPhaseDuration,
@@ -122,7 +176,7 @@ static MenuItem* phases_items[] = {
 };
 
 static SubmenuItem phases_submenu(
-  "S3 Phases",
+  "S4 Phases",
   phases_items,
   sizeof(phases_items) / sizeof(phases_items[0])
 );
@@ -131,6 +185,7 @@ static SubmenuItem phases_submenu(
 static CommandMenuItem exit_command("Quitter", MenuStructure::ExitMenuCommand);
 
 static MenuItem* root_items[] = {
+  &operations_submenu,
   &heating_submenu,
   &cycle_submenu,
   &phases_submenu,
@@ -151,4 +206,32 @@ MenuItem* MenuStructure::BuildMenu() {
 
 void MenuStructure::ExitMenuCommand(MenuSystem* menu) {
   menu->Hide();
+}
+
+void MenuStructure::StartDryerCommand(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  if (!dryer->IsRunning()) {
+    Serial.println("Menu: Starting dryer...");
+    dryer->Start();
+    menu->Hide();  // Exit menu after starting
+  }
+}
+
+void MenuStructure::StopDryerCommand(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  if (dryer->IsRunning()) {
+    Serial.println("Menu: Stopping dryer...");
+    dryer->Stop();
+    menu->Hide();  // Exit menu after stopping
+  }
+}
+
+void MenuStructure::RestartDryerCommand(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  if (dryer->IsRunning()) {
+    Serial.println("Menu: Restarting dryer...");
+    dryer->Stop();
+    dryer->Start();
+    menu->Hide();  // Exit menu after restarting
+  }
 }

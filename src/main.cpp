@@ -45,7 +45,6 @@ Dryer dryer(&dac);
 MenuSystem menu(&dryer, &display);
 
 // Debounce objects
-Bounce button_start = Bounce();
 Bounce button_encoder = Bounce();
 
 // ========== GLOBAL VARIABLES ==========
@@ -86,10 +85,7 @@ void OnSettingsChanged()
 
 void SetupPins()
 {
-  // Buttons with debounce
-  button_start.attach(BUTTON_START_PIN, INPUT_PULLUP);
-  button_start.interval(50); // 50ms debounce interval
-
+  // Encoder button with debounce
   button_encoder.attach(ROTARY_ENCODER_SW_PIN, INPUT_PULLUP);
   button_encoder.interval(50); // 50ms debounce interval
 
@@ -302,25 +298,7 @@ void UpdateSensors()
 
 void UpdateInputs()
 {
-  // Update start/stop button debounce state
-  button_start.update();
-
-  // Start/Stop button
-  if (button_start.fell())
-  {
-    // Button pressed (transition from HIGH to LOW)
-    Serial.println(">>> START BUTTON PRESSED <<<");
-    if (dryer.IsRunning())
-    {
-      Serial.println("Button stop press");
-      dryer.Stop();
-    }
-    else
-    {
-      Serial.println("Button start press");
-      dryer.Start();
-    }
-  }
+  // This function is kept for future input handling if needed
 }
 
 void UpdateEncoderInputs()

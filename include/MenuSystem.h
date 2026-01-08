@@ -58,7 +58,7 @@ class SubmenuItem : public MenuItem {
   MenuItem** GetItems() const { return items_; }
   uint8_t GetItemCount() const { return item_count_; }
 
- private:
+ protected:
   MenuItem** items_;
   uint8_t item_count_;
 };
@@ -181,6 +181,7 @@ class MenuSystem {
   friend class NumberMenuItem;
   friend class SubmenuItem;
   friend class BackMenuItem;
+  friend class DynamicOperationsSubmenu;
 };
 
 #endif  // MENU_SYSTEM_H
