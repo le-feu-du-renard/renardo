@@ -18,14 +18,12 @@ https://rop.nl/truetype2gfx/
 
 TODO:
 
-- enlever les leds
-- ajouter feature pour demarrer via le click du rotary encoder (qui servira a start/stop/pause/reset)
-supprimer le bouton start
+- probleme de valeur de l'hydraulic heater : 10% et non 100%
+
 - ajouter params cycle curation configurable
-- s'assurer que les barres de progression fonctionnent
 
 - améliorer le menu : ajouter des unités + mettre en heure certains parametres
-- probleme de valeur de l'hydraulic heater : 10% et non 100%
+
 - ne pas armer le lock si pas de modification sur les heaters
 
 - long press pour reset sechoir

@@ -437,7 +437,7 @@ void UpdateDisplay()
       // Right side icons and values
       display.SetRecyclingRate(dryer.GetRecyclingRate());
       display.SetVentilationState(dryer.GetFanOutput() > 0.0);
-      display.SetHydraulicHeaterPower(dryer.GetCirculatorOutput() * 100.0);
+      display.SetHydraulicHeaterPower(dryer.GetHeatersManager()->GetHydraulicHeater()->GetPower());
 
       // Get water temperature from dryer (already updated in UpdateSensors)
       display.SetWaterTemperature(dryer.GetWaterTemperature());
