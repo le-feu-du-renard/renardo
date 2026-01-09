@@ -69,8 +69,8 @@ class HeatersManager {
   bool IsHeatingActionAllowed() const;
   void ArmHeatingActionCooldown();
 
-  void IncreaseHeating();
-  void DecreaseHeating();
+  bool IncreaseHeating();
+  bool DecreaseHeating();
 
   // Adaptive step calculation
   float CalculateStep() const;

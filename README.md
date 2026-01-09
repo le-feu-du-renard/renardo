@@ -18,16 +18,9 @@ https://rop.nl/truetype2gfx/
 
 TODO:
 
-- probleme de valeur de l'hydraulic heater : 10% et non 100%
-
 - ajouter params cycle curation configurable
-
 - améliorer le menu : ajouter des unités + mettre en heure certains parametres
-
-- ne pas armer le lock si pas de modification sur les heaters
-
 - long press pour reset sechoir
-
 - implementer support double coeur
 
 - permettre de gérer la strategy de chauffe par la config

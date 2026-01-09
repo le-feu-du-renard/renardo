@@ -28,16 +28,18 @@ void HeatersManager::Update(float current_temperature) {
   // Temperature too high - decrease heating
   if (IsTemperatureTooHigh()) {
     Serial.println("Temperature too high - decreasing heating");
-    DecreaseHeating();
-    ArmHeatingActionCooldown();
+    if (DecreaseHeating()) {
+      ArmHeatingActionCooldown();
+    }
     return;
   }
 
   // Temperature too low - increase heating
   if (IsTemperatureTooLow()) {
     Serial.println("Temperature too low - increasing heating");
-    IncreaseHeating();
-    ArmHeatingActionCooldown();
+    if (IncreaseHeating()) {
+      ArmHeatingActionCooldown();
+    }
     return;
   }
 
@@ -79,7 +81,7 @@ void HeatersManager::ArmHeatingActionCooldown() {
   Serial.println(heating_action_next_allowed_ms_);
 }
 
-void HeatersManager::IncreaseHeating() {
+bool HeatersManager::IncreaseHeating() {
   // Priority: Hydraulic first, then electric
   float hydraulic_power = hydraulic_heater_->GetPower();
 
@@ -96,6 +98,7 @@ void HeatersManager::IncreaseHeating() {
     Serial.print("% -> ");
     Serial.print(new_power);
     Serial.println("%");
+    return true;
   } else {
     // Hydraulic at max, turn on electric heater
     float electric_power = electric_heater_->GetPower();
@@ -103,13 +106,15 @@ void HeatersManager::IncreaseHeating() {
     if (electric_power < 1.0f) {
       electric_heater_->SetPower(1.0f);
       Serial.println("Turned on electric heater");
+      return true;
     } else {
       Serial.println("Both heaters at maximum - cannot increase");
+      return false;
     }
   }
 }
 
-void HeatersManager::DecreaseHeating() {
+bool HeatersManager::DecreaseHeating() {
   // Priority: Electric first, then hydraulic
   float electric_power = electric_heater_->GetPower();
 
@@ -117,6 +122,7 @@ void HeatersManager::DecreaseHeating() {
     // Turn off electric heater
     electric_heater_->SetPower(0.0f);
     Serial.println("Turned off electric heater");
+    return true;
   } else {
     // Electric off, decrease hydraulic heater
     float hydraulic_power = hydraulic_heater_->GetPower();
@@ -133,8 +139,10 @@ void HeatersManager::DecreaseHeating() {
       Serial.print("% -> ");
       Serial.print(new_power);
       Serial.println("%");
+      return true;
     } else {
       Serial.println("Both heaters at minimum - cannot decrease");
+      return false;
     }
   }
 }
