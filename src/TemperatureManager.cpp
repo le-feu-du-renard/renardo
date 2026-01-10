@@ -1,6 +1,6 @@
-#include "HeatersManager.h"
+#include "TemperatureManager.h"
 
-HeatersManager::HeatersManager(ElectricHeater* electric_heater, HydraulicHeater* hydraulic_heater)
+TemperatureManager::TemperatureManager(ElectricHeater* electric_heater, HydraulicHeater* hydraulic_heater)
   : electric_heater_(electric_heater),
     hydraulic_heater_(hydraulic_heater),
     params_(),
@@ -8,16 +8,16 @@ HeatersManager::HeatersManager(ElectricHeater* electric_heater, HydraulicHeater*
     current_temperature_(0.0f) {
 }
 
-void HeatersManager::Begin() {
+void TemperatureManager::Begin() {
   electric_heater_->Begin();
   hydraulic_heater_->Begin();
 
   heating_action_next_allowed_ms_ = 0;
 
-  Serial.println("Heaters manager initialized");
+  Serial.println("Temperature manager initialized");
 }
 
-void HeatersManager::Update(float current_temperature) {
+void TemperatureManager::Update(float current_temperature) {
   current_temperature_ = current_temperature;
 
   // Check if heating action is allowed
@@ -46,7 +46,7 @@ void HeatersManager::Update(float current_temperature) {
   // Temperature OK - no action needed
 }
 
-void HeatersManager::SetTargetTemperature(float temperature) {
+void TemperatureManager::SetTargetTemperature(float temperature) {
   // Clamp to valid range
   if (temperature < 20.0f) temperature = 20.0f;
   if (temperature > 45.0f) temperature = 45.0f;
@@ -54,34 +54,34 @@ void HeatersManager::SetTargetTemperature(float temperature) {
   params_.temperature_target = temperature;
 }
 
-void HeatersManager::ResetCooldown() {
+void TemperatureManager::ResetCooldown() {
   heating_action_next_allowed_ms_ = 0;
 }
 
-bool HeatersManager::IsTemperatureTooHigh() const {
+bool TemperatureManager::IsTemperatureTooHigh() const {
   return current_temperature_ > (params_.temperature_target + params_.temperature_deadband);
 }
 
-bool HeatersManager::IsTemperatureTooLow() const {
+bool TemperatureManager::IsTemperatureTooLow() const {
   return current_temperature_ < (params_.temperature_target - params_.temperature_deadband);
 }
 
-bool HeatersManager::IsTemperatureInRange() const {
+bool TemperatureManager::IsTemperatureInRange() const {
   return !IsTemperatureTooHigh() && !IsTemperatureTooLow();
 }
 
-bool HeatersManager::IsHeatingActionAllowed() const {
+bool TemperatureManager::IsHeatingActionAllowed() const {
   return millis() >= heating_action_next_allowed_ms_;
 }
 
-void HeatersManager::ArmHeatingActionCooldown() {
+void TemperatureManager::ArmHeatingActionCooldown() {
   heating_action_next_allowed_ms_ = millis() + (unsigned long)(params_.heating_action_min_wait_s * 1000.0f);
 
   Serial.print("Heating action cooldown armed - next allowed ms: ");
   Serial.println(heating_action_next_allowed_ms_);
 }
 
-bool HeatersManager::IncreaseHeating() {
+bool TemperatureManager::IncreaseHeating() {
   // Priority: Hydraulic first, then electric
   float hydraulic_power = hydraulic_heater_->GetPower();
 
@@ -114,7 +114,7 @@ bool HeatersManager::IncreaseHeating() {
   }
 }
 
-bool HeatersManager::DecreaseHeating() {
+bool TemperatureManager::DecreaseHeating() {
   // Priority: Electric first, then hydraulic
   float electric_power = electric_heater_->GetPower();
 
@@ -147,7 +147,7 @@ bool HeatersManager::DecreaseHeating() {
   }
 }
 
-float HeatersManager::CalculateStep() const {
+float TemperatureManager::CalculateStep() const {
   float diff_abs = fabs(params_.temperature_target - current_temperature_);
 
   // No step if within deadband

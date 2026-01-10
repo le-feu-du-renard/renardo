@@ -4,15 +4,15 @@
 Dryer::Dryer(DFRobot_GP8403 *dac)
     : electric_heater_(),
       hydraulic_heater_(),
-      heaters_manager_(&electric_heater_, &hydraulic_heater_),
-      phases_manager_(&heaters_manager_),
-      settings_manager_(),
+      temperature_manager_(&electric_heater_, &hydraulic_heater_),
       air_recycling_manager_(dac),
-      running_(false),
-      start_time_(0),
+      humidity_manager_(&air_recycling_manager_),
+      session_manager_(&temperature_manager_, &humidity_manager_),
+      settings_manager_(),
+      program_loader_(),
       total_duty_time_s_(0),
       last_duty_time_save_(0),
-      last_saved_phase_(DryerPhase::kStop),
+      start_time_(0),
       settings_changed_callback_(nullptr),
       inlet_temperature_(0.0f),
       outlet_temperature_(0.0f),
@@ -20,17 +20,34 @@ Dryer::Dryer(DFRobot_GP8403 *dac)
       inlet_humidity_(0.0f),
       outlet_humidity_(0.0f),
       fan_output_(0.0f),
-      last_heating_update_(0)
+      last_control_update_(0)
 {
 }
 
 void Dryer::Begin()
 {
   // Initialize managers
-  heaters_manager_.Begin();
-  phases_manager_.Begin();
-  settings_manager_.Begin();
+  temperature_manager_.Begin();
   air_recycling_manager_.Begin();
+  humidity_manager_.Begin();
+  session_manager_.Begin();
+  settings_manager_.Begin();
+
+  // Initialize program loader and load programs from LittleFS
+  if (program_loader_.Begin()) {
+    uint8_t count = program_loader_.LoadPrograms();
+    if (count > 0) {
+      // Set default program (first one loaded)
+      session_manager_.SetProgram(program_loader_.GetDefaultProgram());
+      Serial.print("Loaded ");
+      Serial.print(count);
+      Serial.println(" program(s) from LittleFS");
+    } else {
+      Serial.println("Warning: No programs found in /programs/");
+    }
+  } else {
+    Serial.println("Warning: Failed to initialize LittleFS");
+  }
 
   // Load settings from EEPROM
   LoadSettings();
@@ -40,14 +57,12 @@ void Dryer::Begin()
 
 void Dryer::Start()
 {
-  if (!running_)
+  if (!session_manager_.IsRunning())
   {
     Serial.println("Starting dryer...");
-    running_ = true;
     start_time_ = millis();
     last_duty_time_save_ = millis();
-    phases_manager_.SetPhase(DryerPhase::kInit);
-    last_saved_phase_ = DryerPhase::kInit;
+    session_manager_.Start();
 
     // Save state to EEPROM immediately
     settings_manager_.SaveDryerState(true);
@@ -59,13 +74,12 @@ void Dryer::Start()
 
 void Dryer::Stop()
 {
-  if (running_)
+  if (session_manager_.IsRunning())
   {
     Serial.println("Stopping dryer...");
-    running_ = false;
+    session_manager_.Stop();
 
-    // Reset state (phase, duty times) but keep parameters
-    phases_manager_.SetPhase(DryerPhase::kStop);
+    // Reset state (duty times) but keep parameters
     total_duty_time_s_ = 0;
     start_time_ = 0;
     last_duty_time_save_ = 0;
@@ -79,20 +93,10 @@ void Dryer::Stop()
 
 void Dryer::Update()
 {
-  if (!running_ && phases_manager_.GetPhase() != DryerPhase::kStop)
+  if (session_manager_.IsRunning())
   {
-    phases_manager_.SetPhase(DryerPhase::kStop);
-  }
-
-  if (running_)
-  {
-    // Serial.println("Updating dryer...");
-
-    // Update phases
-    phases_manager_.Update();
-
-    // Update heating control (with interval)
-    UpdateHeatingControl();
+    // Update control (with interval)
+    UpdateControl();
 
     // Update ventilation control
     UpdateVentilationControl();
@@ -102,74 +106,86 @@ void Dryer::Update()
 
     // Update duty time tracking
     UpdateDutyTime();
-
-    // Serial.println("Dryer updated!");
+  }
+  else
+  {
+    // Ensure outputs are off when not running
+    fan_output_ = 0.0f;
   }
 }
 
-void Dryer::UpdateHeatingControl()
+void Dryer::UpdateControl()
 {
   unsigned long now = millis();
 
-  if (now - last_heating_update_ >= kHeatingUpdateInterval)
+  if (now - last_control_update_ >= kControlUpdateInterval)
   {
-    last_heating_update_ = now;
+    last_control_update_ = now;
 
-    // Update temperature range status for phase manager
-    bool temperature_in_range = heaters_manager_.GetParams().temperature_deadband > 0.0f &&
-                                fabs(inlet_temperature_ - heaters_manager_.GetTargetTemperature()) <=
-                                    heaters_manager_.GetParams().temperature_deadband;
-    phases_manager_.SetTemperatureInRange(temperature_in_range);
+    // Update session manager with current sensor values
+    session_manager_.Update(inlet_temperature_, outlet_humidity_);
 
-    // Update heaters manager with current temperature
-    heaters_manager_.Update(inlet_temperature_);
+    // Update temperature manager with current temperature
+    temperature_manager_.Update(inlet_temperature_);
+
+    // Update humidity manager with current humidity values
+    humidity_manager_.Update(inlet_humidity_, outlet_humidity_);
   }
 }
 
 void Dryer::UpdateVentilationControl()
 {
-  // Fan control based on phase
-  DryerPhase phase = phases_manager_.GetPhase();
-
-  switch (phase)
+  // Fan is always on when session is running
+  if (session_manager_.IsRunning())
   {
-  case DryerPhase::kStop:
+    fan_output_ = 1.0f;
+  }
+  else
+  {
     fan_output_ = 0.0f;
-    break;
-
-  case DryerPhase::kInit:
-  case DryerPhase::kExtraction:
-  case DryerPhase::kCirculation:
-    fan_output_ = 1.0f; // Full speed when running
-    break;
   }
 }
 
 const char *Dryer::GetPhaseName() const
 {
-  return phases_manager_.GetPhaseName();
+  return session_manager_.GetCurrentPhaseName();
+}
+
+uint8_t Dryer::GetCurrentPhaseId() const
+{
+  return session_manager_.GetCurrentPhaseId();
+}
+
+uint8_t Dryer::GetCurrentCycleIndex() const
+{
+  return session_manager_.GetCurrentCycleIndex();
 }
 
 unsigned long Dryer::GetElapsedTime() const
 {
   unsigned long current_session_time = 0;
-  if (running_)
+  if (session_manager_.IsRunning())
   {
     current_session_time = (millis() - start_time_) / 1000;
   }
   return total_duty_time_s_ + current_session_time;
 }
 
+unsigned long Dryer::GetPhaseElapsedTime() const
+{
+  return session_manager_.GetPhaseElapsedTime();
+}
+
 void Dryer::SetTargetTemperature(float temperature)
 {
-  heaters_manager_.SetTargetTemperature(temperature);
+  temperature_manager_.SetTargetTemperature(temperature);
   Serial.print("Target temperature set to: ");
   Serial.println(temperature);
 }
 
 float Dryer::GetTargetTemperature() const
 {
-  return heaters_manager_.GetTargetTemperature();
+  return temperature_manager_.GetTargetTemperature();
 }
 
 float Dryer::GetHeaterOutput() const
@@ -197,12 +213,14 @@ void Dryer::UpdateDutyTime()
 
 void Dryer::SaveSettings()
 {
-  settings_manager_.SaveSettings(
-      running_,
-      phases_manager_.GetPhase(),
-      phases_manager_.GetPhaseElapsedTime(),
-      heaters_manager_.GetParams(),
-      phases_manager_.GetParams(),
+  // Save with new session state format
+  settings_manager_.SaveSessionState(
+      session_manager_.IsRunning(),
+      session_manager_.GetCurrentCycleIndex(),
+      session_manager_.GetCurrentPhaseIndexInCycle(),
+      session_manager_.GetPhaseElapsedTime(),
+      session_manager_.GetCycleElapsedTime(),
+      temperature_manager_.GetParams(),
       total_duty_time_s_,
       air_recycling_manager_.GetRecyclingRate());
 }
@@ -210,27 +228,28 @@ void Dryer::SaveSettings()
 void Dryer::LoadSettings()
 {
   bool saved_running_state = false;
-  DryerPhase saved_phase = DryerPhase::kStop;
-  uint32_t saved_phase_elapsed_time = 0;
-  HeatingParams heating_params;
-  PhaseParams phase_params;
+  uint8_t saved_cycle_index = 0;
+  uint8_t saved_phase_index = 0;
+  uint32_t saved_phase_elapsed = 0;
+  uint32_t saved_cycle_elapsed = 0;
+  TemperatureParams temp_params;
   uint32_t saved_duty_time = 0;
   float saved_recycling_rate = 50.0f;
 
-  bool success = settings_manager_.LoadSettings(
+  bool success = settings_manager_.LoadSessionState(
       saved_running_state,
-      saved_phase,
-      saved_phase_elapsed_time,
-      heating_params,
-      phase_params,
+      saved_cycle_index,
+      saved_phase_index,
+      saved_phase_elapsed,
+      saved_cycle_elapsed,
+      temp_params,
       saved_duty_time,
       saved_recycling_rate);
 
   if (success)
   {
     // Restore parameters
-    heaters_manager_.GetParams() = heating_params;
-    phases_manager_.GetParams() = phase_params;
+    temperature_manager_.GetParams() = temp_params;
     total_duty_time_s_ = saved_duty_time;
     air_recycling_manager_.SetRecyclingRate(saved_recycling_rate);
 
@@ -238,11 +257,10 @@ void Dryer::LoadSettings()
     if (saved_running_state)
     {
       Serial.println("Dryer was running before reboot, resuming...");
-      running_ = true;
       start_time_ = millis();
       last_duty_time_save_ = millis();
-      phases_manager_.RestorePhaseState(saved_phase, saved_phase_elapsed_time);
-      last_saved_phase_ = saved_phase;
+      session_manager_.RestoreState(saved_cycle_index, saved_phase_index,
+                                     saved_phase_elapsed, saved_cycle_elapsed);
     }
 
     Serial.println("Settings restored from EEPROM");
@@ -277,111 +295,66 @@ void Dryer::NotifySettingsChanged()
 // Heating parameters
 float Dryer::GetTemperatureTarget() const
 {
-  return heaters_manager_.GetParams().temperature_target;
+  return temperature_manager_.GetParams().temperature_target;
 }
 
 void Dryer::SetTemperatureTarget(float value)
 {
-  heaters_manager_.GetParams().temperature_target = value;
+  temperature_manager_.GetParams().temperature_target = value;
   NotifySettingsChanged();
 }
 
 float Dryer::GetTemperatureDeadband() const
 {
-  return heaters_manager_.GetParams().temperature_deadband;
+  return temperature_manager_.GetParams().temperature_deadband;
 }
 
 void Dryer::SetTemperatureDeadband(float value)
 {
-  heaters_manager_.GetParams().temperature_deadband = value;
+  temperature_manager_.GetParams().temperature_deadband = value;
   NotifySettingsChanged();
 }
 
 float Dryer::GetHeatingActionMinWait() const
 {
-  return heaters_manager_.GetParams().heating_action_min_wait_s;
+  return temperature_manager_.GetParams().heating_action_min_wait_s;
 }
 
 void Dryer::SetHeatingActionMinWait(float value)
 {
-  heaters_manager_.GetParams().heating_action_min_wait_s = value;
+  temperature_manager_.GetParams().heating_action_min_wait_s = value;
   NotifySettingsChanged();
 }
 
 float Dryer::GetHeaterStepMin() const
 {
-  return heaters_manager_.GetParams().heater_step_min;
+  return temperature_manager_.GetParams().heater_step_min;
 }
 
 void Dryer::SetHeaterStepMin(float value)
 {
-  heaters_manager_.GetParams().heater_step_min = value;
+  temperature_manager_.GetParams().heater_step_min = value;
   NotifySettingsChanged();
 }
 
 float Dryer::GetHeaterStepMax() const
 {
-  return heaters_manager_.GetParams().heater_step_max;
+  return temperature_manager_.GetParams().heater_step_max;
 }
 
 void Dryer::SetHeaterStepMax(float value)
 {
-  heaters_manager_.GetParams().heater_step_max = value;
+  temperature_manager_.GetParams().heater_step_max = value;
   NotifySettingsChanged();
 }
 
 float Dryer::GetHeaterFullScaleDelta() const
 {
-  return heaters_manager_.GetParams().heater_full_scale_delta;
+  return temperature_manager_.GetParams().heater_full_scale_delta;
 }
 
 void Dryer::SetHeaterFullScaleDelta(float value)
 {
-  heaters_manager_.GetParams().heater_full_scale_delta = value;
-  NotifySettingsChanged();
-}
-
-// Phase parameters
-float Dryer::GetInitPhaseDuration() const
-{
-  return static_cast<float>(phases_manager_.GetParams().init_phase_duration_s);
-}
-
-void Dryer::SetInitPhaseDuration(float value)
-{
-  phases_manager_.GetParams().init_phase_duration_s = static_cast<uint32_t>(value);
-  NotifySettingsChanged();
-}
-
-float Dryer::GetExtractionPhaseDuration() const
-{
-  return static_cast<float>(phases_manager_.GetParams().extraction_phase_duration_s);
-}
-
-void Dryer::SetExtractionPhaseDuration(float value)
-{
-  phases_manager_.GetParams().extraction_phase_duration_s = static_cast<uint32_t>(value);
-  NotifySettingsChanged();
-}
-
-float Dryer::GetCirculationPhaseDuration() const
-{
-  return static_cast<float>(phases_manager_.GetParams().circulation_phase_duration_s);
-}
-
-void Dryer::SetCirculationPhaseDuration(float value)
-{
-  phases_manager_.GetParams().circulation_phase_duration_s = static_cast<uint32_t>(value);
-  NotifySettingsChanged();
-}
-
-float Dryer::GetDryingSessionDuration() const
-{
-  return static_cast<float>(phases_manager_.GetParams().drying_session_duration_s);
-}
-
-void Dryer::SetDryingSessionDuration(float value)
-{
-  phases_manager_.GetParams().drying_session_duration_s = static_cast<uint32_t>(value);
+  temperature_manager_.GetParams().heater_full_scale_delta = value;
   NotifySettingsChanged();
 }

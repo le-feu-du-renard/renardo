@@ -4,10 +4,12 @@
 #include <Arduino.h>
 #include "ElectricHeater.h"
 #include "HydraulicHeater.h"
-#include "HeatersManager.h"
-#include "PhasesManager.h"
+#include "TemperatureManager.h"
+#include "HumidityManager.h"
+#include "SessionManager.h"
 #include "SettingsManager.h"
 #include "AirRecyclingManager.h"
+#include "ProgramLoader.h"
 
 // Callback type for settings changed notification
 typedef void (*SettingsChangedCallback)();
@@ -27,11 +29,14 @@ public:
   // Control
   void Start();
   void Stop();
-  bool IsRunning() const { return running_; }
+  bool IsRunning() const { return session_manager_.IsRunning(); }
 
   // State
   const char *GetPhaseName() const;
+  uint8_t GetCurrentPhaseId() const;
+  uint8_t GetCurrentCycleIndex() const;
   unsigned long GetElapsedTime() const;
+  unsigned long GetPhaseElapsedTime() const;
 
   // Temperatures
   void SetInletTemperature(float temperature) { inlet_temperature_ = temperature; }
@@ -47,6 +52,8 @@ public:
   // Humidity
   void SetInletHumidity(float humidity) { inlet_humidity_ = humidity; }
   void SetOutletHumidity(float humidity) { outlet_humidity_ = humidity; }
+  float GetInletHumidity() const { return inlet_humidity_; }
+  float GetOutletHumidity() const { return outlet_humidity_; }
 
   // Outputs (0.0 to 1.0)
   float GetHeaterOutput() const;
@@ -58,10 +65,15 @@ public:
   float GetRecyclingRate() const;
 
   // Manager access
-  HeatersManager *GetHeatersManager() { return &heaters_manager_; }
-  PhasesManager *GetPhasesManager() { return &phases_manager_; }
+  TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
+  HumidityManager *GetHumidityManager() { return &humidity_manager_; }
+  SessionManager *GetSessionManager() { return &session_manager_; }
   SettingsManager *GetSettingsManager() { return &settings_manager_; }
   AirRecyclingManager *GetAirRecyclingManager() { return &air_recycling_manager_; }
+  ProgramLoader *GetProgramLoader() { return &program_loader_; }
+
+  // Backward compatibility aliases
+  TemperatureManager *GetHeatersManager() { return &temperature_manager_; }
 
   // Duty time tracking
   uint32_t GetTotalDutyTime() const { return total_duty_time_s_; }
@@ -89,33 +101,21 @@ public:
   float GetHeaterFullScaleDelta() const;
   void SetHeaterFullScaleDelta(float value);
 
-  // Phase parameters
-  float GetInitPhaseDuration() const;
-  void SetInitPhaseDuration(float value);
-  float GetExtractionPhaseDuration() const;
-  void SetExtractionPhaseDuration(float value);
-  float GetCirculationPhaseDuration() const;
-  void SetCirculationPhaseDuration(float value);
-  float GetDryingSessionDuration() const;
-  void SetDryingSessionDuration(float value);
-
 private:
   // Components
   ElectricHeater electric_heater_;
   HydraulicHeater hydraulic_heater_;
-  HeatersManager heaters_manager_;
-  PhasesManager phases_manager_;
-  SettingsManager settings_manager_;
-
-  // I2C and DAC
+  TemperatureManager temperature_manager_;
   AirRecyclingManager air_recycling_manager_;
+  HumidityManager humidity_manager_;
+  SessionManager session_manager_;
+  SettingsManager settings_manager_;
+  ProgramLoader program_loader_;
 
   // State
-  bool running_;
-  unsigned long start_time_;
   uint32_t total_duty_time_s_;
   unsigned long last_duty_time_save_;
-  DryerPhase last_saved_phase_;
+  unsigned long start_time_;
 
   // Settings change callback
   SettingsChangedCallback settings_changed_callback_;
@@ -131,11 +131,11 @@ private:
   float fan_output_;
 
   // Control update intervals
-  unsigned long last_heating_update_;
-  static constexpr unsigned long kHeatingUpdateInterval = 1000; // 1s
+  unsigned long last_control_update_;
+  static constexpr unsigned long kControlUpdateInterval = 1000; // 1s
 
   // Control logic
-  void UpdateHeatingControl();
+  void UpdateControl();
   void UpdateVentilationControl();
   void UpdateDutyTime();
 };

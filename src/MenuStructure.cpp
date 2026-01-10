@@ -123,18 +123,10 @@ static NumberMenuItem cycle_item_recycling_rate(
   0.0f, 100.0f, 5.0f
 );
 
-static NumberMenuItem cycle_item_session_duration(
-  "Duree session",
-  MenuStructure::GetDryingSessionDuration,
-  MenuStructure::SetDryingSessionDuration,
-  3600.0f, 604800.0f, 3600.0f
-);
-
 static BackMenuItem cycle_back("Retour");
 
 static MenuItem* cycle_items[] = {
   &cycle_item_recycling_rate,
-  &cycle_item_session_duration,
   &cycle_back
 };
 
@@ -144,43 +136,6 @@ static SubmenuItem cycle_submenu(
   sizeof(cycle_items) / sizeof(cycle_items[0])
 );
 
-// ========== S4 Phases Menu ==========
-static NumberMenuItem phases_item_init(
-  "Init",
-  MenuStructure::GetInitPhaseDuration,
-  MenuStructure::SetInitPhaseDuration,
-  5.0f, 7200.0f, 60.0f
-);
-
-static NumberMenuItem phases_item_extraction(
-  "Extraction",
-  MenuStructure::GetExtractionPhaseDuration,
-  MenuStructure::SetExtractionPhaseDuration,
-  5.0f, 7200.0f, 10.0f
-);
-
-static NumberMenuItem phases_item_circulation(
-  "Circulation",
-  MenuStructure::GetCirculationPhaseDuration,
-  MenuStructure::SetCirculationPhaseDuration,
-  5.0f, 3600.0f, 10.0f
-);
-
-static BackMenuItem phases_back("Retour");
-
-static MenuItem* phases_items[] = {
-  &phases_item_init,
-  &phases_item_extraction,
-  &phases_item_circulation,
-  &phases_back
-};
-
-static SubmenuItem phases_submenu(
-  "S4 Phases",
-  phases_items,
-  sizeof(phases_items) / sizeof(phases_items[0])
-);
-
 // ========== Root Menu ==========
 static CommandMenuItem exit_command("Quitter", MenuStructure::ExitMenuCommand);
 
@@ -188,7 +143,6 @@ static MenuItem* root_items[] = {
   &operations_submenu,
   &heating_submenu,
   &cycle_submenu,
-  &phases_submenu,
   &exit_command
 };
 

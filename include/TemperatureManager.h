@@ -1,5 +1,5 @@
-#ifndef HEATERS_MANAGER_H
-#define HEATERS_MANAGER_H
+#ifndef TEMPERATURE_MANAGER_H
+#define TEMPERATURE_MANAGER_H
 
 #include <Arduino.h>
 #include "config.h"
@@ -7,9 +7,9 @@
 #include "HydraulicHeater.h"
 
 /**
- * Heating parameters
+ * Temperature control parameters
  */
-struct HeatingParams {
+struct TemperatureParams {
   float temperature_target;           // 20-80°C
   float temperature_deadband;         // 0.5-10°C
   float heating_action_min_wait_s;    // 5-120s
@@ -17,7 +17,7 @@ struct HeatingParams {
   float heater_step_max;              // 0.05-1.0 ratio
   float heater_full_scale_delta;      // 5-30°C
 
-  HeatingParams()
+  TemperatureParams()
     : temperature_target(DEFAULT_TEMPERATURE_TARGET),
       temperature_deadband(DEFAULT_TEMPERATURE_DEADBAND),
       heating_action_min_wait_s(DEFAULT_HEATING_ACTION_MIN_WAIT),
@@ -26,13 +26,16 @@ struct HeatingParams {
       heater_full_scale_delta(DEFAULT_HEATER_FULL_SCALE_DELTA) {}
 };
 
+// Backward compatibility alias
+typedef TemperatureParams HeatingParams;
+
 /**
- * Manages both electric and hydraulic heaters
+ * Manages temperature control via electric and hydraulic heaters
  * Implements adaptive heating control with deadband
  */
-class HeatersManager {
+class TemperatureManager {
  public:
-  HeatersManager(ElectricHeater* electric_heater, HydraulicHeater* hydraulic_heater);
+  TemperatureManager(ElectricHeater* electric_heater, HydraulicHeater* hydraulic_heater);
 
   void Begin();
   void Update(float current_temperature);
@@ -41,9 +44,12 @@ class HeatersManager {
   void SetTargetTemperature(float temperature);
   float GetTargetTemperature() const { return params_.temperature_target; }
 
+  // Check if temperature is in target range
+  bool IsTemperatureInRange() const;
+
   // Parameters
-  HeatingParams& GetParams() { return params_; }
-  const HeatingParams& GetParams() const { return params_; }
+  TemperatureParams& GetParams() { return params_; }
+  const TemperatureParams& GetParams() const { return params_; }
 
   // Heater access
   ElectricHeater* GetElectricHeater() { return electric_heater_; }
@@ -55,7 +61,7 @@ class HeatersManager {
  private:
   ElectricHeater* electric_heater_;
   HydraulicHeater* hydraulic_heater_;
-  HeatingParams params_;
+  TemperatureParams params_;
 
   unsigned long heating_action_next_allowed_ms_;
   float current_temperature_;
@@ -63,7 +69,6 @@ class HeatersManager {
   // Temperature validation
   bool IsTemperatureTooHigh() const;
   bool IsTemperatureTooLow() const;
-  bool IsTemperatureInRange() const;
 
   // Heating actions
   bool IsHeatingActionAllowed() const;
@@ -76,4 +81,7 @@ class HeatersManager {
   float CalculateStep() const;
 };
 
-#endif  // HEATERS_MANAGER_H
+// Backward compatibility alias
+typedef TemperatureManager HeatersManager;
+
+#endif  // TEMPERATURE_MANAGER_H

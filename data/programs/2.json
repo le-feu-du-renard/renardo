@@ -1,0 +1,47 @@
+{
+  "id": 2,
+  "name": "Doux",
+  "phases": [
+    {
+      "id": 1,
+      "name": "Init",
+      "temperature_target": 28.0,
+      "transition_on_temperature": false,
+      "humidity_max": 65.0,
+      "transition_on_humidity": true,
+      "duration_s": 3600
+    },
+    {
+      "id": 2,
+      "name": "Extraction",
+      "temperature_target": 35.0,
+      "transition_on_temperature": false,
+      "humidity_max": 0.0,
+      "transition_on_humidity": false,
+      "duration_s": 120
+    },
+    {
+      "id": 3,
+      "name": "Circulation",
+      "temperature_target": 35.0,
+      "transition_on_temperature": false,
+      "humidity_max": 65.0,
+      "transition_on_humidity": true,
+      "duration_s": 300
+    }
+  ],
+  "cycles": [
+    {
+      "id": 1,
+      "name": "Init",
+      "phase_ids": [1],
+      "repeat_duration_s": 0
+    },
+    {
+      "id": 2,
+      "name": "Sechage",
+      "phase_ids": [2, 3],
+      "repeat_duration_s": -1
+    }
+  ]
+}

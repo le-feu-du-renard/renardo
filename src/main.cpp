@@ -444,11 +444,11 @@ void UpdateDisplay()
       // Serial.println("Rendering home page");
       // Time tracking
       display.SetTotalDutyTime(dryer.GetTotalDutyTime());
-      display.SetPhaseDutyTime(dryer.GetPhasesManager()->GetPhaseElapsedTime());
+      display.SetPhaseDutyTime(dryer.GetPhaseElapsedTime());
 
       // Cycle durations
-      display.SetCycleDuration(dryer.GetDryingSessionDuration());
-      display.SetPhaseDuration(dryer.GetPhasesManager()->GetCurrentPhaseDuration());
+      display.SetCycleDuration(86400); // Default 24h for now
+      display.SetPhaseDuration(dryer.GetSessionManager()->GetCurrentPhaseDuration());
 
       // Phase name
       display.SetPhase(dryer.GetPhaseName());

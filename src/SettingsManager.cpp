@@ -14,13 +14,14 @@ void SettingsManager::Begin()
   Serial.println(" bytes");
 }
 
-bool SettingsManager::LoadSettings(bool &dryer_running,
-                                   DryerPhase &current_phase,
-                                   uint32_t &phase_elapsed_time_s,
-                                   HeatingParams &heating_params,
-                                   PhaseParams &phase_params,
-                                   uint32_t &total_duty_time_s,
-                                   float &recycling_rate)
+bool SettingsManager::LoadSessionState(bool &session_running,
+                                        uint8_t &cycle_index,
+                                        uint8_t &phase_index_in_cycle,
+                                        uint32_t &phase_elapsed_time_s,
+                                        uint32_t &cycle_elapsed_time_s,
+                                        TemperatureParams &temperature_params,
+                                        uint32_t &total_duty_time_s,
+                                        float &recycling_rate)
 {
   if (!ReadFromEeprom())
   {
@@ -29,21 +30,24 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
     return false;
   }
 
-  dryer_running = settings_.dryer_running;
-  current_phase = static_cast<DryerPhase>(settings_.current_phase);
+  session_running = settings_.session_running;
+  cycle_index = settings_.cycle_index;
+  phase_index_in_cycle = settings_.phase_index_in_cycle;
   phase_elapsed_time_s = settings_.phase_elapsed_time_s;
-  heating_params = settings_.heating_params;
-  phase_params = settings_.phase_params;
+  cycle_elapsed_time_s = settings_.cycle_elapsed_time_s;
+  temperature_params = settings_.temperature_params;
   total_duty_time_s = settings_.total_duty_time_s;
   recycling_rate = settings_.recycling_rate;
 
   Serial.println("Settings loaded from EEPROM:");
-  Serial.print("  Dryer running: ");
-  Serial.println(dryer_running ? "true" : "false");
-  Serial.print("  Current phase: ");
-  Serial.println(settings_.current_phase);
+  Serial.print("  Session running: ");
+  Serial.println(session_running ? "true" : "false");
+  Serial.print("  Cycle index: ");
+  Serial.println(cycle_index);
+  Serial.print("  Phase index: ");
+  Serial.println(phase_index_in_cycle);
   Serial.print("  Target temperature: ");
-  Serial.println(heating_params.temperature_target);
+  Serial.println(temperature_params.temperature_target);
   Serial.print("  Total duty time: ");
   Serial.print(total_duty_time_s);
   Serial.println(" seconds");
@@ -54,20 +58,22 @@ bool SettingsManager::LoadSettings(bool &dryer_running,
   return true;
 }
 
-void SettingsManager::SaveSettings(bool dryer_running,
-                                   DryerPhase current_phase,
-                                   uint32_t phase_elapsed_time_s,
-                                   const HeatingParams &heating_params,
-                                   const PhaseParams &phase_params,
-                                   uint32_t total_duty_time_s,
-                                   float recycling_rate)
+void SettingsManager::SaveSessionState(bool session_running,
+                                        uint8_t cycle_index,
+                                        uint8_t phase_index_in_cycle,
+                                        uint32_t phase_elapsed_time_s,
+                                        uint32_t cycle_elapsed_time_s,
+                                        const TemperatureParams &temperature_params,
+                                        uint32_t total_duty_time_s,
+                                        float recycling_rate)
 {
   settings_.version = kSettingsVersion;
-  settings_.dryer_running = dryer_running;
-  settings_.current_phase = static_cast<uint8_t>(current_phase);
+  settings_.session_running = session_running;
+  settings_.cycle_index = cycle_index;
+  settings_.phase_index_in_cycle = phase_index_in_cycle;
   settings_.phase_elapsed_time_s = phase_elapsed_time_s;
-  settings_.heating_params = heating_params;
-  settings_.phase_params = phase_params;
+  settings_.cycle_elapsed_time_s = cycle_elapsed_time_s;
+  settings_.temperature_params = temperature_params;
   settings_.total_duty_time_s = total_duty_time_s;
   settings_.recycling_rate = recycling_rate;
 
@@ -80,9 +86,18 @@ void SettingsManager::SaveDryerState(bool running)
 {
   if (ReadFromEeprom())
   {
-    settings_.dryer_running = running;
+    settings_.session_running = running;
     WriteToEeprom();
     Serial.print("Dryer state saved: ");
+    Serial.println(running ? "running" : "stopped");
+  }
+  else
+  {
+    // If we can't read, create new settings with just the running state
+    settings_ = PersistentSettings();
+    settings_.session_running = running;
+    WriteToEeprom();
+    Serial.print("Dryer state saved (new): ");
     Serial.println(running ? "running" : "stopped");
   }
 }

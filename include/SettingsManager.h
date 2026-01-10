@@ -3,26 +3,24 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
-#include "HeatersManager.h"
-#include "PhasesManager.h"
+#include "TemperatureManager.h"
 
 /**
- * Structure to save all persistent settings
+ * Structure to save all persistent settings (v4 - SessionManager format)
  */
 struct PersistentSettings {
   // Version identifier for settings structure
   uint16_t version;
 
-  // Dryer state
-  bool dryer_running;
-  uint8_t current_phase;  // DryerPhase as uint8_t
-  uint32_t phase_elapsed_time_s;  // Time elapsed in current phase (seconds)
+  // Session state
+  bool session_running;
+  uint8_t cycle_index;
+  uint8_t phase_index_in_cycle;
+  uint32_t phase_elapsed_time_s;
+  uint32_t cycle_elapsed_time_s;
 
-  // Heating parameters
-  HeatingParams heating_params;
-
-  // Phase parameters
-  PhaseParams phase_params;
+  // Temperature parameters
+  TemperatureParams temperature_params;
 
   // Duty time tracking (total accumulated time in seconds)
   uint32_t total_duty_time_s;
@@ -34,12 +32,13 @@ struct PersistentSettings {
   uint16_t checksum;
 
   PersistentSettings()
-    : version(3),
-      dryer_running(false),
-      current_phase(0),  // kStop
+    : version(4),
+      session_running(false),
+      cycle_index(0),
+      phase_index_in_cycle(0),
       phase_elapsed_time_s(0),
-      heating_params(),
-      phase_params(),
+      cycle_elapsed_time_s(0),
+      temperature_params(),
       total_duty_time_s(0),
       recycling_rate(50.0f),
       checksum(0) {}
@@ -54,33 +53,34 @@ class SettingsManager {
 
   void Begin();
 
-  // Save all settings to EEPROM
-  void SaveSettings(bool dryer_running,
-                    DryerPhase current_phase,
-                    uint32_t phase_elapsed_time_s,
-                    const HeatingParams& heating_params,
-                    const PhaseParams& phase_params,
-                    uint32_t total_duty_time_s,
-                    float recycling_rate);
+  // Save session state to EEPROM (new format)
+  void SaveSessionState(bool session_running,
+                        uint8_t cycle_index,
+                        uint8_t phase_index_in_cycle,
+                        uint32_t phase_elapsed_time_s,
+                        uint32_t cycle_elapsed_time_s,
+                        const TemperatureParams& temperature_params,
+                        uint32_t total_duty_time_s,
+                        float recycling_rate);
 
-  // Load all settings from EEPROM
-  bool LoadSettings(bool& dryer_running,
-                    DryerPhase& current_phase,
-                    uint32_t& phase_elapsed_time_s,
-                    HeatingParams& heating_params,
-                    PhaseParams& phase_params,
-                    uint32_t& total_duty_time_s,
-                    float& recycling_rate);
+  // Load session state from EEPROM (new format)
+  bool LoadSessionState(bool& session_running,
+                        uint8_t& cycle_index,
+                        uint8_t& phase_index_in_cycle,
+                        uint32_t& phase_elapsed_time_s,
+                        uint32_t& cycle_elapsed_time_s,
+                        TemperatureParams& temperature_params,
+                        uint32_t& total_duty_time_s,
+                        float& recycling_rate);
 
-  // Individual save operations (deprecated - use SaveSettings instead)
-  // Only SaveDryerState is kept for immediate state changes in Start/Stop
+  // Quick save of running state only
   void SaveDryerState(bool running);
 
   // Reset to factory defaults
   void ResetToDefaults();
 
  private:
-  static constexpr uint16_t kSettingsVersion = 3;
+  static constexpr uint16_t kSettingsVersion = 4;
   static constexpr size_t kEepromSize = sizeof(PersistentSettings);
   static constexpr uint16_t kEepromAddress = 0;
 

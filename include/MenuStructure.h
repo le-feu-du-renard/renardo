@@ -34,19 +34,6 @@ class MenuStructure {
   static float GetRecyclingRate(Dryer* dryer) { return dryer->GetRecyclingRate(); }
   static void SetRecyclingRate(Dryer* dryer, float value) { dryer->SetRecyclingRate(value); }
 
-  // Getter/Setter wrappers for phase parameters
-  static float GetInitPhaseDuration(Dryer* dryer) { return dryer->GetInitPhaseDuration(); }
-  static void SetInitPhaseDuration(Dryer* dryer, float value) { dryer->SetInitPhaseDuration(value); }
-
-  static float GetExtractionPhaseDuration(Dryer* dryer) { return dryer->GetExtractionPhaseDuration(); }
-  static void SetExtractionPhaseDuration(Dryer* dryer, float value) { dryer->SetExtractionPhaseDuration(value); }
-
-  static float GetCirculationPhaseDuration(Dryer* dryer) { return dryer->GetCirculationPhaseDuration(); }
-  static void SetCirculationPhaseDuration(Dryer* dryer, float value) { dryer->SetCirculationPhaseDuration(value); }
-
-  static float GetDryingSessionDuration(Dryer* dryer) { return dryer->GetDryingSessionDuration(); }
-  static void SetDryingSessionDuration(Dryer* dryer, float value) { dryer->SetDryingSessionDuration(value); }
-
   // Command handlers
   static void ExitMenuCommand(MenuSystem* menu);
   static void StartDryerCommand(MenuSystem* menu);
