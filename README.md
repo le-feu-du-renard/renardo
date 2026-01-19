@@ -5,6 +5,7 @@ pio run
 
 # run and upload to pico
 pio run -t upload -t monitor -e pico_w
+pio run -t upload -t monitor -e test_hydraulic
 
 # test on local machine
 pio test -vvv -e native
@@ -18,25 +19,26 @@ https://rop.nl/truetype2gfx/
 
 TODO:
 
-- ajouter visuellement tmax + hrmax
-
-- ajouter taux d'hygrométrie max
-  l'idée c'est de definir un taux maximum d'hygrométrie
-  attention, il est possible de ne pas arriver à l'atteindre
-  est-ce qu'il est décroissant ?
-
+- ajouter menu pour choisir le programme
+- ajouter visuellement tmax + hrmax + 1-1 + eco/hybride/perf
+- rajouter icon IN et OUT pour les valeurs du sensor
 - rajouter la gestion du renouvellement d'air dans le heater manager si trop chaud
-- gérer overshoot (anticiper dépassement de température)
-- implementer support double coeur
-
 - ajouter params cycle curation configurable
 - améliorer le menu : ajouter des unités + mettre en heure certains parametres
-
+- changer la font par une plus lisible
 - mode eco / hybride / perf
+  - eco : utilise hydro seulement, si pas assez d'énergie, objectifs réduits pour préserver l'hydro
+  - hybride : utilise solaire, puis elect en réduisant les objectifs
+  - perf : target les objectifs
   - afficher a l'écran le mode
   - pouvoir le changer dans la config
+- créer documentation
 
-- option pour le circulateur
+Features next:
+
+- implementer support double coeur
+
+- option pour le circulateur dans les settings
   - min / max / frequence...
 
 - permettre de gérer la strategy de chauffe par la config

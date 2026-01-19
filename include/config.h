@@ -5,13 +5,13 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// I2C Bus 1 (OLED + Inlet Air Sensor)
+// I2C Bus 1 (DAC + Outlet Air Sensor)
 #define I2C_BUS_1_SDA_PIN 12
 #define I2C_BUS_1_SCL_PIN 13
 
-// I2C Bus 2 (DAC + Outlet Air Sensor)
-#define I2C_BUS_2_SDA_PIN 10
-#define I2C_BUS_2_SCL_PIN 11
+// I2C Bus 2 (OLED + Inlet Air Sensor + RTC)
+#define I2C_BUS_2_SDA_PIN 26
+#define I2C_BUS_2_SCL_PIN 27
 
 // Rotary Encoder
 #define ROTARY_ENCODER_SW_PIN 7
@@ -32,12 +32,11 @@
 #define SCREEN_HEIGHT 64
 #define SCREEN_OLED_RESET -1
 
-// DAC
-#define DAC_GP8403_ADDR 0x5F
-
 // ========== I2C ADDRESSES ==========
+#define DAC_GP8403_ADDR 0x5F
 #define CHT8305_INLET_ADDR 0x40
 #define CHT8305_OUTLET_ADDR 0x40
+#define RTC_DS1307_ADDR 0x68
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms

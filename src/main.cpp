@@ -11,6 +11,7 @@
 #include "Dryer.h"
 #include "MenuSystem.h"
 #include "MenuStructure.h"
+#include "TimeManager.h"
 
 // ========== GLOBAL OBJECTS ==========
 
@@ -19,18 +20,21 @@ TwoWire i2c_bus_1(i2c0, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 TwoWire i2c_bus_2(i2c1, I2C_BUS_2_SDA_PIN, I2C_BUS_2_SCL_PIN);
 
 // Temperature/humidity sensors
-CHT8305 inlet_air_sensor(CHT8305_INLET_ADDR, &i2c_bus_1);
-CHT8305 outlet_air_sensor(CHT8305_OUTLET_ADDR, &i2c_bus_2);
+CHT8305 inlet_air_sensor(CHT8305_INLET_ADDR, &i2c_bus_2);
+CHT8305 outlet_air_sensor(CHT8305_OUTLET_ADDR, &i2c_bus_1);
 
 // OneWire for water temperature sensor
 OneWire one_wire(WATER_SENSOR_PIN);
 DallasTemperature water_temperature_sensor(&one_wire);
 
 // DAC
-DFRobot_GP8403 dac(&i2c_bus_2, DAC_GP8403_ADDR);
+DFRobot_GP8403 dac(&i2c_bus_1, DAC_GP8403_ADDR);
 
 // OLED
-Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c_bus_1, SCREEN_OLED_RESET);
+Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c_bus_2, SCREEN_OLED_RESET);
+
+// RTC (on bus 2)
+TimeManager time_manager(&i2c_bus_2);
 
 // Rotary Encoder
 RotaryEncoder encoder(ROTARY_ENCODER_CLK_PIN, ROTARY_ENCODER_DT_PIN, RotaryEncoder::LatchMode::TWO03);
@@ -138,17 +142,21 @@ void ScanI2C(TwoWire &bus, const char *bus_name)
 
 void SetupI2C()
 {
+  // Bus 1: DAC + Outlet Air Sensor
   i2c_bus_1.begin();
-  i2c_bus_1.setClock(400000);
-  Serial.println("I2C bus 1 initialized");
+  i2c_bus_1.setClock(50000);
+  Serial.println("I2C bus 1 (DAC + Outlet) initialized at 50kHz");
 
+  // Bus 2: OLED + Inlet Air Sensor + RTC - Enable pull-ups for stability
+  pinMode(I2C_BUS_2_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_BUS_2_SCL_PIN, INPUT_PULLUP);
   i2c_bus_2.begin();
-  i2c_bus_2.setClock(50000);
-  Serial.println("I2C bus 2 initialized");
+  i2c_bus_2.setClock(100000); // 100kHz for stability with 3 devices
+  Serial.println("I2C bus 2 (OLED + Inlet + RTC) initialized at 100kHz with internal pull-ups");
 
   // Scan all I2C buses
-  ScanI2C(i2c_bus_1, "i2c_bus_1");
-  ScanI2C(i2c_bus_2, "i2c_bus_2");
+  ScanI2C(i2c_bus_1, "i2c_bus_1 (DAC + Outlet)");
+  ScanI2C(i2c_bus_2, "i2c_bus_2 (OLED + Inlet + RTC)");
 }
 
 void SetupOLED()
@@ -216,6 +224,31 @@ void SetupSensors()
   Serial.println(" OneWire devices (async mode enabled)");
 }
 
+void SetupRTC()
+{
+  Serial.println("Initialize RTC...");
+
+  if (!time_manager.Begin())
+  {
+    Serial.println("ERROR: RTC initialization failed!");
+  }
+  else
+  {
+    Serial.println("SUCCESS: RTC initialized!");
+
+    // Check if time needs to be set
+    if (time_manager.HasLostPower())
+    {
+      Serial.println("WARNING: Please set the RTC time");
+      Serial.println("RTC has been set to compile time as default");
+    }
+
+    // Display current time
+    Serial.print("Current time: ");
+    Serial.println(time_manager.GetDateTimeString());
+  }
+}
+
 // ========== MAIN SETUP (Core 0) ==========
 
 void setup()
@@ -229,6 +262,7 @@ void setup()
 
   SetupI2C();
   SetupOLED();
+  SetupRTC();
 
   SetupPins();
   SetupDAC();
