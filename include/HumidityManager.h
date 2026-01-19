@@ -24,10 +24,10 @@ struct HumidityParams {
 /**
  * Manages humidity control via air recycling
  *
- * Controls the air recycling rate to achieve target humidity:
+ * Controls the air recycling rate to achieve target inlet humidity:
  * - humidity_target = -1: Minimize humidity (recycling = 0%, max fresh air)
- * - humidity_target = 0: No humidity control (recycling unchanged)
- * - humidity_target > 0: Target specific humidity level
+ * - humidity_target = 0: No humidity control (recycling = 100%, full recirculation)
+ * - humidity_target > 0: Target specific inlet humidity level
  */
 class HumidityManager {
  public:
@@ -68,10 +68,10 @@ class HumidityManager {
   bool IsHumidityTargetReached() const;
 
   /**
-   * Get current outlet humidity (last reading)
-   * @return Current outlet humidity
+   * Get current inlet humidity (last reading)
+   * @return Current inlet humidity
    */
-  float GetCurrentHumidity() const { return current_outlet_humidity_; }
+  float GetCurrentHumidity() const { return current_inlet_humidity_; }
 
   // Parameters
   HumidityParams& GetParams() { return params_; }

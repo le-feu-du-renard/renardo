@@ -22,8 +22,9 @@ void HumidityManager::Update(float inlet_humidity, float outlet_humidity) {
   current_inlet_humidity_ = inlet_humidity;
   current_outlet_humidity_ = outlet_humidity;
 
-  // No control if target is 0
+  // No control if target is 0: set recycling to 100% (full recirculation)
   if (target_humidity_ == 0.0f) {
+    air_recycling_manager_->SetRecyclingRate(100.0f);
     return;
   }
 
@@ -35,21 +36,20 @@ void HumidityManager::Update(float inlet_humidity, float outlet_humidity) {
   // Mode: minimize humidity (target = -1)
   if (target_humidity_ < 0.0f) {
     // Maximize fresh air intake (recycling = 0%)
-    if (DecreaseRecycling()) {
-      ArmActionCooldown();
-    }
+    air_recycling_manager_->SetRecyclingRate(0.0f);
+    ArmActionCooldown();
     return;
   }
 
-  // Mode: target specific humidity
-  float error = current_outlet_humidity_ - target_humidity_;
+  // Mode: target specific humidity - use inlet humidity as reference
+  float error = current_inlet_humidity_ - target_humidity_;
 
   if (error > params_.humidity_deadband) {
     // Too humid: need more fresh air (decrease recycling)
     if (DecreaseRecycling()) {
       ArmActionCooldown();
-      Serial.print("Humidity too high (");
-      Serial.print(current_outlet_humidity_);
+      Serial.print("Inlet humidity too high (");
+      Serial.print(current_inlet_humidity_);
       Serial.print("% > ");
       Serial.print(target_humidity_);
       Serial.println("%) - decreasing recycling");
@@ -58,8 +58,8 @@ void HumidityManager::Update(float inlet_humidity, float outlet_humidity) {
     // Too dry: can increase recycling (less fresh air)
     if (IncreaseRecycling()) {
       ArmActionCooldown();
-      Serial.print("Humidity too low (");
-      Serial.print(current_outlet_humidity_);
+      Serial.print("Inlet humidity too low (");
+      Serial.print(current_inlet_humidity_);
       Serial.print("% < ");
       Serial.print(target_humidity_);
       Serial.println("%) - increasing recycling");
@@ -92,13 +92,12 @@ bool HumidityManager::IsHumidityTargetReached() const {
   }
 
   // Minimize mode: consider reached when recycling is at minimum
-  // and outlet humidity is reasonably low (below 50%)
   if (target_humidity_ < 0.0f) {
     return air_recycling_manager_->GetRecyclingRate() <= 0.0f;
   }
 
-  // Target mode: check if within deadband
-  float error = fabs(current_outlet_humidity_ - target_humidity_);
+  // Target mode: check if within deadband (using inlet humidity)
+  float error = fabs(current_inlet_humidity_ - target_humidity_);
   return error <= params_.humidity_deadband;
 }
 
