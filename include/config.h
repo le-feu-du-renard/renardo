@@ -33,7 +33,7 @@
 #define SCREEN_OLED_RESET -1
 
 // DAC
-#define DAC_GP8403_ADDR 0x58
+#define DAC_GP8403_ADDR 0x5F
 
 // ========== I2C ADDRESSES ==========
 #define CHT8305_INLET_ADDR 0x40
