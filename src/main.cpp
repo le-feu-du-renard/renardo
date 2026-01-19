@@ -168,7 +168,7 @@ void SetupOLED()
     Serial.println("OLED cleared");
   }
 
-  oled.setRotation(2); // 0=0°, 1=90°, 2=180°, 3=270°
+  oled.setRotation(0); // 0=0°, 1=90°, 2=180°, 3=270°
   Serial.println("OLED rotation set to 180°");
 }
 
@@ -385,7 +385,8 @@ void UpdateOutputs()
   uint8_t circulator_pwm = (1.0f - dryer.GetCirculatorOutput()) * 255;
 
   // Update heater if changed
-  if (first_run || heater_state != last_heater_state) {
+  if (first_run || heater_state != last_heater_state)
+  {
     digitalWrite(ELECTRIC_HEATER_RELAY_PIN, heater_state);
     last_heater_state = heater_state;
 
@@ -397,7 +398,8 @@ void UpdateOutputs()
   }
 
   // Update fan if changed
-  if (first_run || fan_state != last_fan_state) {
+  if (first_run || fan_state != last_fan_state)
+  {
     digitalWrite(FAN_RELAY_PIN, fan_state);
     last_fan_state = fan_state;
 
@@ -409,7 +411,8 @@ void UpdateOutputs()
   }
 
   // Update circulator if changed (with tolerance of ±1 to avoid jitter)
-  if (first_run || abs(circulator_pwm - last_circulator_pwm) > 1) {
+  if (first_run || abs(circulator_pwm - last_circulator_pwm) > 1)
+  {
     analogWrite(WATER_CIRCULATOR_PWM_PIN, circulator_pwm);
     last_circulator_pwm = circulator_pwm;
 

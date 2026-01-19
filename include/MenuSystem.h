@@ -155,6 +155,9 @@ class MenuSystem {
   // Current item access (for input handling)
   MenuItem* GetCurrentItem();
 
+  // Get current menu title (for header)
+  const char* GetCurrentMenuTitle() const;
+
  private:
   static constexpr uint8_t kMaxMenuDepth = 4;
 
@@ -169,19 +172,21 @@ class MenuSystem {
     MenuItem** items;
     uint8_t item_count;
     uint8_t selected_index;
+    const char* title;  // Title for this menu level
   };
 
   MenuLevel menu_stack_[kMaxMenuDepth];
   uint8_t menu_depth_;
   MenuItem* root_menu_;
 
-  void EnterSubmenu(MenuItem** items, uint8_t item_count);
+  void EnterSubmenu(MenuItem** items, uint8_t item_count, const char* title = nullptr);
   void ExitSubmenu();
 
   friend class NumberMenuItem;
   friend class SubmenuItem;
   friend class BackMenuItem;
   friend class DynamicOperationsSubmenu;
+  friend class ProgramSelectSubmenu;
 };
 
 #endif  // MENU_SYSTEM_H

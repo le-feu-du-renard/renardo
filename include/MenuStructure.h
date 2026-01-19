@@ -36,7 +36,6 @@ class MenuStructure {
 
   // Command handlers
   static void ExitMenuCommand(MenuSystem* menu);
-  static void StartDryerCommand(MenuSystem* menu);
   static void StopDryerCommand(MenuSystem* menu);
   static void RestartDryerCommand(MenuSystem* menu);
 };

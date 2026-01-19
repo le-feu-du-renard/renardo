@@ -3,7 +3,7 @@
 // ========== MenuItem Implementations ==========
 
 void SubmenuItem::OnEnter(MenuSystem* menu) {
-  menu->EnterSubmenu(items_, item_count_);
+  menu->EnterSubmenu(items_, item_count_, text_);
 }
 
 void NumberMenuItem::OnEnter(MenuSystem* menu) {
@@ -80,6 +80,7 @@ void MenuSystem::Show() {
       menu_stack_[0].items = root->GetItems();
       menu_stack_[0].item_count = root->GetItemCount();
       menu_stack_[0].selected_index = 0;
+      menu_stack_[0].title = root->GetText();
       menu_depth_ = 1;
     }
 
@@ -141,13 +142,19 @@ void MenuSystem::Back() {
   }
 }
 
-void MenuSystem::EnterSubmenu(MenuItem** items, uint8_t item_count) {
+void MenuSystem::EnterSubmenu(MenuItem** items, uint8_t item_count, const char* title) {
   if (menu_depth_ >= kMaxMenuDepth) return;
 
   menu_stack_[menu_depth_].items = items;
   menu_stack_[menu_depth_].item_count = item_count;
   menu_stack_[menu_depth_].selected_index = 0;
+  menu_stack_[menu_depth_].title = title;
   menu_depth_++;
+}
+
+const char* MenuSystem::GetCurrentMenuTitle() const {
+  if (menu_depth_ == 0) return nullptr;
+  return menu_stack_[menu_depth_ - 1].title;
 }
 
 void MenuSystem::ExitSubmenu() {
@@ -176,8 +183,14 @@ void MenuSystem::Render() {
 
   MenuLevel& current = menu_stack_[menu_depth_ - 1];
 
-  // Display up to 5 items at a time
-  const uint8_t kMaxVisibleItems = 5;
+  // Draw header with menu title
+  const char* title = current.title;
+  if (title != nullptr) {
+    display_->DrawMenuHeader(title);
+  }
+
+  // Display up to 4 items at a time (1 less to make room for header)
+  const uint8_t kMaxVisibleItems = 4;
   uint8_t start_index = 0;
 
   // Calculate scroll position
@@ -185,7 +198,7 @@ void MenuSystem::Render() {
     start_index = current.selected_index - kMaxVisibleItems + 1;
   }
 
-  // Render visible items
+  // Render visible items (offset by 1 for header)
   for (uint8_t i = 0; i < kMaxVisibleItems && (start_index + i) < current.item_count; i++) {
     uint8_t item_index = start_index + i;
     MenuItem* item = current.items[item_index];
@@ -206,7 +219,8 @@ void MenuSystem::Render() {
       line += String(value, 1);
     }
 
-    display_->DrawMenuLine(i, line.c_str(), selected);
+    // Line index is i+1 to leave room for header
+    display_->DrawMenuLine(i + 1, line.c_str(), selected);
   }
 
   display_->UpdateMenuArea();

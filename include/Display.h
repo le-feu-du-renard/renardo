@@ -47,6 +47,7 @@ public:
 
   // Menu rendering
   void ClearMenuArea();
+  void DrawMenuHeader(const char *title);
   void DrawMenuLine(uint8_t line_index, const char *text, bool selected);
   void UpdateMenuArea();
 

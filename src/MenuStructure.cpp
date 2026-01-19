@@ -1,5 +1,181 @@
 #include "MenuStructure.h"
 
+// ========== Program Selection Submenu ==========
+// Dynamically builds a menu of available programs
+
+// Static handlers for program selection (one per program slot)
+static void SelectProgram0(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(0);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram1(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(1);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram2(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(2);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram3(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(3);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram4(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(4);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram5(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(5);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram6(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(6);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram7(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(7);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram8(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(8);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+static void SelectProgram9(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+  const Program* program = dryer->GetProgramLoader()->GetProgram(9);
+  if (program != nullptr) {
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  }
+}
+
+// Array of program selection handlers
+static CommandMenuItem::CommandFunc program_handlers[MAX_PROGRAMS] = {
+  SelectProgram0, SelectProgram1, SelectProgram2, SelectProgram3, SelectProgram4,
+  SelectProgram5, SelectProgram6, SelectProgram7, SelectProgram8, SelectProgram9
+};
+
+class ProgramSelectSubmenu : public SubmenuItem {
+public:
+  ProgramSelectSubmenu()
+    : SubmenuItem("Demarrer", nullptr, 0),
+      back_item_("Retour") {
+    // Initialize program items storage
+    for (uint8_t i = 0; i < MAX_PROGRAMS; i++) {
+      program_item_storage_[i].item = nullptr;
+    }
+  }
+
+  void OnEnter(MenuSystem* menu) override {
+    // Build menu with available programs
+    Dryer* dryer = menu->GetDryer();
+    ProgramLoader* loader = dryer->GetProgramLoader();
+
+    uint8_t program_count = loader->GetProgramCount();
+    uint8_t item_count = 0;
+
+    // Create menu items for each program
+    for (uint8_t i = 0; i < program_count; i++) {
+      const Program* program = loader->GetProgram(i);
+      if (program != nullptr) {
+        // Create or reuse command item
+        if (program_item_storage_[i].item == nullptr) {
+          program_item_storage_[i].item = new CommandMenuItem(
+            program->name,
+            program_handlers[i]
+          );
+        }
+        items_buffer_[item_count++] = program_item_storage_[i].item;
+      }
+    }
+
+    // Add back button
+    items_buffer_[item_count++] = &back_item_;
+
+    // Update parent class members
+    items_ = items_buffer_;
+    item_count_ = item_count;
+
+    // Call parent OnEnter with title
+    menu->EnterSubmenu(items_, item_count_, text_);
+  }
+
+  ~ProgramSelectSubmenu() {
+    // Clean up dynamically created items
+    for (uint8_t i = 0; i < MAX_PROGRAMS; i++) {
+      if (program_item_storage_[i].item != nullptr) {
+        delete program_item_storage_[i].item;
+      }
+    }
+  }
+
+private:
+  struct ProgramItemStorage {
+    CommandMenuItem* item;
+  };
+
+  ProgramItemStorage program_item_storage_[MAX_PROGRAMS];
+  BackMenuItem back_item_;
+  MenuItem* items_buffer_[MAX_PROGRAMS + 1]; // +1 for back button
+};
+
+static ProgramSelectSubmenu program_select_submenu;
+
 // ========== S1 Opérations Menu ==========
 // We need to dynamically build this menu based on dryer state
 // For now, we'll use a custom submenu class or rebuild logic
@@ -8,7 +184,6 @@ class DynamicOperationsSubmenu : public SubmenuItem {
 public:
   DynamicOperationsSubmenu()
     : SubmenuItem("S1 Operations", nullptr, 0),
-      start_item_("Demarrer", MenuStructure::StartDryerCommand),
       stop_item_("Arreter", MenuStructure::StopDryerCommand),
       restart_item_("Redemarrer", MenuStructure::RestartDryerCommand),
       back_item_("Retour") {}
@@ -26,8 +201,8 @@ public:
     uint8_t count = 0;
 
     if (!running) {
-      // Show only "Demarrer" when stopped
-      items_buffer_[count++] = &start_item_;
+      // Show "Demarrer" (program selection) when stopped
+      items_buffer_[count++] = &program_select_submenu;
     } else {
       // Show "Arreter" and "Redemarrer" when running
       items_buffer_[count++] = &stop_item_;
@@ -40,12 +215,11 @@ public:
     items_ = items_buffer_;
     item_count_ = count;
 
-    // Call parent OnEnter
-    menu->EnterSubmenu(items_, item_count_);
+    // Call parent OnEnter with title
+    menu->EnterSubmenu(items_, item_count_, text_);
   }
 
 private:
-  CommandMenuItem start_item_;
   CommandMenuItem stop_item_;
   CommandMenuItem restart_item_;
   BackMenuItem back_item_;
@@ -160,15 +334,6 @@ MenuItem* MenuStructure::BuildMenu() {
 
 void MenuStructure::ExitMenuCommand(MenuSystem* menu) {
   menu->Hide();
-}
-
-void MenuStructure::StartDryerCommand(MenuSystem* menu) {
-  Dryer* dryer = menu->GetDryer();
-  if (!dryer->IsRunning()) {
-    Serial.println("Menu: Starting dryer...");
-    dryer->Start();
-    menu->Hide();  // Exit menu after starting
-  }
 }
 
 void MenuStructure::StopDryerCommand(MenuSystem* menu) {
