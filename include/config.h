@@ -26,6 +26,13 @@
 // OneWire (Water Temperature)
 #define WATER_SENSOR_PIN 6
 
+// SD Card SPI
+// Note: Using default SPI0 pins for RP2040 Pico
+#define SD_CARD_CS_PIN 17   // Chip Select (can be any available pin)
+#define SD_CARD_MISO_PIN 16 // MISO (default SPI0 RX)
+#define SD_CARD_MOSI_PIN 19 // MOSI (default SPI0 TX)
+#define SD_CARD_SCK_PIN 18  // SCK (default SPI0 SCK)
+
 // Screen
 #define SCREEN_SSD1306_ADDR 0x3C
 #define SCREEN_WIDTH 128
@@ -64,5 +71,8 @@
 
 // Air recycling
 #define DEFAULT_RECYCLING_RATE 50.0 // % (0-100)
+
+// ========== DATA LOGGING ==========
+#define DATA_LOG_INTERVAL 60000 // ms (60 seconds = 1 minute)
 
 #endif // CONFIG_H

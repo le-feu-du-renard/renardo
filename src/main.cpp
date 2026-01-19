@@ -12,6 +12,7 @@
 #include "MenuSystem.h"
 #include "MenuStructure.h"
 #include "TimeManager.h"
+#include "DataLogger.h"
 
 // ========== GLOBAL OBJECTS ==========
 
@@ -48,6 +49,9 @@ Dryer dryer(&dac);
 // Menu System
 MenuSystem menu(&dryer, &display);
 
+// Data Logger
+DataLogger data_logger(&dryer, &time_manager);
+
 // Debounce objects
 Bounce button_encoder = Bounce();
 
@@ -59,6 +63,9 @@ unsigned long last_control_update = 0;
 unsigned long last_display_update = 0;
 unsigned long last_settings_save = 0;
 bool settings_need_save = false;
+
+// Data logging variables
+bool was_running = false;
 
 // Water temperature sensor async variables
 unsigned long water_temp_request_time = 0;
@@ -249,6 +256,24 @@ void SetupRTC()
   }
 }
 
+void SetupDataLogger()
+{
+  Serial.println("Initialize Data Logger...");
+  Serial.println("Note: This may take a few seconds if SD card is not present");
+
+  if (!data_logger.Begin())
+  {
+    Serial.println("ERROR: Data Logger initialization failed!");
+    Serial.println("WARNING: System will continue without data logging");
+  }
+  else
+  {
+    Serial.println("SUCCESS: Data Logger initialized!");
+  }
+
+  Serial.println("Data Logger setup complete");
+}
+
 // ========== MAIN SETUP (Core 0) ==========
 
 void setup()
@@ -263,6 +288,7 @@ void setup()
   SetupI2C();
   SetupOLED();
   SetupRTC();
+  SetupDataLogger();
 
   SetupPins();
   SetupDAC();
@@ -548,6 +574,37 @@ void UpdateSettings()
   }
 }
 
+void UpdateDataLogger()
+{
+  // Check if dryer state changed (started or stopped)
+  bool is_running = dryer.IsRunning();
+
+  if (is_running && !was_running)
+  {
+    // Dryer just started - start logging
+    Serial.println("Dryer started - beginning data logging");
+    if (data_logger.StartSession())
+    {
+      Serial.println("Data logging session started");
+    }
+    else
+    {
+      Serial.println("Failed to start data logging session");
+    }
+  }
+  else if (!is_running && was_running)
+  {
+    // Dryer just stopped - stop logging
+    Serial.println("Dryer stopped - ending data logging");
+    data_logger.StopSession();
+  }
+
+  was_running = is_running;
+
+  // Update logger (writes data if logging active)
+  data_logger.Update();
+}
+
 void loop()
 {
   UpdateSensors();
@@ -555,6 +612,8 @@ void loop()
   UpdateEncoderInputs();
   UpdateControl();
   UpdateSettings();
+  UpdateDataLogger();
+
   UpdateOutputs();
   UpdateDisplay();
 
