@@ -16,19 +16,81 @@ bool TimeManager::Begin()
 
   Serial.println("RTC DS1307 initialized successfully");
 
-  // Check if RTC is running
-  if (!rtc_.isrunning())
+  // Check current RTC time
+  DateTime now = rtc_.now();
+  DateTime compileTime(F(__DATE__), F(__TIME__));
+
+  Serial.print("Current RTC time: ");
+  Serial.print(now.year());
+  Serial.print("-");
+  Serial.print(now.month());
+  Serial.print("-");
+  Serial.print(now.day());
+  Serial.print(" ");
+  Serial.print(now.hour());
+  Serial.print(":");
+  Serial.print(now.minute());
+  Serial.print(":");
+  Serial.println(now.second());
+
+  // Update RTC time only if it's invalid or outdated
+  bool needsUpdate = false;
+
+  // Check if year is 2000 (default reset value)
+  if (now.year() < 2020)
   {
-    Serial.println("WARNING: RTC is not running, time needs to be set!");
-    Serial.println("Time will be set to compile time as default");
-    // Set to compile time as default
-    rtc_.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    Serial.println("RTC time is invalid (year < 2020), updating...");
+    needsUpdate = true;
+  }
+  // Check if RTC time is in the future compared to compile time
+  else if (now.unixtime() > compileTime.unixtime() + 86400)
+  {
+    Serial.println("RTC time is more than 1 day in the future, updating...");
+    needsUpdate = true;
+  }
+  // Check if RTC is not running (lost power)
+  else if (!rtc_.isrunning())
+  {
+    Serial.println("RTC oscillator not running, updating time...");
+    needsUpdate = true;
   }
 
-  // Print current time
-  DateTime now = rtc_.now();
-  Serial.print("Current RTC time: ");
-  Serial.println(GetDateTimeString());
+  if (needsUpdate)
+  {
+    Serial.print("Setting RTC to compile time: ");
+    Serial.print(compileTime.year());
+    Serial.print("-");
+    Serial.print(compileTime.month());
+    Serial.print("-");
+    Serial.print(compileTime.day());
+    Serial.print(" ");
+    Serial.print(compileTime.hour());
+    Serial.print(":");
+    Serial.print(compileTime.minute());
+    Serial.print(":");
+    Serial.println(compileTime.second());
+
+    rtc_.adjust(compileTime);
+    delay(100); // Wait for I2C write to complete
+
+    now = rtc_.now();
+    Serial.print("RTC time updated to: ");
+    Serial.print(now.year());
+    Serial.print("-");
+    Serial.print(now.month());
+    Serial.print("-");
+    Serial.print(now.day());
+    Serial.print(" ");
+    Serial.print(now.hour());
+    Serial.print(":");
+    Serial.print(now.minute());
+    Serial.print(":");
+    Serial.println(now.second());
+  }
+  else
+  {
+    Serial.println("RTC time is valid, no update needed");
+  }
 
   initialized_ = true;
   return true;
