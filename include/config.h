@@ -14,13 +14,13 @@
 #define I2C_BUS_2_SCL_PIN 27
 
 // Rotary Encoder
-#define ROTARY_ENCODER_SW_PIN 7
-#define ROTARY_ENCODER_CLK_PIN 8
-#define ROTARY_ENCODER_DT_PIN 9
+#define ROTARY_ENCODER_SW_PIN 22
+#define ROTARY_ENCODER_CLK_PIN 20
+#define ROTARY_ENCODER_DT_PIN 21
 
 // Outputs
-#define ELECTRIC_HEATER_RELAY_PIN 14
-#define FAN_RELAY_PIN 15
+#define ELECTRIC_HEATER_RELAY_PIN 7
+#define FAN_RELAY_PIN 8
 #define WATER_CIRCULATOR_PWM_PIN 5
 
 // OneWire (Water Temperature)
@@ -55,7 +55,7 @@
 
 // Heating parameters
 #define DEFAULT_TEMPERATURE_TARGET 50.0      // °C (20-80)
-#define DEFAULT_TEMPERATURE_DEADBAND 2.0     // °C (0.5-10)
+#define DEFAULT_TEMPERATURE_DEADBAND 0.5     // °C (0.5-10)
 #define DEFAULT_HEATING_ACTION_MIN_WAIT 10.0 // seconds (5-120)
 #define DEFAULT_HEATER_STEP_MIN 0.05         // ratio (0.01-0.5)
 #define DEFAULT_HEATER_STEP_MAX 0.2          // ratio (0.05-1.0)
