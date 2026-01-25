@@ -32,7 +32,7 @@ struct PersistentSettings {
   uint16_t checksum;
 
   PersistentSettings()
-    : version(4),
+    : version(5),
       session_running(false),
       cycle_index(0),
       phase_index_in_cycle(0),
@@ -80,7 +80,7 @@ class SettingsManager {
   void ResetToDefaults();
 
  private:
-  static constexpr uint16_t kSettingsVersion = 4;
+  static constexpr uint16_t kSettingsVersion = 5;
   static constexpr size_t kEepromSize = sizeof(PersistentSettings);
   static constexpr uint16_t kEepromAddress = 0;
 
