@@ -260,15 +260,14 @@ void Display::DrawMenuHeader(const char *title)
   if (title == nullptr)
     return;
 
-  // Draw header at line 0 with inverted background
-  oled_->fillRect(0, 0, oled_->width(), 12, SSD1306_WHITE);
+  // Draw header at line 0 without background
   oled_->setFont(&Chicago5pt7b);
-  oled_->setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+  oled_->setTextColor(SSD1306_WHITE);
   oled_->setCursor(2, 10);
   oled_->print(title);
 
-  // Reset text color
-  oled_->setTextColor(SSD1306_WHITE);
+  // Draw separation line below the header
+  oled_->drawLine(0, 12, oled_->width() - 1, 12, SSD1306_WHITE);
 }
 
 void Display::DrawMenuLine(uint8_t line_index, const char *text, bool selected)
