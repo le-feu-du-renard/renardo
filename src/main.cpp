@@ -204,23 +204,51 @@ void SetupDAC()
 
 void SetupSensors()
 {
+  // Add delay to let I2C bus stabilize after OLED/RTC init
+  delay(100);
+
   // CHT8305 sensors
-  if (inlet_air_sensor.begin() != 0)
+  Serial.println("Testing Inlet sensor connection...");
+
+  // Try to clear any I2C bus issues
+  i2c_bus_2.beginTransmission(CHT8305_INLET_ADDR);
+  i2c_bus_2.endTransmission();
+  delay(50);
+
+  int result = inlet_air_sensor.begin();
+  if (result != 0)
   {
-    Serial.println("ERROR: Inlet air sensor not found!");
+    Serial.print("ERROR: Inlet air sensor not found! Error code: ");
+    Serial.println(result);
   }
   else if (!inlet_air_sensor.isConnected())
   {
     Serial.println("ERROR: Inlet air sensor not connected!");
   }
-
-  if (outlet_air_sensor.begin() != 0)
+  else
   {
-    Serial.println("ERROR: Outlet air sensor not found!");
+    Serial.println("SUCCESS: Inlet air sensor initialized!");
+  }
+
+  // Clear I2C bus 1 before outlet sensor init
+  Serial.println("Testing Outlet sensor connection...");
+  i2c_bus_1.beginTransmission(CHT8305_OUTLET_ADDR);
+  i2c_bus_1.endTransmission();
+  delay(50);
+
+  int outlet_result = outlet_air_sensor.begin();
+  if (outlet_result != 0)
+  {
+    Serial.print("ERROR: Outlet air sensor not found! Error code: ");
+    Serial.println(outlet_result);
   }
   else if (!outlet_air_sensor.isConnected())
   {
     Serial.println("ERROR: Outlet air sensor not connected!");
+  }
+  else
+  {
+    Serial.println("SUCCESS: Outlet air sensor initialized!");
   }
 
   // Water temperature sensor
@@ -279,20 +307,32 @@ void SetupDataLogger()
 void setup()
 {
   Serial.begin(115200);
-  delay(1000);
+  delay(2000);
 
   Serial.println("\n========================================");
-  Serial.println("    Dryer Controller - MINIMAL TEST");
+  Serial.println("    Dryer Controller");
   Serial.println("========================================\n");
 
   SetupI2C();
+  delay(100);
+
   SetupOLED();
+  delay(100);
+
   SetupRTC();
+  delay(100);
+
   SetupDataLogger();
+  delay(100);
 
   SetupPins();
+  delay(100);
+
   SetupDAC();
+  delay(100);
+
   SetupSensors();
+  delay(100);
 
   dryer.Begin();
   dryer.SetSettingsChangedCallback(OnSettingsChanged);
