@@ -12,7 +12,7 @@
 #include "MenuSystem.h"
 #include "MenuStructure.h"
 #include "TimeManager.h"
-#include "DataLogger.h"
+#include "SessionMonitor.h"
 
 // ========== GLOBAL OBJECTS ==========
 
@@ -49,8 +49,8 @@ Dryer dryer(&dac);
 // Menu System
 MenuSystem menu(&dryer, &display);
 
-// Data Logger
-DataLogger data_logger(&dryer, &time_manager);
+// Session Monitor
+SessionMonitor session_monitor(&dryer, &time_manager);
 
 // Debounce objects
 Bounce button_encoder = Bounce();
@@ -284,22 +284,22 @@ void SetupRTC()
   }
 }
 
-void SetupDataLogger()
+void SetupSessionMonitor()
 {
-  Serial.println("Initialize Data Logger...");
+  Serial.println("Initialize Session Monitor...");
   Serial.println("Note: This may take a few seconds if SD card is not present");
 
-  if (!data_logger.Begin())
+  if (!session_monitor.Begin())
   {
-    Serial.println("ERROR: Data Logger initialization failed!");
-    Serial.println("WARNING: System will continue without data logging");
+    Serial.println("ERROR: Session Monitor initialization failed!");
+    Serial.println("WARNING: System will continue without session monitoring");
   }
   else
   {
-    Serial.println("SUCCESS: Data Logger initialized!");
+    Serial.println("SUCCESS: Session Monitor initialized!");
   }
 
-  Serial.println("Data Logger setup complete");
+  Serial.println("Session Monitor setup complete");
 }
 
 // ========== MAIN SETUP (Core 0) ==========
@@ -322,7 +322,7 @@ void setup()
   SetupRTC();
   delay(100);
 
-  SetupDataLogger();
+  SetupSessionMonitor();
   delay(100);
 
   SetupPins();
@@ -617,35 +617,35 @@ void UpdateSettings()
   }
 }
 
-void UpdateDataLogger()
+void UpdateSessionMonitor()
 {
   // Check if dryer state changed (started or stopped)
   bool is_running = dryer.IsRunning();
 
   if (is_running && !was_running)
   {
-    // Dryer just started - start logging
-    Serial.println("Dryer started - beginning data logging");
-    if (data_logger.StartSession())
+    // Dryer just started - start monitoring
+    Serial.println("Dryer started - beginning session monitoring");
+    if (session_monitor.StartSession())
     {
-      Serial.println("Data logging session started");
+      Serial.println("Session monitoring started");
     }
     else
     {
-      Serial.println("Failed to start data logging session");
+      Serial.println("Failed to start session monitoring");
     }
   }
   else if (!is_running && was_running)
   {
-    // Dryer just stopped - stop logging
-    Serial.println("Dryer stopped - ending data logging");
-    data_logger.StopSession();
+    // Dryer just stopped - stop monitoring
+    Serial.println("Dryer stopped - ending session monitoring");
+    session_monitor.StopSession();
   }
 
   was_running = is_running;
 
-  // Update logger (writes data if logging active)
-  data_logger.Update();
+  // Update monitor (writes data if monitoring active)
+  session_monitor.Update();
 }
 
 void loop()
@@ -655,7 +655,7 @@ void loop()
   UpdateEncoderInputs();
   UpdateControl();
   UpdateSettings();
-  UpdateDataLogger();
+  UpdateSessionMonitor();
 
   UpdateOutputs();
   UpdateDisplay();

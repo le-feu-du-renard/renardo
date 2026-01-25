@@ -1,6 +1,6 @@
-#include "DataLogger.h"
+#include "SessionMonitor.h"
 
-DataLogger::DataLogger(Dryer *dryer, TimeManager *time_manager)
+SessionMonitor::SessionMonitor(Dryer *dryer, TimeManager *time_manager)
     : dryer_(dryer),
       time_manager_(time_manager),
       sd_initialized_(false),
@@ -11,9 +11,9 @@ DataLogger::DataLogger(Dryer *dryer, TimeManager *time_manager)
 {
 }
 
-bool DataLogger::Begin()
+bool SessionMonitor::Begin()
 {
-  Serial.println("DataLogger::Begin() - START");
+  Serial.println("SessionMonitor::Begin() - START");
   Serial.flush();
 
   // Configure CS pin
@@ -107,7 +107,7 @@ bool DataLogger::Begin()
   return true;
 }
 
-bool DataLogger::StartSession()
+bool SessionMonitor::StartSession()
 {
   if (!sd_initialized_)
   {
@@ -115,37 +115,95 @@ bool DataLogger::StartSession()
     return false;
   }
 
-  // Generate filename with counter and timestamp
-  // Format: X_YYMM.CSV where X is sequential counter, YY=year, MM=month
+  // Generate filename with batch number and timestamp
+  // Format: /sessions/YYYY/MM/YYMMXXXX.csv where YYYY=year, MM=month, XXXX=sequential batch number (4 digits)
   String timestamp = time_manager_->GetTimestampFilename();
 
   // Extract year and month from timestamp (YYYYMMDD_HHMMSS)
-  String year_month = timestamp.substring(2, 4) + timestamp.substring(4, 6); // YYMM
+  String year = timestamp.substring(0, 4);      // YYYY
+  String month = timestamp.substring(4, 6);     // MM
+  String year_month = timestamp.substring(2, 4) + month; // YYMM
 
-  // Find next available counter
-  int counter = 1;
-  String test_filename;
-  while (counter < 1000) // Max 999 sessions
+  // Create directory structure: /sessions/YYYY/MM/
+  String sessions_dir = "/sessions";
+  String year_dir = sessions_dir + "/" + year;
+  String month_dir = year_dir + "/" + month;
+
+  // Create directories if they don't exist
+  if (!SD.exists(sessions_dir.c_str()))
   {
-    test_filename = String(counter) + "_" + year_month + ".csv";
-
-    // Check if file exists
-    SDFile test_file = SD.open(test_filename.c_str(), FILE_READ);
-    if (!test_file)
+    Serial.print("Creating directory: ");
+    Serial.println(sessions_dir);
+    if (!SD.mkdir(sessions_dir.c_str()))
     {
-      // File doesn't exist, we can use this name
-      break;
+      Serial.println("ERROR: Failed to create sessions directory!");
+      return false;
     }
-    test_file.close();
-    counter++;
   }
 
-  current_filename_ = test_filename;
+  if (!SD.exists(year_dir.c_str()))
+  {
+    Serial.print("Creating directory: ");
+    Serial.println(year_dir);
+    if (!SD.mkdir(year_dir.c_str()))
+    {
+      Serial.println("ERROR: Failed to create year directory!");
+      return false;
+    }
+  }
+
+  if (!SD.exists(month_dir.c_str()))
+  {
+    Serial.print("Creating directory: ");
+    Serial.println(month_dir);
+    if (!SD.mkdir(month_dir.c_str()))
+    {
+      Serial.println("ERROR: Failed to create month directory!");
+      return false;
+    }
+  }
+
+  // Scan files in month directory to find the highest batch number
+  int max_batch_number = 0;
+  SDFile month_folder = SD.open(month_dir.c_str());
+  if (month_folder)
+  {
+    SDFile entry = month_folder.openNextFile();
+    while (entry)
+    {
+      String filename = String(entry.name());
+      entry.close();
+
+      // Check if filename matches pattern: YYMMXXXX.csv (12 chars)
+      if (filename.length() == 12 && filename.endsWith(".csv"))
+      {
+        // Extract batch number (4 digits after YYMM)
+        String batch_str = filename.substring(4, 8);
+        int batch_num = batch_str.toInt();
+        if (batch_num > max_batch_number)
+        {
+          max_batch_number = batch_num;
+        }
+      }
+      entry = month_folder.openNextFile();
+    }
+    month_folder.close();
+  }
+
+  // Next batch number is max + 1
+  int batch_number = max_batch_number + 1;
+
+  // Format batch number with 4 digits (0001, 0002, etc.)
+  char batch_str[5];
+  snprintf(batch_str, sizeof(batch_str), "%04d", batch_number);
+  String filename = year_month + String(batch_str) + ".csv";
+
+  current_filename_ = month_dir + "/" + filename;
 
   Serial.print("Creating log file: ");
   Serial.println(current_filename_);
-  Serial.print("Session #");
-  Serial.print(counter);
+  Serial.print("Batch #");
+  Serial.print(batch_number);
   Serial.print(" - Full timestamp: ");
   Serial.println(timestamp);
 
@@ -188,7 +246,7 @@ bool DataLogger::StartSession()
   return true;
 }
 
-void DataLogger::StopSession()
+void SessionMonitor::StopSession()
 {
   if (logging_active_)
   {
@@ -198,7 +256,7 @@ void DataLogger::StopSession()
   }
 }
 
-void DataLogger::Update()
+void SessionMonitor::Update()
 {
   if (!logging_active_ || !sd_initialized_)
   {
@@ -228,7 +286,7 @@ void DataLogger::Update()
   }
 }
 
-void DataLogger::WriteHeader(SDFile &file)
+void SessionMonitor::WriteHeader(SDFile &file)
 {
   file.print("timestamp,");
   file.print("inlet_temperature,");
@@ -248,13 +306,13 @@ void DataLogger::WriteHeader(SDFile &file)
   file.println("phase_name");
 }
 
-void DataLogger::WriteDataRow(SDFile &file)
+void SessionMonitor::WriteDataRow(SDFile &file)
 {
   String dataRow = GetDataRowString();
   file.println(dataRow);
 }
 
-String DataLogger::GetDataRowString()
+String SessionMonitor::GetDataRowString()
 {
   String row = "";
 

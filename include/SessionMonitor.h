@@ -1,5 +1,5 @@
-#ifndef DATA_LOGGER_H
-#define DATA_LOGGER_H
+#ifndef SESSION_MONITOR_H
+#define SESSION_MONITOR_H
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -12,23 +12,23 @@
 using SDFile = SDLib::File;
 
 /**
- * @brief Data logger for recording drying session data to SD card
+ * @brief Session monitor for recording drying session data to SD card
  *
  * This class handles:
  * - SD card initialization
- * - Creating CSV files with timestamps
+ * - Creating CSV files with batch numbers in organized directory structure
  * - Logging session data at configurable intervals
  * - Writing headers and data rows
  */
-class DataLogger
+class SessionMonitor
 {
 public:
   /**
-   * @brief Construct a new Data Logger object
+   * @brief Construct a new Session Monitor object
    * @param dryer Pointer to the Dryer instance
    * @param time_manager Pointer to the TimeManager instance
    */
-  DataLogger(Dryer *dryer, TimeManager *time_manager);
+  SessionMonitor(Dryer *dryer, TimeManager *time_manager);
 
   /**
    * @brief Initialize the SD card and SPI interface
@@ -95,4 +95,4 @@ private:
   String GetDataRowString();
 };
 
-#endif // DATA_LOGGER_H
+#endif // SESSION_MONITOR_H
