@@ -38,7 +38,7 @@ Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c_bus_2, SCREEN_OLED_RESET
 TimeManager time_manager(&i2c_bus_2);
 
 // Rotary Encoder
-RotaryEncoder encoder(ROTARY_ENCODER_CLK_PIN, ROTARY_ENCODER_DT_PIN, RotaryEncoder::LatchMode::TWO03);
+RotaryEncoder encoder(ROTARY_ENCODER_CLK_PIN, ROTARY_ENCODER_DT_PIN, RotaryEncoder::LatchMode::FOUR3);
 
 // Display
 Display display(&oled);
@@ -380,16 +380,19 @@ void UpdateEncoderInputs()
       // Menu navigation or value adjustment
       if (menu.IsEditing())
       {
-        // Adjust value in edit mode
-        if (delta > 0)
+        // Adjust value in edit mode - process each step individually
+        for (int i = 0; i < abs(delta); i++)
         {
-          Serial.println("Encoder increment");
-          menu.GetCurrentItem()->OnIncrement(&menu);
-        }
-        else
-        {
-          Serial.println("Encoder decrement");
-          menu.GetCurrentItem()->OnDecrement(&menu);
+          if (delta > 0)
+          {
+            Serial.println("Encoder increment");
+            menu.GetCurrentItem()->OnIncrement(&menu);
+          }
+          else
+          {
+            Serial.println("Encoder decrement");
+            menu.GetCurrentItem()->OnDecrement(&menu);
+          }
         }
       }
       else
