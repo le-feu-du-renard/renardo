@@ -463,7 +463,7 @@ void UpdateSensors()
     }
 
     // Log values
-    Log.verbose("Inlet: %.1f°C, %.0f%% | Outlet: %.1f°C, %.0f%%",
+    Log.verbose("Inlet: %D°C, %D%% | Outlet: %D°C, %D%%",
                 inlet_air_sensor.getTemperature(), inlet_air_sensor.getHumidity(),
                 outlet_air_sensor.getTemperature(), outlet_air_sensor.getHumidity());
   }
