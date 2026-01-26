@@ -139,7 +139,31 @@ void SettingsManager::WriteToEeprom()
     EEPROM.write(kEepromAddress + i, data[i]);
   }
 
-  EEPROM.commit();
+  Serial.println("EEPROM write complete, committing...");
+  Serial.flush(); // Ensure message is sent before potential hang
+
+  unsigned long commit_start = millis();
+  bool commit_result = EEPROM.commit();
+  unsigned long commit_time = millis() - commit_start;
+
+  if (commit_result)
+  {
+    Serial.print("EEPROM commit successful (");
+    Serial.print(commit_time);
+    Serial.println("ms)");
+  }
+  else
+  {
+    Serial.println("WARNING: EEPROM commit failed!");
+  }
+
+  // If commit takes too long, warn user
+  if (commit_time > 500)
+  {
+    Serial.print("WARNING: EEPROM commit took ");
+    Serial.print(commit_time);
+    Serial.println("ms (expected < 500ms)");
+  }
 }
 
 bool SettingsManager::ReadFromEeprom()

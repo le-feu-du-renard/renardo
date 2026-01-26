@@ -8,7 +8,8 @@ SessionMonitor::SessionMonitor(Dryer *dryer, TimeManager *time_manager)
       current_filename_(""),
       last_log_time_(0),
       log_interval_(DATA_LOG_INTERVAL),
-      consecutive_failures_(0)
+      consecutive_failures_(0),
+      last_init_attempt_(0)
 {
 }
 
@@ -131,64 +132,142 @@ bool SessionMonitor::StartSession()
   String month_dir = year_dir + "/" + month;
 
   // Create directories if they don't exist
+  bool use_root_fallback = false;
+
   if (!SD.exists(sessions_dir.c_str()))
   {
-    Serial.print("Creating directory: ");
+    Serial.print("[SessionMonitor] Creating directory: ");
     Serial.println(sessions_dir);
+    Serial.flush();
+
     if (!SD.mkdir(sessions_dir.c_str()))
     {
-      Serial.println("ERROR: Failed to create sessions directory!");
-      return false;
+      // Check if it failed because directory already exists (race condition)
+      if (SD.exists(sessions_dir.c_str()))
+      {
+        Serial.println("[SessionMonitor] Directory already exists (created by another process)");
+      }
+      else
+      {
+        Serial.println("[SessionMonitor] ERROR: Failed to create sessions directory!");
+        Serial.println("[SessionMonitor] Possible causes:");
+        Serial.println("[SessionMonitor]   - SD card is full");
+        Serial.println("[SessionMonitor]   - SD card is write-protected");
+        Serial.println("[SessionMonitor]   - SD card filesystem corrupted");
+        Serial.println("[SessionMonitor] Will use root directory as fallback");
+        use_root_fallback = true;
+      }
+    }
+    else
+    {
+      Serial.println("[SessionMonitor] Sessions directory created successfully");
     }
   }
-
-  if (!SD.exists(year_dir.c_str()))
+  else
   {
-    Serial.print("Creating directory: ");
+    Serial.println("[SessionMonitor] Sessions directory already exists");
+  }
+
+  if (!use_root_fallback && !SD.exists(year_dir.c_str()))
+  {
+    Serial.print("[SessionMonitor] Creating directory: ");
     Serial.println(year_dir);
     if (!SD.mkdir(year_dir.c_str()))
     {
-      Serial.println("ERROR: Failed to create year directory!");
-      return false;
+      if (SD.exists(year_dir.c_str()))
+      {
+        Serial.println("[SessionMonitor] Year directory already exists");
+      }
+      else
+      {
+        Serial.println("[SessionMonitor] ERROR: Failed to create year directory!");
+        use_root_fallback = true;
+      }
     }
   }
-
-  if (!SD.exists(month_dir.c_str()))
+  else if (!use_root_fallback)
   {
-    Serial.print("Creating directory: ");
+    Serial.println("[SessionMonitor] Year directory already exists");
+  }
+
+  if (!use_root_fallback && !SD.exists(month_dir.c_str()))
+  {
+    Serial.print("[SessionMonitor] Creating directory: ");
     Serial.println(month_dir);
     if (!SD.mkdir(month_dir.c_str()))
     {
-      Serial.println("ERROR: Failed to create month directory!");
-      return false;
+      if (SD.exists(month_dir.c_str()))
+      {
+        Serial.println("[SessionMonitor] Month directory already exists");
+      }
+      else
+      {
+        Serial.println("[SessionMonitor] ERROR: Failed to create month directory!");
+        use_root_fallback = true;
+      }
     }
   }
-
-  // Scan files in month directory to find the highest batch number
-  int max_batch_number = 0;
-  SDFile month_folder = SD.open(month_dir.c_str());
-  if (month_folder)
+  else if (!use_root_fallback)
   {
-    SDFile entry = month_folder.openNextFile();
-    while (entry)
-    {
-      String filename = String(entry.name());
-      entry.close();
+    Serial.println("[SessionMonitor] Month directory already exists");
+  }
 
-      // Check if filename matches pattern: YYMMXXXX.csv (12 chars)
-      if (filename.length() == 12 && filename.endsWith(".csv"))
+  // Scan files in appropriate directory to find the highest batch number
+  int max_batch_number = 0;
+  String search_dir = use_root_fallback ? "/" : month_dir;
+
+  if (!use_root_fallback)
+  {
+    SDFile month_folder = SD.open(month_dir.c_str());
+    if (month_folder)
+    {
+      SDFile entry = month_folder.openNextFile();
+      while (entry)
       {
-        // Extract batch number (4 digits after YYMM)
-        String batch_str = filename.substring(4, 8);
-        int batch_num = batch_str.toInt();
-        if (batch_num > max_batch_number)
+        String filename = String(entry.name());
+        entry.close();
+
+        // Check if filename matches pattern: YYMMXXXX.csv (12 chars)
+        if (filename.length() == 12 && filename.endsWith(".csv"))
         {
-          max_batch_number = batch_num;
+          // Extract batch number (4 digits after YYMM)
+          String batch_str = filename.substring(4, 8);
+          int batch_num = batch_str.toInt();
+          if (batch_num > max_batch_number)
+          {
+            max_batch_number = batch_num;
+          }
         }
+        entry = month_folder.openNextFile();
       }
-      entry = month_folder.openNextFile();
+      month_folder.close();
     }
-    month_folder.close();
+  }
+  else
+  {
+    // Scan root directory for fallback files
+    SDFile root = SD.open("/");
+    if (root)
+    {
+      SDFile entry = root.openNextFile();
+      while (entry)
+      {
+        String filename = String(entry.name());
+        entry.close();
+
+        if (filename.length() == 12 && filename.endsWith(".csv"))
+        {
+          String batch_str = filename.substring(4, 8);
+          int batch_num = batch_str.toInt();
+          if (batch_num > max_batch_number)
+          {
+            max_batch_number = batch_num;
+          }
+        }
+        entry = root.openNextFile();
+      }
+      root.close();
+    }
   }
 
   // Next batch number is max + 1
@@ -199,7 +278,16 @@ bool SessionMonitor::StartSession()
   snprintf(batch_str, sizeof(batch_str), "%04d", batch_number);
   String filename = year_month + String(batch_str) + ".csv";
 
-  current_filename_ = month_dir + "/" + filename;
+  if (use_root_fallback)
+  {
+    current_filename_ = "/" + filename;
+    Serial.print("[SessionMonitor] Using root directory, filename: ");
+    Serial.println(current_filename_);
+  }
+  else
+  {
+    current_filename_ = month_dir + "/" + filename;
+  }
 
   Serial.print("Creating log file: ");
   Serial.println(current_filename_);
@@ -259,168 +347,69 @@ void SessionMonitor::StopSession()
 
 void SessionMonitor::Update()
 {
+  // Debug: Log state every minute
+  static unsigned long last_debug = 0;
+  unsigned long now = millis();
+  if (now - last_debug >= 60000)
+  {
+    last_debug = now;
+    Serial.print("[SessionMonitor] Status: SD=");
+    Serial.print(sd_initialized_ ? "OK" : "NOT_INIT");
+    Serial.print(", Logging=");
+    Serial.println(logging_active_ ? "ACTIVE" : "INACTIVE");
+  }
+
   if (!logging_active_ || !sd_initialized_)
   {
     return;
   }
 
-  // Check if too many consecutive failures - disable logging
-  if (consecutive_failures_ >= MAX_CONSECUTIVE_FAILURES)
-  {
-    Serial.println("[SessionMonitor] ERROR: Too many consecutive failures - disabling SD logging!");
-    Serial.println("[SessionMonitor] SD card may have been removed or is malfunctioning");
-    logging_active_ = false;
-    sd_initialized_ = false;
-    return;
-  }
-
-  unsigned long now = millis();
-
   // Check if it's time to log
   if (now - last_log_time_ >= log_interval_)
   {
-    Serial.println("[SessionMonitor] Starting log write cycle...");
-    unsigned long cycle_start = millis();
-
-    // Check memory before logging
-    uint32_t free_heap = rp2040.getFreeHeap();
-    Serial.print("[SessionMonitor] Free heap before log: ");
-    Serial.print(free_heap);
-    Serial.println(" bytes");
-
     last_log_time_ = now;
 
-    // Try to open file with retry logic (reduced to 2 retries to avoid long blocks)
-    const int MAX_RETRIES = 2;
-    SDFile file;
-    bool file_opened = false;
+    Serial.println("[SessionMonitor] Time to log - writing directly to SD...");
 
-    Serial.print("[SessionMonitor] Opening file: ");
-    Serial.println(current_filename_);
+    // MONO-CORE: Write directly to SD instead of queuing
+    unsigned long write_start = millis();
 
-    for (int retry = 0; retry < MAX_RETRIES && !file_opened; retry++)
+    SDFile file = SD.open(current_filename_.c_str(), FILE_WRITE);
+    if (file)
     {
-      unsigned long open_start = millis();
+      String log_data = GetDataRowString();
+      file.println(log_data);
+      file.close();
 
-      if (retry > 0)
-      {
-        Serial.print("[SessionMonitor] Retry attempt ");
-        Serial.print(retry);
-        Serial.println("...");
-        delay(50); // Small delay between retries
+      unsigned long write_time = millis() - write_start;
+      Serial.print("[SessionMonitor] Log written in ");
+      Serial.print(write_time);
+      Serial.println("ms");
 
-        // Re-ensure CS pin is properly set
-        digitalWrite(SD_CARD_CS_PIN, HIGH);
-        delay(10);
-      }
-
-      // Open file in append mode
-      Serial.println("[SessionMonitor] Calling SD.open()...");
-      Serial.flush(); // Ensure message is sent before potential block
-      file = SD.open(current_filename_.c_str(), FILE_WRITE);
-
-      unsigned long open_time = millis() - open_start;
-
-      if (file)
-      {
-        file_opened = true;
-        Serial.print("[SessionMonitor] File opened successfully in ");
-        Serial.print(open_time);
-        Serial.println("ms");
-      }
-      else
-      {
-        Serial.print("[SessionMonitor] SD.open() failed after ");
-        Serial.print(open_time);
-        Serial.println("ms");
-
-        // If a retry takes more than 5 seconds, something is seriously wrong
-        if (open_time > 5000)
-        {
-          Serial.println("[SessionMonitor] WARNING: SD.open() blocked for >5s - SD card issue!");
-          break; // Exit retry loop immediately
-        }
-      }
+      // Reset consecutive failures on success
+      consecutive_failures_ = 0;
     }
-
-    if (!file_opened)
+    else
     {
       consecutive_failures_++;
-      Serial.println("[SessionMonitor] ERROR: Failed to open log file for writing after retries!");
-      Serial.print("[SessionMonitor] Filename: ");
-      Serial.println(current_filename_);
+      Serial.println("[SessionMonitor] ERROR: Failed to open log file");
       Serial.print("[SessionMonitor] Consecutive failures: ");
       Serial.print(consecutive_failures_);
       Serial.print("/");
       Serial.println(MAX_CONSECUTIVE_FAILURES);
 
-      // Check if file still exists
-      if (SD.exists(current_filename_.c_str()))
+      // Disable logging after too many failures
+      if (consecutive_failures_ >= MAX_CONSECUTIVE_FAILURES)
       {
-        Serial.println("[SessionMonitor] File exists but cannot be opened - possible SD card issue");
-      }
-      else
-      {
-        Serial.println("[SessionMonitor] File does not exist anymore!");
+        Serial.println("[SessionMonitor] ERROR: Too many failures - disabling SD logging!");
         logging_active_ = false;
+        sd_initialized_ = false;
       }
-
-      unsigned long cycle_time = millis() - cycle_start;
-      Serial.print("[SessionMonitor] Failed cycle took ");
-      Serial.print(cycle_time);
-      Serial.println("ms");
-      return;
-    }
-
-    // Write data row
-    Serial.println("[SessionMonitor] Writing data row...");
-    unsigned long write_start = millis();
-    WriteDataRow(file);
-    unsigned long write_time = millis() - write_start;
-
-    Serial.print("[SessionMonitor] Data written in ");
-    Serial.print(write_time);
-    Serial.println("ms");
-
-    Serial.println("[SessionMonitor] Closing file...");
-    unsigned long close_start = millis();
-    file.close();
-    unsigned long close_time = millis() - close_start;
-
-    Serial.print("[SessionMonitor] File closed in ");
-    Serial.print(close_time);
-    Serial.println("ms");
-
-    unsigned long cycle_time = millis() - cycle_start;
-
-    // Check memory after logging
-    uint32_t free_heap_after = rp2040.getFreeHeap();
-    Serial.print("[SessionMonitor] Free heap after log: ");
-    Serial.print(free_heap_after);
-    Serial.println(" bytes");
-
-    if (free_heap_after < free_heap)
-    {
-      int32_t heap_delta = (int32_t)free_heap - (int32_t)free_heap_after;
-      Serial.print("[SessionMonitor] WARNING: Heap decreased by ");
-      Serial.print(heap_delta);
-      Serial.println(" bytes during log cycle!");
-    }
-
-    Serial.print("[SessionMonitor] Data logged to SD card in ");
-    Serial.print(cycle_time);
-    Serial.println("ms");
-
-    // Reset consecutive failures counter on success
-    if (consecutive_failures_ > 0)
-    {
-      Serial.print("[SessionMonitor] Clearing consecutive failures counter (was ");
-      Serial.print(consecutive_failures_);
-      Serial.println(")");
-      consecutive_failures_ = 0;
     }
   }
 }
+
+// Queue functions removed - mono-core writes directly to SD
 
 void SessionMonitor::WriteHeader(SDFile &file)
 {
@@ -527,4 +516,25 @@ String SessionMonitor::GetDataRowString()
   row += dryer_->GetPhaseName();
 
   return row;
+}
+
+bool SessionMonitor::RetryInitialization()
+{
+  unsigned long now = millis();
+
+  // Don't retry too frequently
+  if (now - last_init_attempt_ < INIT_RETRY_INTERVAL)
+  {
+    return false;
+  }
+
+  last_init_attempt_ = now;
+
+  Serial.println("[SessionMonitor] Attempting to reinitialize SD card...");
+
+  // Reset consecutive failures
+  consecutive_failures_ = 0;
+
+  // Try to initialize SD card
+  return Begin();
 }

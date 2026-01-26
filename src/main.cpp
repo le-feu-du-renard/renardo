@@ -4,6 +4,7 @@
 #include <DallasTemperature.h>
 #include <RotaryEncoder.h>
 #include <Bounce2.h>
+#include <hardware/watchdog.h>
 
 #include "config.h"
 #include <CHT8305.h>
@@ -161,14 +162,16 @@ void SetupI2C()
   // Bus 1: DAC + Outlet Air Sensor
   i2c_bus_1.begin();
   i2c_bus_1.setClock(50000);
-  Serial.println("I2C bus 1 (DAC + Outlet) initialized at 50kHz");
+  i2c_bus_1.setTimeout(1000); // 1 second timeout to prevent I2C hangs
+  Serial.println("I2C bus 1 (DAC + Outlet) initialized at 50kHz with 1s timeout");
 
   // Bus 2: OLED + Inlet Air Sensor + RTC - Enable pull-ups for stability
   pinMode(I2C_BUS_2_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_BUS_2_SCL_PIN, INPUT_PULLUP);
   i2c_bus_2.begin();
   i2c_bus_2.setClock(100000); // 100kHz for stability with 3 devices
-  Serial.println("I2C bus 2 (OLED + Inlet + RTC) initialized at 100kHz with internal pull-ups");
+  i2c_bus_2.setTimeout(1000); // 1 second timeout to prevent I2C hangs
+  Serial.println("I2C bus 2 (OLED + Inlet + RTC) initialized at 100kHz with internal pull-ups and 1s timeout");
 
   // Scan all I2C buses
   ScanI2C(i2c_bus_1, "i2c_bus_1 (DAC + Outlet)");
@@ -319,8 +322,20 @@ void setup()
   delay(2000);
 
   Serial.println("\n========================================");
-  Serial.println("    Dryer Controller");
+  Serial.println("    Dryer Controller - Mono Core");
   Serial.println("========================================\n");
+
+  // Check if we rebooted due to watchdog
+  if (watchdog_caused_reboot())
+  {
+    Serial.println("!!! WARNING: System recovered from watchdog reset !!!");
+    Serial.println("!!! Previous execution was frozen/hung !!!");
+  }
+
+  // Enable watchdog with 8 second timeout
+  // This will reset the system if watchdog_update() is not called within 8 seconds
+  watchdog_enable(8000, 1);
+  Serial.println("Watchdog timer enabled (8 second timeout)");
 
   SetupI2C();
   delay(100);
@@ -332,7 +347,6 @@ void setup()
   delay(100);
 
   SetupSessionMonitor();
-  delay(100);
 
   SetupPins();
   delay(100);
@@ -347,6 +361,18 @@ void setup()
   dryer.SetSettingsChangedCallback(OnSettingsChanged);
   menu.Begin(MenuStructure::BuildMenu());
 
+  // Initialize was_running to current state
+  was_running = dryer.IsRunning();
+  Serial.print("Initial dryer state: ");
+  Serial.println(was_running ? "RUNNING" : "STOPPED");
+
+  // If dryer is already running at boot, start logging immediately
+  if (was_running && session_monitor.IsReady())
+  {
+    Serial.println("Dryer was running at boot - starting session monitoring");
+    session_monitor.StartSession();
+  }
+
   Serial.println("Setup complete!");
 }
 
@@ -360,17 +386,48 @@ void UpdateSensors()
   {
     last_sensor_update = now;
 
-    // Update CHT8305 sensors
-    if (inlet_air_sensor.read() == CHT8305_OK)
+    // Update CHT8305 sensors with error tracking
+    static uint8_t inlet_errors = 0;
+    static uint8_t outlet_errors = 0;
+
+    int inlet_result = inlet_air_sensor.read();
+    if (inlet_result == CHT8305_OK)
     {
       dryer.SetInletTemperature(inlet_air_sensor.getTemperature());
       dryer.SetInletHumidity(inlet_air_sensor.getHumidity());
+      inlet_errors = 0; // Reset error counter on success
+    }
+    else
+    {
+      inlet_errors++;
+      if (inlet_errors <= 3) // Only log first few errors
+      {
+        Serial.print("WARNING: Inlet sensor read failed (error ");
+        Serial.print(inlet_result);
+        Serial.print(", count: ");
+        Serial.print(inlet_errors);
+        Serial.println(")");
+      }
     }
 
-    if (outlet_air_sensor.read() == CHT8305_OK)
+    int outlet_result = outlet_air_sensor.read();
+    if (outlet_result == CHT8305_OK)
     {
       dryer.SetOutletTemperature(outlet_air_sensor.getTemperature());
       dryer.SetOutletHumidity(outlet_air_sensor.getHumidity());
+      outlet_errors = 0; // Reset error counter on success
+    }
+    else
+    {
+      outlet_errors++;
+      if (outlet_errors <= 3) // Only log first few errors
+      {
+        Serial.print("WARNING: Outlet sensor read failed (error ");
+        Serial.print(outlet_result);
+        Serial.print(", count: ");
+        Serial.print(outlet_errors);
+        Serial.println(")");
+      }
     }
 
     // Update water temperature sensor (async mode)
@@ -607,23 +664,35 @@ void UpdateSettings()
 {
   unsigned long now = millis();
 
-  // Check if we need to save settings (either changed or periodic)
-  if (settings_need_save || (now - last_settings_save >= SETTINGS_SAVE_INTERVAL))
+  // Only save if settings changed by user
+  // Note: EEPROM.commit() can take ~1 second, but this is acceptable
+  // The watchdog (8s timeout) will prevent total system freeze
+  if (settings_need_save)
   {
+    Serial.println("Saving settings (user changed)...");
+    settings_need_save = false;
     last_settings_save = now;
 
-    if (settings_need_save)
-    {
-      Serial.println("Saving settings immediately (user changed)...");
-      settings_need_save = false;
-    }
-    else
-    {
-      Serial.println("Saving settings periodically...");
-    }
+    Serial.flush(); // Ensure log is sent before potentially slow operation
+    unsigned long save_start = millis();
 
     dryer.SaveSettings();
+
+    unsigned long save_time = millis() - save_start;
+    Serial.print("Settings save completed in ");
+    Serial.print(save_time);
+    Serial.println("ms");
+
+    if (save_time > 1000)
+    {
+      Serial.print("WARNING: Settings save took too long: ");
+      Serial.print(save_time);
+      Serial.println("ms (but watchdog prevented freeze)");
+    }
   }
+
+  // Periodic save disabled to reduce flash wear
+  // Settings are saved when user changes them and when dryer stops
 }
 
 void UpdateSessionMonitor()
@@ -646,15 +715,34 @@ void UpdateSessionMonitor()
   }
   else if (!is_running && was_running)
   {
-    // Dryer just stopped - stop monitoring
+    // Dryer just stopped - stop monitoring and save settings
     Serial.println("Dryer stopped - ending session monitoring");
     session_monitor.StopSession();
+
+    // Save settings when dryer stops to preserve state
+    Serial.println("Saving settings on dryer stop...");
+    Serial.flush();
+    unsigned long save_start = millis();
+    dryer.SaveSettings();
+    unsigned long save_time = millis() - save_start;
+    Serial.print("Settings saved in ");
+    Serial.print(save_time);
+    Serial.println("ms");
   }
 
   was_running = is_running;
 
-  // Update monitor (writes data if monitoring active)
+  // SessionMonitor.Update() writes directly to SD (mono-core)
   session_monitor.Update();
+
+  // Retry SD initialization if needed
+  if (!session_monitor.IsReady())
+  {
+    if (session_monitor.RetryInitialization())
+    {
+      Serial.println("SD card reinitialized successfully!");
+    }
+  }
 }
 
 void UpdateMemoryMonitor()
@@ -699,6 +787,10 @@ void UpdateMemoryMonitor()
 
 void loop()
 {
+  // Feed the watchdog at the start of each loop iteration
+  // This tells the watchdog that the system is still running
+  watchdog_update();
+
   unsigned long loop_start = millis();
   loop_count++;
 
@@ -706,11 +798,14 @@ void loop()
   if (loop_start - last_loop_log >= LOOP_LOG_INTERVAL)
   {
     last_loop_log = loop_start;
-    Serial.print("[LOOP] Heartbeat - loop count: ");
+    Serial.print("Heartbeat - loop count: ");
     Serial.print(loop_count);
     Serial.print(", uptime: ");
     Serial.print(loop_start / 1000);
-    Serial.println("s");
+    Serial.print("s, SD: ");
+    Serial.print(session_monitor.IsReady() ? "OK" : "NOT READY");
+    Serial.print(", logging: ");
+    Serial.println(session_monitor.IsLogging() ? "YES" : "NO");
   }
 
   UpdateSensors();
@@ -729,7 +824,7 @@ void loop()
   // Warn if loop took too long
   if (loop_time > 100)
   {
-    Serial.print("[LOOP] WARNING: Long loop iteration: ");
+    Serial.print("[Core 0] WARNING: Long loop iteration: ");
     Serial.print(loop_time);
     Serial.println("ms");
   }

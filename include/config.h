@@ -47,10 +47,10 @@
 #define RTC_DS1307_ADDR 0x68
 
 // ========== TIMING CONSTANTS ==========
-#define SENSOR_UPDATE_INTERVAL 2000  // ms
-#define DISPLAY_UPDATE_INTERVAL 100  // ms
-#define CONTROL_LOOP_INTERVAL 1000   // ms
-#define SETTINGS_SAVE_INTERVAL 60000 // ms (60 seconds)
+#define SENSOR_UPDATE_INTERVAL 2000   // ms
+#define DISPLAY_UPDATE_INTERVAL 100   // ms
+#define CONTROL_LOOP_INTERVAL 1000    // ms
+#define SETTINGS_SAVE_INTERVAL 300000 // ms (300 seconds = 5 minutes)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 

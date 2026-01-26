@@ -50,9 +50,16 @@ public:
 
   /**
    * @brief Update function to call in main loop
-   * Logs data at the configured interval when session is active
+   * Checks if it's time to log and writes directly to SD
    */
   void Update();
+
+  /**
+   * @brief Attempt to reinitialize SD card
+   * Should be called periodically if SD is not ready
+   * @return true if initialization successful, false otherwise
+   */
+  bool RetryInitialization();
 
   /**
    * @brief Check if logger is currently logging
@@ -72,6 +79,12 @@ public:
    */
   String GetCurrentFilename() const { return current_filename_; }
 
+  /**
+   * @brief Get current session data as CSV row
+   * @return String containing CSV row data
+   */
+  String GetDataRowString();
+
 private:
   Dryer *dryer_;
   TimeManager *time_manager_;
@@ -86,6 +99,10 @@ private:
   uint8_t consecutive_failures_;
   static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 5;
 
+  // SD card retry mechanism
+  unsigned long last_init_attempt_;
+  static constexpr unsigned long INIT_RETRY_INTERVAL = 30000; // 30 seconds
+
   /**
    * @brief Write CSV header to the file
    * @param file File object to write to
@@ -97,12 +114,6 @@ private:
    * @param file File object to write to
    */
   void WriteDataRow(SDFile &file);
-
-  /**
-   * @brief Get current session data as CSV row
-   * @return String containing CSV row data
-   */
-  String GetDataRowString();
 };
 
 #endif // SESSION_MONITOR_H
