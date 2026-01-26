@@ -31,6 +31,7 @@ void SessionManager::Update(float current_temperature, float current_humidity)
 {
   if (state_ != SessionState::kRunning)
   {
+    Serial.println("[SessionManager] Update skipped - not running");
     return;
   }
 
@@ -40,6 +41,11 @@ void SessionManager::Update(float current_temperature, float current_humidity)
     Stop();
     return;
   }
+
+  Serial.print("[SessionManager] Update called - temp=");
+  Serial.print(current_temperature);
+  Serial.print(", humidity=");
+  Serial.println(current_humidity);
 
   // Check for phase transitions
   CheckPhaseTransition(current_temperature, current_humidity);
@@ -229,11 +235,17 @@ void SessionManager::EnterPhase(uint8_t phase_id)
 
   Serial.print("Entering phase ");
   Serial.print(current_phase_->id);
-  Serial.print(" - Temp target: ");
+  Serial.print(" (");
+  Serial.print(current_phase_->name);
+  Serial.print(") - Temp target: ");
   Serial.print(current_phase_->temperature_target);
-  Serial.print("C, Humidity max: ");
+  Serial.print("C (transition_on_temp=");
+  Serial.print(current_phase_->transition_on_temperature ? "TRUE" : "FALSE");
+  Serial.print("), Humidity max: ");
   Serial.print(current_phase_->humidity_max);
-  Serial.print(", Duration: ");
+  Serial.print(" (transition_on_hum=");
+  Serial.print(current_phase_->transition_on_humidity ? "TRUE" : "FALSE");
+  Serial.print("), Duration: ");
   Serial.print(current_phase_->duration_s);
   Serial.println("s");
 
@@ -268,8 +280,29 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
 {
   if (current_phase_ == nullptr)
   {
+    Serial.println("[SessionManager] CheckPhaseTransition: current_phase_ is nullptr!");
     return;
   }
+
+  Serial.print("[SessionManager] CheckPhaseTransition - Phase: ");
+  Serial.print(current_phase_->name);
+  Serial.print(", temp: ");
+  Serial.print(current_temperature);
+  Serial.print("/");
+  Serial.print(current_phase_->temperature_target);
+  Serial.print(", humidity: ");
+  Serial.print(current_humidity);
+  Serial.print("/");
+  Serial.print(current_phase_->humidity_max);
+  Serial.print(", elapsed: ");
+  Serial.print(GetPhaseElapsedTime());
+  Serial.print("/");
+  Serial.println(current_phase_->duration_s);
+
+  Serial.print("[SessionManager] Flags - transition_on_temperature=");
+  Serial.print(current_phase_->transition_on_temperature ? "TRUE" : "FALSE");
+  Serial.print(", transition_on_humidity=");
+  Serial.println(current_phase_->transition_on_humidity ? "TRUE" : "FALSE");
 
   bool should_transition = false;
   const char *reason = "";
@@ -278,6 +311,13 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
   if (current_phase_->transition_on_temperature &&
       current_phase_->temperature_target > 0.0f)
   {
+    Serial.print("[SessionManager] Checking temperature transition: ");
+    Serial.print(current_temperature);
+    Serial.print(" >= ");
+    Serial.print(current_phase_->temperature_target);
+    Serial.print(" ? ");
+    Serial.println(current_temperature >= current_phase_->temperature_target ? "YES" : "NO");
+
     if (current_temperature >= current_phase_->temperature_target)
     {
       should_transition = true;

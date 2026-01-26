@@ -157,10 +157,22 @@ bool ProgramLoader::ParsePhase(JsonObject& json, Phase& phase) {
   phase.name[sizeof(phase.name) - 1] = '\0';
 
   phase.temperature_target = json["temperature_target"] | 0.0f;
-  phase.transition_on_temperature = json["transition_on_temperature"] | false;
+  // Use .as<bool>() to handle both true/false and 1/0 in JSON
+  phase.transition_on_temperature = json["transition_on_temperature"].as<bool>();
   phase.humidity_max = json["humidity_max"] | 0.0f;
-  phase.transition_on_humidity = json["transition_on_humidity"] | false;
+  phase.transition_on_humidity = json["transition_on_humidity"].as<bool>();
   phase.duration_s = json["duration_s"] | 0;
+
+  Serial.print("[ProgramLoader] Parsed phase '");
+  Serial.print(phase.name);
+  Serial.print("' - transition_on_temp from JSON: ");
+  Serial.print(json["transition_on_temperature"].as<bool>());
+  Serial.print(" -> stored as: ");
+  Serial.print(phase.transition_on_temperature ? "TRUE" : "FALSE");
+  Serial.print(", transition_on_hum from JSON: ");
+  Serial.print(json["transition_on_humidity"].as<bool>());
+  Serial.print(" -> stored as: ");
+  Serial.println(phase.transition_on_humidity ? "TRUE" : "FALSE");
 
   return true;
 }

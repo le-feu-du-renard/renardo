@@ -123,6 +123,10 @@ void Dryer::UpdateControl()
     last_control_update_ = now;
 
     // Update session manager with current sensor values
+    Serial.print("[Dryer] Calling SessionManager.Update() - inlet_temp=");
+    Serial.print(inlet_temperature_);
+    Serial.print(", outlet_humidity=");
+    Serial.println(outlet_humidity_);
     session_manager_.Update(inlet_temperature_, outlet_humidity_);
 
     // Update temperature manager with current temperature

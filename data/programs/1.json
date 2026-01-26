@@ -6,27 +6,27 @@
       "id": 1,
       "name": "Init",
       "temperature_target": 40.0,
-      "transition_on_temperature": true,
+      "transition_on_temperature": 1,
       "humidity_max": 70.0,
-      "transition_on_humidity": false,
+      "transition_on_humidity": 0,
       "duration_s": 3600
     },
     {
       "id": 2,
       "name": "Extraction",
       "temperature_target": 40.0,
-      "transition_on_temperature": false,
+      "transition_on_temperature": 0,
       "humidity_max": -1.0,
-      "transition_on_humidity": false,
+      "transition_on_humidity": 0,
       "duration_s": 120
     },
     {
       "id": 3,
       "name": "Circulation",
       "temperature_target": 40.0,
-      "transition_on_temperature": false,
+      "transition_on_temperature": 0,
       "humidity_max": 70.0,
-      "transition_on_humidity": false,
+      "transition_on_humidity": 0,
       "duration_s": 300
     }
   ],
