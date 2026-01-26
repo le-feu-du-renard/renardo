@@ -24,7 +24,6 @@ public:
   static void SetWaterSensor(DallasTemperature* sensor) { water_sensor_ = sensor; }
   static void SetDAC(DFRobot_GP8403* dac) { dac_ = dac; }
   static void SetSDAvailable(bool available) { sd_available_ = available; }
-  static void SetSDLoggingEnabled(bool enabled) { sd_logging_enabled_ = enabled; }
   static void SetSessionMonitorReady(bool ready) { session_monitor_ready_ = ready; }
 
   // Status getters
@@ -39,7 +38,6 @@ public:
   static String GetWaterSensorStatus();
   static String GetDACStatus();
   static String GetSDCardStatus();
-  static String GetSDLoggingStatus();
   static String GetSessionMonitorStatus();
 
 private:
@@ -50,7 +48,6 @@ private:
   static DallasTemperature* water_sensor_;
   static DFRobot_GP8403* dac_;
   static bool sd_available_;
-  static bool sd_logging_enabled_;
   static bool session_monitor_ready_;
 };
 

@@ -11,7 +11,6 @@ CHT8305* SystemStatus::outlet_sensor_ = nullptr;
 DallasTemperature* SystemStatus::water_sensor_ = nullptr;
 DFRobot_GP8403* SystemStatus::dac_ = nullptr;
 bool SystemStatus::sd_available_ = false;
-bool SystemStatus::sd_logging_enabled_ = false;
 bool SystemStatus::session_monitor_ready_ = false;
 
 bool SystemStatus::IsRTCOK() {
@@ -99,13 +98,6 @@ String SystemStatus::GetDACStatus() {
 
 String SystemStatus::GetSDCardStatus() {
   return sd_available_ ? "OK" : "NO";
-}
-
-String SystemStatus::GetSDLoggingStatus() {
-  if (!sd_available_) {
-    return "N/A";
-  }
-  return sd_logging_enabled_ ? "OK" : "NO";
 }
 
 String SystemStatus::GetSessionMonitorStatus() {

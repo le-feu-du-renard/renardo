@@ -327,7 +327,6 @@ void SetupSystemStatus()
   SystemStatus::SetWaterSensor(&water_temperature_sensor);
   SystemStatus::SetDAC(&dac);
   SystemStatus::SetSDAvailable(session_monitor.IsReady());
-  SystemStatus::SetSDLoggingEnabled(Logger::IsSDLoggingEnabled());
   SystemStatus::SetSessionMonitorReady(session_monitor.IsReady());
 
   Log.notice("SystemStatus initialized");

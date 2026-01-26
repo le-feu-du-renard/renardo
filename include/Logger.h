@@ -5,10 +5,10 @@
 #include <ArduinoLog.h>
 
 /**
- * @brief Logger wrapper for ArduinoLog with SD card support
+ * @brief Logger wrapper for ArduinoLog
  *
- * This class provides a centralized logging interface that can output to both
- * Serial and SD card. It uses ArduinoLog for formatting and level management.
+ * This class provides a centralized logging interface that outputs to Serial.
+ * It uses ArduinoLog for formatting and level management.
  *
  * Usage:
  *   Logger::Init(LOG_LEVEL_VERBOSE);  // Initialize logger
@@ -23,9 +23,8 @@ public:
    * @brief Initialize the logger
    * @param level Log level (LOG_LEVEL_SILENT, LOG_LEVEL_FATAL, LOG_LEVEL_ERROR,
    *              LOG_LEVEL_WARNING, LOG_LEVEL_NOTICE, LOG_LEVEL_TRACE, LOG_LEVEL_VERBOSE)
-   * @param enable_sd Enable SD card logging
    */
-  static void Init(int level = LOG_LEVEL_VERBOSE, bool enable_sd = false);
+  static void Init(int level = LOG_LEVEL_VERBOSE);
 
   /**
    * @brief Set log level
@@ -34,40 +33,9 @@ public:
   static void SetLevel(int level);
 
   /**
-   * @brief Enable or disable SD card logging
-   * @param enable true to enable SD logging
-   */
-  static void EnableSDLogging(bool enable);
-
-  /**
-   * @brief Check if SD logging is enabled
-   * @return true if SD logging is enabled
-   */
-  static bool IsSDLoggingEnabled();
-
-  /**
-   * @brief Set the SD log file
-   * @param filename Name of the log file on SD card
-   * @return true if file was opened successfully
-   */
-  static bool SetSDLogFile(const char *filename);
-
-  /**
-   * @brief Close the SD log file
-   */
-  static void CloseSDLogFile();
-
-  /**
    * @brief Flush any buffered log data
    */
   static void Flush();
-
-private:
-  static bool sd_logging_enabled;
-  static void *sd_file; // Using void* to avoid including SD.h in header
-
-  // Custom print function that outputs to both Serial and SD
-  static void CustomPrintFunction(Print* _logOutput, int logLevel);
 };
 
 // Convenience macros for logging

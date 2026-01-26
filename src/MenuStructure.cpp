@@ -350,10 +350,6 @@ static String GetSDCardStatusInfo(Dryer* dryer) {
   return SystemStatus::GetSDCardStatus();
 }
 
-static String GetSDLoggingStatusInfo(Dryer* dryer) {
-  return SystemStatus::GetSDLoggingStatus();
-}
-
 static String GetSessionMonitorStatusInfo(Dryer* dryer) {
   return SystemStatus::GetSessionMonitorStatus();
 }
@@ -367,7 +363,6 @@ static InfoMenuItem system_outlet_status("Sensor outlet", GetOutletSensorStatusI
 static InfoMenuItem system_water_status("Sensor water", GetWaterSensorStatusInfo);
 static InfoMenuItem system_dac_status("DAC", GetDACStatusInfo);
 static InfoMenuItem system_sd_status("SD card", GetSDCardStatusInfo);
-static InfoMenuItem system_logging_status("Logging SD", GetSDLoggingStatusInfo);
 static InfoMenuItem system_monitor_status("Session mon", GetSessionMonitorStatusInfo);
 static BackMenuItem system_back("Retour");
 
@@ -381,7 +376,6 @@ static MenuItem* system_items[] = {
   &system_water_status,
   &system_dac_status,
   &system_sd_status,
-  &system_logging_status,
   &system_monitor_status,
   &system_back
 };
