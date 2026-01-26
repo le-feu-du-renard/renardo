@@ -1,11 +1,11 @@
 #include "HydraulicHeater.h"
 
 HydraulicHeater::HydraulicHeater()
-  : power_(100.0f) {
+  : power_(100) {
 }
 
 void HydraulicHeater::Begin() {
-  power_ = 100.0f;
+  power_ = 100;
   Serial.println("Hydraulic heater initialized");
 }
 
@@ -13,10 +13,9 @@ void HydraulicHeater::Update() {
   // Nothing to update for now
 }
 
-void HydraulicHeater::SetPower(float power) {
+void HydraulicHeater::SetPower(uint8_t power) {
   // Clamp to 0-100%
-  if (power < 0.0f) power = 0.0f;
-  if (power > 100.0f) power = 100.0f;
+  if (power > 100) power = 100;
 
   power_ = power;
 }
@@ -27,7 +26,7 @@ float HydraulicHeater::GetOutput() const {
 
 float HydraulicHeater::MapPowerToPwm(float power) const {
   // Reverse: 100% power = fast circulation = low PWM
-  float reversed_power = 100.0f - power;
+  float reversed_power = 100.0f - (float)power_;
 
   // Map to hardware range (10% = max speed, 85% = min speed)
   float mapped = kBandMin + (reversed_power / 100.0f) * (kBandMax - kBandMin);

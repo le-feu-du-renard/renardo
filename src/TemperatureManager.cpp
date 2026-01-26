@@ -83,14 +83,18 @@ void TemperatureManager::ArmHeatingActionCooldown() {
 
 bool TemperatureManager::IncreaseHeating() {
   // Priority: Hydraulic first, then electric
-  float hydraulic_power = hydraulic_heater_->GetPower();
+  uint8_t hydraulic_power = hydraulic_heater_->GetPower();
 
-  if (hydraulic_power < 100.0f) {
+  if (hydraulic_power < 100) {
     // Increase hydraulic heater
     float step_ratio = CalculateStep();
-    float step_percent = step_ratio * 100.0f;  // Convert ratio to percentage
-    float new_power = hydraulic_power + step_percent;
-    if (new_power > 100.0f) new_power = 100.0f;
+    uint8_t step_percent = (uint8_t)(step_ratio * 100.0f + 0.5f);  // Convert ratio to percentage and round
+
+    // Ensure minimum step of 1%
+    if (step_percent < 1) step_percent = 1;
+
+    uint16_t new_power_calc = (uint16_t)hydraulic_power + (uint16_t)step_percent;
+    uint8_t new_power = (new_power_calc > 100) ? 100 : (uint8_t)new_power_calc;
 
     hydraulic_heater_->SetPower(new_power);
 
@@ -128,13 +132,16 @@ bool TemperatureManager::DecreaseHeating() {
     return true;
   } else {
     // Electric off, decrease hydraulic heater
-    float hydraulic_power = hydraulic_heater_->GetPower();
+    uint8_t hydraulic_power = hydraulic_heater_->GetPower();
 
-    if (hydraulic_power > 0.0f) {
+    if (hydraulic_power > 0) {
       float step_ratio = CalculateStep();
-      float step_percent = step_ratio * 100.0f;  // Convert ratio to percentage
-      float new_power = hydraulic_power - step_percent;
-      if (new_power < 0.0f) new_power = 0.0f;
+      uint8_t step_percent = (uint8_t)(step_ratio * 100.0f + 0.5f);  // Convert ratio to percentage and round
+
+      // Ensure minimum step of 1%
+      if (step_percent < 1) step_percent = 1;
+
+      uint8_t new_power = (hydraulic_power > step_percent) ? (hydraulic_power - step_percent) : 0;
 
       hydraulic_heater_->SetPower(new_power);
 
