@@ -87,8 +87,9 @@ bool TemperatureManager::IncreaseHeating() {
 
   if (hydraulic_power < 100.0f) {
     // Increase hydraulic heater
-    float step = CalculateStep();
-    float new_power = hydraulic_power + step;
+    float step_ratio = CalculateStep();
+    float step_percent = step_ratio * 100.0f;  // Convert ratio to percentage
+    float new_power = hydraulic_power + step_percent;
     if (new_power > 100.0f) new_power = 100.0f;
 
     hydraulic_heater_->SetPower(new_power);
@@ -97,7 +98,9 @@ bool TemperatureManager::IncreaseHeating() {
     Serial.print(hydraulic_power);
     Serial.print("% -> ");
     Serial.print(new_power);
-    Serial.println("%");
+    Serial.print("% (step: ");
+    Serial.print(step_percent);
+    Serial.println("%)");
     return true;
   } else {
     // Hydraulic at max, turn on electric heater
@@ -128,8 +131,9 @@ bool TemperatureManager::DecreaseHeating() {
     float hydraulic_power = hydraulic_heater_->GetPower();
 
     if (hydraulic_power > 0.0f) {
-      float step = CalculateStep();
-      float new_power = hydraulic_power - step;
+      float step_ratio = CalculateStep();
+      float step_percent = step_ratio * 100.0f;  // Convert ratio to percentage
+      float new_power = hydraulic_power - step_percent;
       if (new_power < 0.0f) new_power = 0.0f;
 
       hydraulic_heater_->SetPower(new_power);
@@ -138,7 +142,9 @@ bool TemperatureManager::DecreaseHeating() {
       Serial.print(hydraulic_power);
       Serial.print("% -> ");
       Serial.print(new_power);
-      Serial.println("%");
+      Serial.print("% (step: ");
+      Serial.print(step_percent);
+      Serial.println("%)");
       return true;
     } else {
       Serial.println("Both heaters at minimum - cannot decrease");
