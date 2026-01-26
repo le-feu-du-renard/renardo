@@ -10,28 +10,29 @@
 #define I2C_BUS_1_SCL_PIN 13
 
 // I2C Bus 2 (OLED + Inlet Air Sensor + RTC)
-#define I2C_BUS_2_SDA_PIN 26
-#define I2C_BUS_2_SCL_PIN 27
+#define I2C_BUS_2_SDA_PIN 10
+#define I2C_BUS_2_SCL_PIN 11
 
 // Rotary Encoder
 #define ROTARY_ENCODER_SW_PIN 22
 #define ROTARY_ENCODER_CLK_PIN 20
 #define ROTARY_ENCODER_DT_PIN 21
 
-// Outputs
-#define ELECTRIC_HEATER_RELAY_PIN 7
-#define FAN_RELAY_PIN 8
-#define WATER_CIRCULATOR_PWM_PIN 5
+// Relays
+#define ELECTRIC_HEATER_RELAY_PIN 28
+#define FAN_RELAY_PIN 27
 
-// OneWire (Water Temperature)
+// Water circulator
+#define WATER_CIRCULATOR_PWM_PIN 7
+
+// Water Temperature // OneWire
 #define WATER_SENSOR_PIN 6
 
 // SD Card SPI
-// Note: Using default SPI0 pins for RP2040 Pico
-#define SD_CARD_CS_PIN 17   // Chip Select (can be any available pin)
-#define SD_CARD_MISO_PIN 16 // MISO (default SPI0 RX)
-#define SD_CARD_MOSI_PIN 19 // MOSI (default SPI0 TX)
-#define SD_CARD_SCK_PIN 18  // SCK (default SPI0 SCK)
+#define SD_CARD_CS_PIN 5   // Chip Select
+#define SD_CARD_MISO_PIN 4 // MISO (SPI0 RX)
+#define SD_CARD_MOSI_PIN 3 // MOSI (SPI0 TX)
+#define SD_CARD_SCK_PIN 2  // SCK (SPI0 SCK)
 
 // Screen
 #define SCREEN_SSD1306_ADDR 0x3C
