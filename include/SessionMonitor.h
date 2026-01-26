@@ -66,6 +66,12 @@ public:
    */
   bool IsReady() const { return sd_initialized_; }
 
+  /**
+   * @brief Get the current log filename
+   * @return String containing the current log file path
+   */
+  String GetCurrentFilename() const { return current_filename_; }
+
 private:
   Dryer *dryer_;
   TimeManager *time_manager_;
@@ -75,6 +81,10 @@ private:
   String current_filename_;
   unsigned long last_log_time_;
   unsigned long log_interval_;
+
+  // Failure tracking
+  uint8_t consecutive_failures_;
+  static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 5;
 
   /**
    * @brief Write CSV header to the file

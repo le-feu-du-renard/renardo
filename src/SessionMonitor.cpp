@@ -7,7 +7,8 @@ SessionMonitor::SessionMonitor(Dryer *dryer, TimeManager *time_manager)
       logging_active_(false),
       current_filename_(""),
       last_log_time_(0),
-      log_interval_(DATA_LOG_INTERVAL)
+      log_interval_(DATA_LOG_INTERVAL),
+      consecutive_failures_(0)
 {
 }
 
@@ -263,26 +264,161 @@ void SessionMonitor::Update()
     return;
   }
 
+  // Check if too many consecutive failures - disable logging
+  if (consecutive_failures_ >= MAX_CONSECUTIVE_FAILURES)
+  {
+    Serial.println("[SessionMonitor] ERROR: Too many consecutive failures - disabling SD logging!");
+    Serial.println("[SessionMonitor] SD card may have been removed or is malfunctioning");
+    logging_active_ = false;
+    sd_initialized_ = false;
+    return;
+  }
+
   unsigned long now = millis();
 
   // Check if it's time to log
   if (now - last_log_time_ >= log_interval_)
   {
+    Serial.println("[SessionMonitor] Starting log write cycle...");
+    unsigned long cycle_start = millis();
+
+    // Check memory before logging
+    uint32_t free_heap = rp2040.getFreeHeap();
+    Serial.print("[SessionMonitor] Free heap before log: ");
+    Serial.print(free_heap);
+    Serial.println(" bytes");
+
     last_log_time_ = now;
 
-    // Open file in append mode
-    SDFile file = SD.open(current_filename_.c_str(), FILE_WRITE);
-    if (!file)
+    // Try to open file with retry logic (reduced to 2 retries to avoid long blocks)
+    const int MAX_RETRIES = 2;
+    SDFile file;
+    bool file_opened = false;
+
+    Serial.print("[SessionMonitor] Opening file: ");
+    Serial.println(current_filename_);
+
+    for (int retry = 0; retry < MAX_RETRIES && !file_opened; retry++)
     {
-      Serial.println("ERROR: Failed to open log file for writing!");
+      unsigned long open_start = millis();
+
+      if (retry > 0)
+      {
+        Serial.print("[SessionMonitor] Retry attempt ");
+        Serial.print(retry);
+        Serial.println("...");
+        delay(50); // Small delay between retries
+
+        // Re-ensure CS pin is properly set
+        digitalWrite(SD_CARD_CS_PIN, HIGH);
+        delay(10);
+      }
+
+      // Open file in append mode
+      Serial.println("[SessionMonitor] Calling SD.open()...");
+      Serial.flush(); // Ensure message is sent before potential block
+      file = SD.open(current_filename_.c_str(), FILE_WRITE);
+
+      unsigned long open_time = millis() - open_start;
+
+      if (file)
+      {
+        file_opened = true;
+        Serial.print("[SessionMonitor] File opened successfully in ");
+        Serial.print(open_time);
+        Serial.println("ms");
+      }
+      else
+      {
+        Serial.print("[SessionMonitor] SD.open() failed after ");
+        Serial.print(open_time);
+        Serial.println("ms");
+
+        // If a retry takes more than 5 seconds, something is seriously wrong
+        if (open_time > 5000)
+        {
+          Serial.println("[SessionMonitor] WARNING: SD.open() blocked for >5s - SD card issue!");
+          break; // Exit retry loop immediately
+        }
+      }
+    }
+
+    if (!file_opened)
+    {
+      consecutive_failures_++;
+      Serial.println("[SessionMonitor] ERROR: Failed to open log file for writing after retries!");
+      Serial.print("[SessionMonitor] Filename: ");
+      Serial.println(current_filename_);
+      Serial.print("[SessionMonitor] Consecutive failures: ");
+      Serial.print(consecutive_failures_);
+      Serial.print("/");
+      Serial.println(MAX_CONSECUTIVE_FAILURES);
+
+      // Check if file still exists
+      if (SD.exists(current_filename_.c_str()))
+      {
+        Serial.println("[SessionMonitor] File exists but cannot be opened - possible SD card issue");
+      }
+      else
+      {
+        Serial.println("[SessionMonitor] File does not exist anymore!");
+        logging_active_ = false;
+      }
+
+      unsigned long cycle_time = millis() - cycle_start;
+      Serial.print("[SessionMonitor] Failed cycle took ");
+      Serial.print(cycle_time);
+      Serial.println("ms");
       return;
     }
 
     // Write data row
+    Serial.println("[SessionMonitor] Writing data row...");
+    unsigned long write_start = millis();
     WriteDataRow(file);
-    file.close();
+    unsigned long write_time = millis() - write_start;
 
-    Serial.println("Data logged to SD card");
+    Serial.print("[SessionMonitor] Data written in ");
+    Serial.print(write_time);
+    Serial.println("ms");
+
+    Serial.println("[SessionMonitor] Closing file...");
+    unsigned long close_start = millis();
+    file.close();
+    unsigned long close_time = millis() - close_start;
+
+    Serial.print("[SessionMonitor] File closed in ");
+    Serial.print(close_time);
+    Serial.println("ms");
+
+    unsigned long cycle_time = millis() - cycle_start;
+
+    // Check memory after logging
+    uint32_t free_heap_after = rp2040.getFreeHeap();
+    Serial.print("[SessionMonitor] Free heap after log: ");
+    Serial.print(free_heap_after);
+    Serial.println(" bytes");
+
+    if (free_heap_after < free_heap)
+    {
+      int32_t heap_delta = (int32_t)free_heap - (int32_t)free_heap_after;
+      Serial.print("[SessionMonitor] WARNING: Heap decreased by ");
+      Serial.print(heap_delta);
+      Serial.println(" bytes during log cycle!");
+    }
+
+    Serial.print("[SessionMonitor] Data logged to SD card in ");
+    Serial.print(cycle_time);
+    Serial.println("ms");
+
+    // Reset consecutive failures counter on success
+    if (consecutive_failures_ > 0)
+    {
+      Serial.print("[SessionMonitor] Clearing consecutive failures counter (was ");
+      Serial.print(consecutive_failures_);
+      Serial.println(")");
+      consecutive_failures_ = 0;
+    }
   }
 }
 

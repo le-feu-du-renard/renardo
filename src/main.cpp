@@ -67,6 +67,15 @@ bool settings_need_save = false;
 // Data logging variables
 bool was_running = false;
 
+// Memory monitoring variables
+unsigned long last_memory_check = 0;
+static constexpr unsigned long MEMORY_CHECK_INTERVAL = 30000; // 30 seconds
+
+// Loop monitoring variables
+unsigned long last_loop_log = 0;
+unsigned long loop_count = 0;
+static constexpr unsigned long LOOP_LOG_INTERVAL = 10000; // 10 seconds
+
 // Water temperature sensor async variables
 unsigned long water_temp_request_time = 0;
 bool water_temp_conversion_started = false;
@@ -648,17 +657,82 @@ void UpdateSessionMonitor()
   session_monitor.Update();
 }
 
+void UpdateMemoryMonitor()
+{
+  unsigned long now = millis();
+
+  if (now - last_memory_check >= MEMORY_CHECK_INTERVAL)
+  {
+    last_memory_check = now;
+
+    // Get free heap memory
+    uint32_t free_heap = rp2040.getFreeHeap();
+    uint32_t total_heap = rp2040.getTotalHeap();
+    uint32_t used_heap = total_heap - free_heap;
+
+    Serial.println("========== MEMORY STATUS ==========");
+    Serial.print("Free heap: ");
+    Serial.print(free_heap);
+    Serial.print(" bytes (");
+    Serial.print((free_heap * 100) / total_heap);
+    Serial.println("%)");
+
+    Serial.print("Used heap: ");
+    Serial.print(used_heap);
+    Serial.print(" bytes (");
+    Serial.print((used_heap * 100) / total_heap);
+    Serial.println("%)");
+
+    Serial.print("Total heap: ");
+    Serial.print(total_heap);
+    Serial.println(" bytes");
+
+    // Warning if less than 10% free
+    if (free_heap < (total_heap / 10))
+    {
+      Serial.println("WARNING: Low memory! Less than 10% free!");
+    }
+
+    Serial.println("===================================");
+  }
+}
+
 void loop()
 {
+  unsigned long loop_start = millis();
+  loop_count++;
+
+  // Log loop activity periodically
+  if (loop_start - last_loop_log >= LOOP_LOG_INTERVAL)
+  {
+    last_loop_log = loop_start;
+    Serial.print("[LOOP] Heartbeat - loop count: ");
+    Serial.print(loop_count);
+    Serial.print(", uptime: ");
+    Serial.print(loop_start / 1000);
+    Serial.println("s");
+  }
+
   UpdateSensors();
   UpdateInputs();
   UpdateEncoderInputs();
   UpdateControl();
   UpdateSettings();
   UpdateSessionMonitor();
+  UpdateMemoryMonitor();
 
   UpdateOutputs();
   UpdateDisplay();
+
+  unsigned long loop_time = millis() - loop_start;
+
+  // Warn if loop took too long
+  if (loop_time > 100)
+  {
+    Serial.print("[LOOP] WARNING: Long loop iteration: ");
+    Serial.print(loop_time);
+    Serial.println("ms");
+  }
 
   delay(10); // Short delay to prevent CPU hogging
 }
