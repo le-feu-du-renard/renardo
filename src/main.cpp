@@ -14,6 +14,7 @@
 #include "MenuStructure.h"
 #include "TimeManager.h"
 #include "SessionMonitor.h"
+#include "Logger.h"
 
 // ========== GLOBAL OBJECTS ==========
 
@@ -99,7 +100,7 @@ void OnSettingsChanged()
 {
   settings_need_save = true;
   last_settings_save = millis(); // Reset timer for immediate save
-  Serial.println("Settings changed, will save immediately");
+  Log.notice("Settings changed, will save immediately");
 }
 
 // ========== SETUP FUNCTIONS ==========
@@ -132,9 +133,7 @@ void SetupPins()
 
 void ScanI2C(TwoWire &bus, const char *bus_name)
 {
-  Serial.print("Scanning ");
-  Serial.print(bus_name);
-  Serial.println("...");
+  Log.notice("Scanning %s...", bus_name);
 
   int count = 0;
   for (byte addr = 1; addr < 127; addr++)
@@ -142,19 +141,15 @@ void ScanI2C(TwoWire &bus, const char *bus_name)
     bus.beginTransmission(addr);
     if (bus.endTransmission() == 0)
     {
-      Serial.print("  Found device at 0x");
-      if (addr < 16)
-        Serial.print("0");
-      Serial.println(addr, HEX);
+      Log.notice("  Found device at 0x%X", addr);
       count++;
     }
   }
 
   if (count == 0)
   {
-    Serial.println("  No devices found");
+    Log.notice("  No devices found");
   }
-  Serial.println();
 }
 
 void SetupI2C()
@@ -163,7 +158,7 @@ void SetupI2C()
   i2c_bus_1.begin();
   i2c_bus_1.setClock(50000);
   i2c_bus_1.setTimeout(1000); // 1 second timeout to prevent I2C hangs
-  Serial.println("I2C bus 1 (DAC + Outlet) initialized at 50kHz with 1s timeout");
+  Log.notice("I2C bus 1 (DAC + Outlet) initialized at 50kHz with 1s timeout");
 
   // Bus 2: OLED + Inlet Air Sensor + RTC - Enable pull-ups for stability
   pinMode(I2C_BUS_2_SDA_PIN, INPUT_PULLUP);
@@ -171,7 +166,7 @@ void SetupI2C()
   i2c_bus_2.begin();
   i2c_bus_2.setClock(100000); // 100kHz for stability with 3 devices
   i2c_bus_2.setTimeout(1000); // 1 second timeout to prevent I2C hangs
-  Serial.println("I2C bus 2 (OLED + Inlet + RTC) initialized at 100kHz with internal pull-ups and 1s timeout");
+  Log.notice("I2C bus 2 (OLED + Inlet + RTC) initialized at 100kHz with internal pull-ups and 1s timeout");
 
   // Scan all I2C buses
   ScanI2C(i2c_bus_1, "i2c_bus_1 (DAC + Outlet)");
@@ -180,37 +175,37 @@ void SetupI2C()
 
 void SetupOLED()
 {
-  Serial.println("Initialize OLED...");
+  Log.notice("Initialize OLED...");
 
   // Initialize display
   if (!oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_SSD1306_ADDR))
   {
-    Serial.println("ERROR: OLED initialization failed!");
+    Log.error("OLED initialization failed!");
   }
   else
   {
-    Serial.println("SUCCESS: OLED initialized!");
+    Log.notice("OLED initialized successfully!");
     oled.clearDisplay();
     oled.display();
-    Serial.println("OLED cleared");
+    Log.trace("OLED cleared");
   }
 
   oled.setRotation(0); // 0=0°, 1=90°, 2=180°, 3=270°
-  Serial.println("OLED rotation set to 180°");
+  Log.trace("OLED rotation set to 180°");
 }
 
 void SetupDAC()
 {
-  Serial.println("Initialize DAC...");
+  Log.notice("Initialize DAC...");
 
   if (dac.begin() != 0)
   {
-    Serial.println("Failed to initialize GP8403 DAC");
+    Log.error("Failed to initialize GP8403 DAC");
   }
   else
   {
     dac.setDACOutRange(DFRobot_GP8403::eOutputRange10V);
-    Serial.println("GP8403 DAC initialized with 0-10V range");
+    Log.notice("GP8403 DAC initialized with 0-10V range");
   }
 }
 
@@ -220,7 +215,7 @@ void SetupSensors()
   delay(100);
 
   // CHT8305 sensors
-  Serial.println("Testing Inlet sensor connection...");
+  Log.notice("Testing Inlet sensor connection...");
 
   // Try to clear any I2C bus issues
   i2c_bus_2.beginTransmission(CHT8305_INLET_ADDR);
@@ -230,20 +225,19 @@ void SetupSensors()
   int result = inlet_air_sensor.begin();
   if (result != 0)
   {
-    Serial.print("ERROR: Inlet air sensor not found! Error code: ");
-    Serial.println(result);
+    Log.error("Inlet air sensor not found! Error code: %d", result);
   }
   else if (!inlet_air_sensor.isConnected())
   {
-    Serial.println("ERROR: Inlet air sensor not connected!");
+    Log.error("Inlet air sensor not connected!");
   }
   else
   {
-    Serial.println("SUCCESS: Inlet air sensor initialized!");
+    Log.notice("Inlet air sensor initialized successfully!");
   }
 
   // Clear I2C bus 1 before outlet sensor init
-  Serial.println("Testing Outlet sensor connection...");
+  Log.notice("Testing Outlet sensor connection...");
   i2c_bus_1.beginTransmission(CHT8305_OUTLET_ADDR);
   i2c_bus_1.endTransmission();
   delay(50);
@@ -251,67 +245,63 @@ void SetupSensors()
   int outlet_result = outlet_air_sensor.begin();
   if (outlet_result != 0)
   {
-    Serial.print("ERROR: Outlet air sensor not found! Error code: ");
-    Serial.println(outlet_result);
+    Log.error("Outlet air sensor not found! Error code: %d", outlet_result);
   }
   else if (!outlet_air_sensor.isConnected())
   {
-    Serial.println("ERROR: Outlet air sensor not connected!");
+    Log.error("Outlet air sensor not connected!");
   }
   else
   {
-    Serial.println("SUCCESS: Outlet air sensor initialized!");
+    Log.notice("Outlet air sensor initialized successfully!");
   }
 
   // Water temperature sensor
   water_temperature_sensor.begin();
   water_temperature_sensor.setWaitForConversion(false); // Async mode
-  Serial.print("Found ");
-  Serial.print(water_temperature_sensor.getDeviceCount());
-  Serial.println(" OneWire devices (async mode enabled)");
+  Log.notice("Found %d OneWire devices (async mode enabled)", water_temperature_sensor.getDeviceCount());
 }
 
 void SetupRTC()
 {
-  Serial.println("Initialize RTC...");
+  Log.notice("Initialize RTC...");
 
   if (!time_manager.Begin())
   {
-    Serial.println("ERROR: RTC initialization failed!");
+    Log.error("RTC initialization failed!");
   }
   else
   {
-    Serial.println("SUCCESS: RTC initialized!");
+    Log.notice("RTC initialized successfully!");
 
     // Check if time needs to be set
     if (time_manager.HasLostPower())
     {
-      Serial.println("WARNING: Please set the RTC time");
-      Serial.println("RTC has been set to compile time as default");
+      Log.warning("Please set the RTC time");
+      Log.warning("RTC has been set to compile time as default");
     }
 
     // Display current time
-    Serial.print("Current time: ");
-    Serial.println(time_manager.GetDateTimeString());
+    Log.notice("Current time: %s", time_manager.GetDateTimeString());
   }
 }
 
 void SetupSessionMonitor()
 {
-  Serial.println("Initialize Session Monitor...");
-  Serial.println("Note: This may take a few seconds if SD card is not present");
+  Log.notice("Initialize Session Monitor...");
+  Log.notice("Note: This may take a few seconds if SD card is not present");
 
   if (!session_monitor.Begin())
   {
-    Serial.println("ERROR: Session Monitor initialization failed!");
-    Serial.println("WARNING: System will continue without session monitoring");
+    Log.error("Session Monitor initialization failed!");
+    Log.warning("System will continue without session monitoring");
   }
   else
   {
-    Serial.println("SUCCESS: Session Monitor initialized!");
+    Log.notice("Session Monitor initialized successfully!");
   }
 
-  Serial.println("Session Monitor setup complete");
+  Log.notice("Session Monitor setup complete");
 }
 
 // ========== MAIN SETUP (Core 0) ==========
@@ -321,21 +311,24 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.println("\n========================================");
-  Serial.println("    Dryer Controller - Mono Core");
-  Serial.println("========================================\n");
+  // Initialize logger first
+  Logger::Init(LOG_LEVEL_VERBOSE);
+
+  Log.notice("========================================");
+  Log.notice("    Dryer Controller - Mono Core");
+  Log.notice("========================================");
 
   // Check if we rebooted due to watchdog
   if (watchdog_caused_reboot())
   {
-    Serial.println("!!! WARNING: System recovered from watchdog reset !!!");
-    Serial.println("!!! Previous execution was frozen/hung !!!");
+    Log.warning("!!! System recovered from watchdog reset !!!");
+    Log.warning("!!! Previous execution was frozen/hung !!!");
   }
 
   // Enable watchdog with 8 second timeout
   // This will reset the system if watchdog_update() is not called within 8 seconds
   watchdog_enable(8000, 1);
-  Serial.println("Watchdog timer enabled (8 second timeout)");
+  Log.notice("Watchdog timer enabled (8 second timeout)");
 
   SetupI2C();
   delay(100);
@@ -363,17 +356,16 @@ void setup()
 
   // Initialize was_running to current state
   was_running = dryer.IsRunning();
-  Serial.print("Initial dryer state: ");
-  Serial.println(was_running ? "RUNNING" : "STOPPED");
+  Log.notice("Initial dryer state: %s", was_running ? "RUNNING" : "STOPPED");
 
   // If dryer is already running at boot, start logging immediately
   if (was_running && session_monitor.IsReady())
   {
-    Serial.println("Dryer was running at boot - starting session monitoring");
+    Log.notice("Dryer was running at boot - starting session monitoring");
     session_monitor.StartSession();
   }
 
-  Serial.println("Setup complete!");
+  Log.notice("Setup complete!");
 }
 
 // ========== LOOP FUNCTIONS ==========
@@ -402,11 +394,7 @@ void UpdateSensors()
       inlet_errors++;
       if (inlet_errors <= 3) // Only log first few errors
       {
-        Serial.print("WARNING: Inlet sensor read failed (error ");
-        Serial.print(inlet_result);
-        Serial.print(", count: ");
-        Serial.print(inlet_errors);
-        Serial.println(")");
+        Log.warning("Inlet sensor read failed (error %d, count: %d)", inlet_result, inlet_errors);
       }
     }
 
@@ -422,11 +410,7 @@ void UpdateSensors()
       outlet_errors++;
       if (outlet_errors <= 3) // Only log first few errors
       {
-        Serial.print("WARNING: Outlet sensor read failed (error ");
-        Serial.print(outlet_result);
-        Serial.print(", count: ");
-        Serial.print(outlet_errors);
-        Serial.println(")");
+        Log.warning("Outlet sensor read failed (error %d, count: %d)", outlet_result, outlet_errors);
       }
     }
 
@@ -450,15 +434,9 @@ void UpdateSensors()
     }
 
     // Log values
-    Serial.print("Inlet: ");
-    Serial.print(inlet_air_sensor.getTemperature(), 1);
-    Serial.print("°C, ");
-    Serial.print(inlet_air_sensor.getHumidity(), 0);
-    Serial.print("% | Outlet: ");
-    Serial.print(outlet_air_sensor.getTemperature(), 1);
-    Serial.print("°C, ");
-    Serial.print(outlet_air_sensor.getHumidity(), 0);
-    Serial.println("%");
+    Log.verbose("Inlet: %.1f°C, %.0f%% | Outlet: %.1f°C, %.0f%%",
+                inlet_air_sensor.getTemperature(), inlet_air_sensor.getHumidity(),
+                outlet_air_sensor.getTemperature(), outlet_air_sensor.getHumidity());
   }
 }
 
@@ -491,12 +469,12 @@ void UpdateEncoderInputs()
         {
           if (delta > 0)
           {
-            Serial.println("Encoder increment");
+            Log.trace("Encoder increment");
             menu.GetCurrentItem()->OnIncrement(&menu);
           }
           else
           {
-            Serial.println("Encoder decrement");
+            Log.trace("Encoder decrement");
             menu.GetCurrentItem()->OnDecrement(&menu);
           }
         }
@@ -506,12 +484,12 @@ void UpdateEncoderInputs()
         // Navigate menu
         if (delta > 0)
         {
-          Serial.println("Encoder down");
+          Log.trace("Encoder down");
           menu.Down();
         }
         else
         {
-          Serial.println("Encoder up");
+          Log.trace("Encoder up");
           menu.Up();
         }
       }
@@ -521,17 +499,17 @@ void UpdateEncoderInputs()
   // Encoder button
   if (button_encoder.fell())
   {
-    Serial.println(">>> ENCODER BUTTON PRESSED <<<");
+    Log.trace(">>> ENCODER BUTTON PRESSED <<<");
 
     // Button pressed (transition from HIGH to LOW)
     if (menu.IsActive())
     {
-      Serial.println("Menu enter");
+      Log.trace("Menu enter");
       menu.Enter();
     }
     else
     {
-      Serial.println("Menu show");
+      Log.trace("Menu show");
       menu.Show();
     }
   }
@@ -559,11 +537,9 @@ void UpdateOutputs()
     digitalWrite(ELECTRIC_HEATER_RELAY_PIN, heater_state);
     last_heater_state = heater_state;
 
-    Serial.print("Output changed - Heater: ");
-    Serial.print(heater_state ? "ON" : "OFF");
-    Serial.print(" (");
-    Serial.print(dryer.GetHeaterOutput() * 100.0f);
-    Serial.println("%)");
+    Log.notice("Output changed - Heater: %s (%.0f%%)",
+               heater_state ? "ON" : "OFF",
+               dryer.GetHeaterOutput() * 100.0f);
   }
 
   // Update fan if changed
@@ -572,11 +548,9 @@ void UpdateOutputs()
     digitalWrite(FAN_RELAY_PIN, fan_state);
     last_fan_state = fan_state;
 
-    Serial.print("Output changed - Fan: ");
-    Serial.print(fan_state ? "ON" : "OFF");
-    Serial.print(" (");
-    Serial.print(dryer.GetFanOutput() * 100.0f);
-    Serial.println("%)");
+    Log.notice("Output changed - Fan: %s (%.0f%%)",
+               fan_state ? "ON" : "OFF",
+               dryer.GetFanOutput() * 100.0f);
   }
 
   // Update circulator if changed (with tolerance of ±1 to avoid jitter)
@@ -585,11 +559,9 @@ void UpdateOutputs()
     analogWrite(WATER_CIRCULATOR_PWM_PIN, circulator_pwm);
     last_circulator_pwm = circulator_pwm;
 
-    Serial.print("Output changed - Circulator PWM: ");
-    Serial.print(circulator_pwm);
-    Serial.print("/255 (");
-    Serial.print(dryer.GetCirculatorOutput() * 100.0f);
-    Serial.println("%)");
+    Log.notice("Output changed - Circulator PWM: %d/255 (%.0f%%)",
+               circulator_pwm,
+               dryer.GetCirculatorOutput() * 100.0f);
   }
 
   first_run = false;
@@ -669,25 +641,21 @@ void UpdateSettings()
   // The watchdog (8s timeout) will prevent total system freeze
   if (settings_need_save)
   {
-    Serial.println("Saving settings (user changed)...");
+    Log.notice("Saving settings (user changed)...");
     settings_need_save = false;
     last_settings_save = now;
 
-    Serial.flush(); // Ensure log is sent before potentially slow operation
+    Logger::Flush(); // Ensure log is sent before potentially slow operation
     unsigned long save_start = millis();
 
     dryer.SaveSettings();
 
     unsigned long save_time = millis() - save_start;
-    Serial.print("Settings save completed in ");
-    Serial.print(save_time);
-    Serial.println("ms");
+    Log.notice("Settings save completed in %d ms", save_time);
 
     if (save_time > 1000)
     {
-      Serial.print("WARNING: Settings save took too long: ");
-      Serial.print(save_time);
-      Serial.println("ms (but watchdog prevented freeze)");
+      Log.warning("Settings save took too long: %d ms (but watchdog prevented freeze)", save_time);
     }
   }
 
@@ -703,31 +671,29 @@ void UpdateSessionMonitor()
   if (is_running && !was_running)
   {
     // Dryer just started - start monitoring
-    Serial.println("Dryer started - beginning session monitoring");
+    Log.notice("Dryer started - beginning session monitoring");
     if (session_monitor.StartSession())
     {
-      Serial.println("Session monitoring started");
+      Log.notice("Session monitoring started");
     }
     else
     {
-      Serial.println("Failed to start session monitoring");
+      Log.error("Failed to start session monitoring");
     }
   }
   else if (!is_running && was_running)
   {
     // Dryer just stopped - stop monitoring and save settings
-    Serial.println("Dryer stopped - ending session monitoring");
+    Log.notice("Dryer stopped - ending session monitoring");
     session_monitor.StopSession();
 
     // Save settings when dryer stops to preserve state
-    Serial.println("Saving settings on dryer stop...");
-    Serial.flush();
+    Log.notice("Saving settings on dryer stop...");
+    Logger::Flush();
     unsigned long save_start = millis();
     dryer.SaveSettings();
     unsigned long save_time = millis() - save_start;
-    Serial.print("Settings saved in ");
-    Serial.print(save_time);
-    Serial.println("ms");
+    Log.notice("Settings saved in %d ms", save_time);
   }
 
   was_running = is_running;
@@ -740,7 +706,7 @@ void UpdateSessionMonitor()
   {
     if (session_monitor.RetryInitialization())
     {
-      Serial.println("SD card reinitialized successfully!");
+      Log.notice("SD card reinitialized successfully!");
     }
   }
 }
@@ -758,30 +724,18 @@ void UpdateMemoryMonitor()
     uint32_t total_heap = rp2040.getTotalHeap();
     uint32_t used_heap = total_heap - free_heap;
 
-    Serial.println("========== MEMORY STATUS ==========");
-    Serial.print("Free heap: ");
-    Serial.print(free_heap);
-    Serial.print(" bytes (");
-    Serial.print((free_heap * 100) / total_heap);
-    Serial.println("%)");
-
-    Serial.print("Used heap: ");
-    Serial.print(used_heap);
-    Serial.print(" bytes (");
-    Serial.print((used_heap * 100) / total_heap);
-    Serial.println("%)");
-
-    Serial.print("Total heap: ");
-    Serial.print(total_heap);
-    Serial.println(" bytes");
+    Log.notice("========== MEMORY STATUS ==========");
+    Log.notice("Free heap: %d bytes (%d%%)", free_heap, (free_heap * 100) / total_heap);
+    Log.notice("Used heap: %d bytes (%d%%)", used_heap, (used_heap * 100) / total_heap);
+    Log.notice("Total heap: %d bytes", total_heap);
 
     // Warning if less than 10% free
     if (free_heap < (total_heap / 10))
     {
-      Serial.println("WARNING: Low memory! Less than 10% free!");
+      Log.warning("Low memory! Less than 10% free!");
     }
 
-    Serial.println("===================================");
+    Log.notice("===================================");
   }
 }
 
@@ -798,14 +752,11 @@ void loop()
   if (loop_start - last_loop_log >= LOOP_LOG_INTERVAL)
   {
     last_loop_log = loop_start;
-    Serial.print("Heartbeat - loop count: ");
-    Serial.print(loop_count);
-    Serial.print(", uptime: ");
-    Serial.print(loop_start / 1000);
-    Serial.print("s, SD: ");
-    Serial.print(session_monitor.IsReady() ? "OK" : "NOT READY");
-    Serial.print(", logging: ");
-    Serial.println(session_monitor.IsLogging() ? "YES" : "NO");
+    Log.notice("Heartbeat - loop count: %d, uptime: %ds, SD: %s, logging: %s",
+               loop_count,
+               loop_start / 1000,
+               session_monitor.IsReady() ? "OK" : "NOT READY",
+               session_monitor.IsLogging() ? "YES" : "NO");
   }
 
   UpdateSensors();
@@ -824,9 +775,7 @@ void loop()
   // Warn if loop took too long
   if (loop_time > 100)
   {
-    Serial.print("[Core 0] WARNING: Long loop iteration: ");
-    Serial.print(loop_time);
-    Serial.println("ms");
+    Log.warning("[Core 0] Long loop iteration: %d ms", loop_time);
   }
 
   delay(10); // Short delay to prevent CPU hogging

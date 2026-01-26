@@ -1,4 +1,5 @@
 #include "HydraulicHeater.h"
+#include "Logger.h"
 
 HydraulicHeater::HydraulicHeater()
   : power_(100) {
@@ -6,7 +7,7 @@ HydraulicHeater::HydraulicHeater()
 
 void HydraulicHeater::Begin() {
   power_ = 100;
-  Serial.println("Hydraulic heater initialized");
+  Log.notice("Hydraulic heater initialized");
 }
 
 void HydraulicHeater::Update() {

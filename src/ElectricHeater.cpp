@@ -1,4 +1,5 @@
 #include "ElectricHeater.h"
+#include "Logger.h"
 
 ElectricHeater::ElectricHeater()
   : power_(0.0f) {
@@ -6,7 +7,7 @@ ElectricHeater::ElectricHeater()
 
 void ElectricHeater::Begin() {
   power_ = 0.0f;
-  Serial.println("Electric heater initialized");
+  Log.notice("Electric heater initialized");
 }
 
 void ElectricHeater::Update() {
