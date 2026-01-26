@@ -21,7 +21,6 @@ https://rop.nl/truetype2gfx/
 
 TODO:
 
-- ajouter menu pour choisir le programme
 - ajouter visuellement tmax + hrmax + 1-1 + eco/hybride/perf
 - rajouter icon IN et OUT pour les valeurs du sensor
 - rajouter la gestion du renouvellement d'air dans le heater manager si trop chaud

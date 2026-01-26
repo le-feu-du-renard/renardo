@@ -12,7 +12,8 @@ enum class MenuItemType {
   kSubmenu,   // Opens a submenu
   kNumber,    // Numeric value to edit
   kCommand,   // Action to execute
-  kBack       // Return to parent menu
+  kBack,      // Return to parent menu
+  kInfo       // Display-only information
 };
 
 /**
@@ -122,6 +123,25 @@ class BackMenuItem : public MenuItem {
     : MenuItem(text, MenuItemType::kBack) {}
 
   void OnEnter(MenuSystem* menu) override;
+};
+
+/**
+ * Info menu item (display only)
+ */
+class InfoMenuItem : public MenuItem {
+ public:
+  typedef String (*GetInfoFunc)(Dryer*);
+
+  InfoMenuItem(const char* text, GetInfoFunc get_info_func)
+    : MenuItem(text, MenuItemType::kInfo),
+      get_info_func_(get_info_func) {}
+
+  String GetValueString(Dryer* dryer) const {
+    return get_info_func_(dryer);
+  }
+
+ private:
+  GetInfoFunc get_info_func_;
 };
 
 /**

@@ -1,4 +1,5 @@
 #include "MenuStructure.h"
+#include "SystemStatus.h"
 
 // ========== Program Selection Submenu ==========
 // Dynamically builds a menu of available programs
@@ -310,6 +311,87 @@ static SubmenuItem cycle_submenu(
   sizeof(cycle_items) / sizeof(cycle_items[0])
 );
 
+// ========== S4 Système Menu ==========
+
+// Info getters for system status
+static String GetRTCStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetRTCStatus();
+}
+
+static String GetDateInfo(Dryer* dryer) {
+  return SystemStatus::GetDate();
+}
+
+static String GetTimeInfo(Dryer* dryer) {
+  return SystemStatus::GetTime();
+}
+
+static String GetOLEDStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetOLEDStatus();
+}
+
+static String GetInletSensorStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetInletSensorStatus();
+}
+
+static String GetOutletSensorStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetOutletSensorStatus();
+}
+
+static String GetWaterSensorStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetWaterSensorStatus();
+}
+
+static String GetDACStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetDACStatus();
+}
+
+static String GetSDCardStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetSDCardStatus();
+}
+
+static String GetSDLoggingStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetSDLoggingStatus();
+}
+
+static String GetSessionMonitorStatusInfo(Dryer* dryer) {
+  return SystemStatus::GetSessionMonitorStatus();
+}
+
+static InfoMenuItem system_rtc_status("RTC", GetRTCStatusInfo);
+static InfoMenuItem system_date("Date", GetDateInfo);
+static InfoMenuItem system_time("Heure", GetTimeInfo);
+static InfoMenuItem system_oled_status("OLED", GetOLEDStatusInfo);
+static InfoMenuItem system_inlet_status("Sensor inlet", GetInletSensorStatusInfo);
+static InfoMenuItem system_outlet_status("Sensor outlet", GetOutletSensorStatusInfo);
+static InfoMenuItem system_water_status("Sensor water", GetWaterSensorStatusInfo);
+static InfoMenuItem system_dac_status("DAC", GetDACStatusInfo);
+static InfoMenuItem system_sd_status("SD card", GetSDCardStatusInfo);
+static InfoMenuItem system_logging_status("Logging SD", GetSDLoggingStatusInfo);
+static InfoMenuItem system_monitor_status("Session mon", GetSessionMonitorStatusInfo);
+static BackMenuItem system_back("Retour");
+
+static MenuItem* system_items[] = {
+  &system_rtc_status,
+  &system_date,
+  &system_time,
+  &system_oled_status,
+  &system_inlet_status,
+  &system_outlet_status,
+  &system_water_status,
+  &system_dac_status,
+  &system_sd_status,
+  &system_logging_status,
+  &system_monitor_status,
+  &system_back
+};
+
+static SubmenuItem system_submenu(
+  "S4 Systeme",
+  system_items,
+  sizeof(system_items) / sizeof(system_items[0])
+);
+
 // ========== Root Menu ==========
 static CommandMenuItem exit_command("Quitter", MenuStructure::ExitMenuCommand);
 
@@ -317,6 +399,7 @@ static MenuItem* root_items[] = {
   &operations_submenu,
   &heating_submenu,
   &cycle_submenu,
+  &system_submenu,
   &exit_command
 };
 

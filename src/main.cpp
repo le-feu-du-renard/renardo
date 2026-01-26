@@ -15,6 +15,7 @@
 #include "TimeManager.h"
 #include "SessionMonitor.h"
 #include "Logger.h"
+#include "SystemStatus.h"
 
 // ========== GLOBAL OBJECTS ==========
 
@@ -304,6 +305,34 @@ void SetupSessionMonitor()
   Log.notice("Session Monitor setup complete");
 }
 
+void SetupDryer()
+{
+  Log.notice("Initialize Dryer...");
+
+  dryer.Begin();
+  dryer.SetSettingsChangedCallback(OnSettingsChanged);
+  menu.Begin(MenuStructure::BuildMenu());
+
+  Log.notice("Dryer initialized");
+}
+
+void SetupSystemStatus()
+{
+  Log.notice("Initialize SystemStatus for menu display...");
+
+  SystemStatus::SetTimeManager(&time_manager);
+  SystemStatus::SetDisplay(&display);
+  SystemStatus::SetInletSensor(&inlet_air_sensor);
+  SystemStatus::SetOutletSensor(&outlet_air_sensor);
+  SystemStatus::SetWaterSensor(&water_temperature_sensor);
+  SystemStatus::SetDAC(&dac);
+  SystemStatus::SetSDAvailable(session_monitor.IsReady());
+  SystemStatus::SetSDLoggingEnabled(Logger::IsSDLoggingEnabled());
+  SystemStatus::SetSessionMonitorReady(session_monitor.IsReady());
+
+  Log.notice("SystemStatus initialized");
+}
+
 // ========== MAIN SETUP (Core 0) ==========
 
 void setup()
@@ -315,7 +344,7 @@ void setup()
   Logger::Init(LOG_LEVEL_VERBOSE);
 
   Log.notice("========================================");
-  Log.notice("    Dryer Controller - Mono Core");
+  Log.notice("    Dryer Controller");
   Log.notice("========================================");
 
   // Check if we rebooted due to watchdog
@@ -350,9 +379,10 @@ void setup()
   SetupSensors();
   delay(100);
 
-  dryer.Begin();
-  dryer.SetSettingsChangedCallback(OnSettingsChanged);
-  menu.Begin(MenuStructure::BuildMenu());
+  SetupDryer();
+  delay(100);
+
+  SetupSystemStatus();
 
   // Initialize was_running to current state
   was_running = dryer.IsRunning();

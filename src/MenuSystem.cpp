@@ -218,6 +218,12 @@ void MenuSystem::Render() {
       line += ": ";
       line += String(value, 1);
     }
+    // Add value for info items
+    else if (item->GetType() == MenuItemType::kInfo) {
+      InfoMenuItem* info_item = static_cast<InfoMenuItem*>(item);
+      line += ": ";
+      line += info_item->GetValueString(dryer_);
+    }
 
     // Line index is i+1 to leave room for header
     display_->DrawMenuLine(i + 1, line.c_str(), selected);
