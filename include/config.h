@@ -51,6 +51,7 @@
 #define DISPLAY_UPDATE_INTERVAL 100   // ms
 #define CONTROL_LOOP_INTERVAL 1000    // ms
 #define SETTINGS_SAVE_INTERVAL 300000 // ms (300 seconds = 5 minutes)
+#define DATA_LOG_INTERVAL 60000       // ms (60 seconds = 1 minute)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 
@@ -72,8 +73,5 @@
 
 // Air recycling
 #define DEFAULT_RECYCLING_RATE 50.0 // % (0-100)
-
-// ========== DATA LOGGING ==========
-#define DATA_LOG_INTERVAL 60000 // ms (60 seconds = 1 minute)
 
 #endif // CONFIG_H
