@@ -32,12 +32,12 @@ OneWire one_wire(WATER_SENSOR_PIN);
 DallasTemperature water_temperature_sensor(&one_wire);
 
 // DAC
-DFRobot_GP8403 dac(&i2c_bus_1, DAC_GP8403_ADDR);
+DFRobot_GP8403 dac(&i2c_bus_2, DAC_GP8403_ADDR);
 
 // OLED
-Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c_bus_2, SCREEN_OLED_RESET);
+Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &i2c_bus_1, SCREEN_OLED_RESET);
 
-// RTC (on bus 2)
+// RTC
 TimeManager time_manager(&i2c_bus_2);
 
 // Rotary Encoder
@@ -155,23 +155,27 @@ void ScanI2C(TwoWire &bus, const char *bus_name)
 
 void SetupI2C()
 {
-  // Bus 1: DAC + Outlet Air Sensor
+  // Bus 1
+  // Enable pull-ups for stability
+  pinMode(I2C_BUS_1_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_BUS_1_SCL_PIN, INPUT_PULLUP);
   i2c_bus_1.begin();
   i2c_bus_1.setClock(50000);
   i2c_bus_1.setTimeout(1000); // 1 second timeout to prevent I2C hangs
-  Log.notice("I2C bus 1 (DAC + Outlet) initialized at 50kHz with 1s timeout");
+  Log.notice("I2C bus 1 initialized at 50kHz with 1s timeout");
 
-  // Bus 2: OLED + Inlet Air Sensor + RTC - Enable pull-ups for stability
+  // Bus 2
+  // Enable pull-ups for stability
   pinMode(I2C_BUS_2_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_BUS_2_SCL_PIN, INPUT_PULLUP);
   i2c_bus_2.begin();
   i2c_bus_2.setClock(100000); // 100kHz for stability with 3 devices
   i2c_bus_2.setTimeout(1000); // 1 second timeout to prevent I2C hangs
-  Log.notice("I2C bus 2 (OLED + Inlet + RTC) initialized at 100kHz with internal pull-ups and 1s timeout");
+  Log.notice("I2C bus 2 initialized at 100kHz with internal pull-ups and 1s timeout");
 
   // Scan all I2C buses
-  ScanI2C(i2c_bus_1, "i2c_bus_1 (DAC + Outlet)");
-  ScanI2C(i2c_bus_2, "i2c_bus_2 (OLED + Inlet + RTC)");
+  ScanI2C(i2c_bus_1, "i2c_bus_1");
+  ScanI2C(i2c_bus_2, "i2c_bus_2");
 }
 
 void SetupOLED()

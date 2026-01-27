@@ -5,11 +5,11 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// I2C Bus 1 (DAC + Outlet Air Sensor)
+// I2C Bus 1 (OLED + Outlet Air Sensor)
 #define I2C_BUS_1_SDA_PIN 12
 #define I2C_BUS_1_SCL_PIN 13
 
-// I2C Bus 2 (OLED + Inlet Air Sensor + RTC)
+// I2C Bus 2 (DAC + Inlet Air Sensor + RTC)
 #define I2C_BUS_2_SDA_PIN 10
 #define I2C_BUS_2_SCL_PIN 11
 
