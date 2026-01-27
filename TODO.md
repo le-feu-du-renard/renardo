@@ -1,7 +1,7 @@
 TODO:
 
-ca ne sauvegarde pas les states...
-migrer les logger
+corriger les states // sauvegardes PPROM
+migrer les logger + document comment lancer avec un niveau de debug
 
 UI
 - changer la font par une plus lisible
@@ -21,6 +21,8 @@ UI
   - afficher a l'écran le mode
   - pouvoir le changer dans la config
 - créer documentation
+- ajouter BOM
+- ajouter schematics
 
 Features next:
 
