@@ -226,7 +226,9 @@ void Dryer::SaveSettings()
       session_manager_.GetCycleElapsedTime(),
       temperature_manager_.GetParams(),
       total_duty_time_s_,
-      air_recycling_manager_.GetRecyclingRate());
+      air_recycling_manager_.GetRecyclingRate(),
+      temperature_manager_.GetHydraulicEnabled(),
+      temperature_manager_.GetElectricEnabled());
 }
 
 void Dryer::LoadSettings()
@@ -239,6 +241,8 @@ void Dryer::LoadSettings()
   TemperatureParams temp_params;
   uint32_t saved_duty_time = 0;
   float saved_recycling_rate = 50.0f;
+  bool saved_hydraulic_enabled = true;
+  bool saved_electric_enabled = true;
 
   bool success = settings_manager_.LoadSessionState(
       saved_running_state,
@@ -248,7 +252,9 @@ void Dryer::LoadSettings()
       saved_cycle_elapsed,
       temp_params,
       saved_duty_time,
-      saved_recycling_rate);
+      saved_recycling_rate,
+      saved_hydraulic_enabled,
+      saved_electric_enabled);
 
   if (success)
   {
@@ -256,6 +262,8 @@ void Dryer::LoadSettings()
     temperature_manager_.GetParams() = temp_params;
     total_duty_time_s_ = saved_duty_time;
     air_recycling_manager_.SetRecyclingRate(saved_recycling_rate);
+    temperature_manager_.SetHydraulicEnabled(saved_hydraulic_enabled);
+    temperature_manager_.SetElectricEnabled(saved_electric_enabled);
 
     // Restore running state if dryer was running before reboot
     if (saved_running_state)
@@ -360,5 +368,27 @@ float Dryer::GetHeaterFullScaleDelta() const
 void Dryer::SetHeaterFullScaleDelta(float value)
 {
   temperature_manager_.GetParams().heater_full_scale_delta = value;
+  NotifySettingsChanged();
+}
+
+bool Dryer::GetHydraulicEnabled() const
+{
+  return temperature_manager_.GetHydraulicEnabled();
+}
+
+void Dryer::SetHydraulicEnabled(bool enabled)
+{
+  temperature_manager_.SetHydraulicEnabled(enabled);
+  NotifySettingsChanged();
+}
+
+bool Dryer::GetElectricEnabled() const
+{
+  return temperature_manager_.GetElectricEnabled();
+}
+
+void Dryer::SetElectricEnabled(bool enabled)
+{
+  temperature_manager_.SetElectricEnabled(enabled);
   NotifySettingsChanged();
 }

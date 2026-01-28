@@ -21,7 +21,9 @@ bool SettingsManager::LoadSessionState(bool &session_running,
                                         uint32_t &cycle_elapsed_time_s,
                                         TemperatureParams &temperature_params,
                                         uint32_t &total_duty_time_s,
-                                        float &recycling_rate)
+                                        float &recycling_rate,
+                                        bool &hydraulic_enabled,
+                                        bool &electric_enabled)
 {
   if (!ReadFromEeprom())
   {
@@ -38,6 +40,8 @@ bool SettingsManager::LoadSessionState(bool &session_running,
   temperature_params = settings_.temperature_params;
   total_duty_time_s = settings_.total_duty_time_s;
   recycling_rate = settings_.recycling_rate;
+  hydraulic_enabled = settings_.hydraulic_enabled;
+  electric_enabled = settings_.electric_enabled;
 
   Serial.println("Settings loaded from EEPROM:");
   Serial.print("  Session running: ");
@@ -65,7 +69,9 @@ void SettingsManager::SaveSessionState(bool session_running,
                                         uint32_t cycle_elapsed_time_s,
                                         const TemperatureParams &temperature_params,
                                         uint32_t total_duty_time_s,
-                                        float recycling_rate)
+                                        float recycling_rate,
+                                        bool hydraulic_enabled,
+                                        bool electric_enabled)
 {
   settings_.version = kSettingsVersion;
   settings_.session_running = session_running;
@@ -76,6 +82,8 @@ void SettingsManager::SaveSessionState(bool session_running,
   settings_.temperature_params = temperature_params;
   settings_.total_duty_time_s = total_duty_time_s;
   settings_.recycling_rate = recycling_rate;
+  settings_.hydraulic_enabled = hydraulic_enabled;
+  settings_.electric_enabled = electric_enabled;
 
   WriteToEeprom();
 

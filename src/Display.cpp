@@ -16,7 +16,9 @@ Display::Display(Adafruit_SSD1306 *oled)
       ventilation_state_(false),
       hydraulic_heater_power_(0.0),
       water_temperature_(NAN),
-      electric_heater_state_(false)
+      electric_heater_state_(false),
+      hydraulic_heater_enabled_(true),
+      electric_heater_enabled_(true)
 {
 }
 
@@ -142,21 +144,29 @@ void Display::RenderHomePage()
   oled_->drawXBitmap(x_water, y, icon_water_bits, icon_water_width,
                      icon_water_height, SSD1306_WHITE);
 
-  // Hydraulic power percentage
+  // Hydraulic power - display OFF if disabled
   oled_->setFont(&Chicago5pt7b);
-  PrintAlignedRight(x_water - 1U, y + 6, FormatPercent(hydraulic_heater_power_));
-
-  // Water temperature
-  oled_->setFont(&Chicago5pt7b);
-  PrintAlignedRight(x_water - 2U, y + 17, FormatTemperature(water_temperature_));
+  if (hydraulic_heater_enabled_) {
+    PrintAlignedRight(x_water - 2U, y + 6, FormatPercent(hydraulic_heater_power_));
+    // Water temperature - display only if enabled
+    oled_->setFont(&Chicago5pt7b);
+    PrintAlignedRight(x_water - 2U, y + 17, FormatTemperature(water_temperature_));
+  } else {
+    PrintAlignedRight(x_water - 2U, y + 12, "OFF");
+  }
 
   // Electric heater icon and state
   y = y + icon_size + icon_vertical_margin;
   uint32_t x_electric = oled_->width() - padding - icon_electric_width;
   oled_->drawXBitmap(x_electric, y, icon_electric_bits, icon_electric_width,
                      icon_electric_height, SSD1306_WHITE);
+  // Electric state - display OFF if disabled
   oled_->setFont(&Chicago4pt7b);
-  PrintAlignedRight(x_electric - 2U, y + 12, GetStateStr(electric_heater_state_));
+  if (electric_heater_enabled_) {
+    PrintAlignedRight(x_electric - 2U, y + 12, GetStateStr(electric_heater_state_));
+  } else {
+    PrintAlignedRight(x_electric - 2U, y + 12, "OFF");
+  }
 
   oled_->display();
 }
@@ -247,6 +257,16 @@ void Display::SetWaterTemperature(float temperature)
 void Display::SetElectricHeaterPower(bool state)
 {
   electric_heater_state_ = state;
+}
+
+void Display::SetHydraulicHeaterEnabled(bool enabled)
+{
+  hydraulic_heater_enabled_ = enabled;
+}
+
+void Display::SetElectricHeaterEnabled(bool enabled)
+{
+  electric_heater_enabled_ = enabled;
 }
 
 // Menu rendering

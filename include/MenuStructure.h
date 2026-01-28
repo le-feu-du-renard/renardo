@@ -34,6 +34,12 @@ class MenuStructure {
   static float GetRecyclingRate(Dryer* dryer) { return dryer->GetRecyclingRate(); }
   static void SetRecyclingRate(Dryer* dryer, float value) { dryer->SetRecyclingRate(value); }
 
+  // Energy source enable/disable
+  static bool GetHydraulicEnabled(Dryer* dryer) { return dryer->GetHydraulicEnabled(); }
+  static void SetHydraulicEnabled(Dryer* dryer, bool value) { dryer->SetHydraulicEnabled(value); }
+  static bool GetElectricEnabled(Dryer* dryer) { return dryer->GetElectricEnabled(); }
+  static void SetElectricEnabled(Dryer* dryer, bool value) { dryer->SetElectricEnabled(value); }
+
   // Command handlers
   static void ExitMenuCommand(MenuSystem* menu);
   static void StopDryerCommand(MenuSystem* menu);

@@ -62,6 +62,8 @@
 #define DEFAULT_HEATER_STEP_MIN 0.05         // ratio (0.01-0.5)
 #define DEFAULT_HEATER_STEP_MAX 0.2          // ratio (0.05-1.0)
 #define DEFAULT_HEATER_FULL_SCALE_DELTA 10.0 // °C (5-30)
+#define DEFAULT_HYDRAULIC_ENABLED true       // Enable hydraulic heater
+#define DEFAULT_ELECTRIC_ENABLED true        // Enable electric heater
 
 // Phase parameters
 #define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (5-7200) = 1 hour

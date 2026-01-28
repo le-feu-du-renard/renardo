@@ -45,6 +45,39 @@ String NumberMenuItem::GetValueString() const {
   return "";
 }
 
+void BoolMenuItem::OnEnter(MenuSystem* menu) {
+  editing_ = !editing_;
+  menu->editing_ = editing_;
+
+  if (!editing_) {
+    // Save settings when exiting edit mode
+    menu->GetDryer()->SaveSettings();
+  }
+}
+
+void BoolMenuItem::OnIncrement(MenuSystem* menu) {
+  if (editing_) {
+    bool current_value = get_func_(menu->GetDryer());
+    set_func_(menu->GetDryer(), !current_value);
+  } else {
+    menu->Up();
+  }
+}
+
+void BoolMenuItem::OnDecrement(MenuSystem* menu) {
+  if (editing_) {
+    bool current_value = get_func_(menu->GetDryer());
+    set_func_(menu->GetDryer(), !current_value);
+  } else {
+    menu->Down();
+  }
+}
+
+String BoolMenuItem::GetValueString() const {
+  // This will be implemented with actual value in Render()
+  return "";
+}
+
 void CommandMenuItem::OnEnter(MenuSystem* menu) {
   command_(menu);
 }
@@ -135,6 +168,11 @@ void MenuSystem::Back() {
       num_item->editing_ = false;
       editing_ = false;
       dryer_->SaveSettings();
+    } else if (item && item->GetType() == MenuItemType::kBool) {
+      BoolMenuItem* bool_item = static_cast<BoolMenuItem*>(item);
+      bool_item->editing_ = false;
+      editing_ = false;
+      dryer_->SaveSettings();
     }
   } else {
     // Go back in menu
@@ -217,6 +255,13 @@ void MenuSystem::Render() {
       float value = num_item->get_func_(dryer_);
       line += ": ";
       line += String(value, 1);
+    }
+    // Add value for bool items
+    else if (item->GetType() == MenuItemType::kBool) {
+      BoolMenuItem* bool_item = static_cast<BoolMenuItem*>(item);
+      bool value = bool_item->get_func_(dryer_);
+      line += ": ";
+      line += value ? "ON" : "OFF";
     }
     // Add value for info items
     else if (item->GetType() == MenuItemType::kInfo) {

@@ -58,6 +58,12 @@ class TemperatureManager {
   // Action cooldown control
   void ResetCooldown();
 
+  // Energy source enable/disable
+  void SetHydraulicEnabled(bool enabled) { hydraulic_enabled_ = enabled; }
+  bool GetHydraulicEnabled() const { return hydraulic_enabled_; }
+  void SetElectricEnabled(bool enabled) { electric_enabled_ = enabled; }
+  bool GetElectricEnabled() const { return electric_enabled_; }
+
  private:
   ElectricHeater* electric_heater_;
   HydraulicHeater* hydraulic_heater_;
@@ -65,6 +71,9 @@ class TemperatureManager {
 
   unsigned long heating_action_next_allowed_ms_;
   float current_temperature_;
+
+  bool hydraulic_enabled_;
+  bool electric_enabled_;
 
   // Temperature validation
   bool IsTemperatureTooHigh() const;

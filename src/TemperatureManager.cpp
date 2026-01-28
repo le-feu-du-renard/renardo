@@ -5,7 +5,9 @@ TemperatureManager::TemperatureManager(ElectricHeater* electric_heater, Hydrauli
     hydraulic_heater_(hydraulic_heater),
     params_(),
     heating_action_next_allowed_ms_(0),
-    current_temperature_(0.0f) {
+    current_temperature_(0.0f),
+    hydraulic_enabled_(true),
+    electric_enabled_(true) {
 }
 
 void TemperatureManager::Begin() {
@@ -85,7 +87,7 @@ bool TemperatureManager::IncreaseHeating() {
   // Priority: Hydraulic first, then electric
   uint8_t hydraulic_power = hydraulic_heater_->GetPower();
 
-  if (hydraulic_power < 100) {
+  if (hydraulic_enabled_ && hydraulic_power < 100) {
     // Increase hydraulic heater
     float step_ratio = CalculateStep();
     uint8_t step_percent = (uint8_t)(step_ratio * 100.0f + 0.5f);  // Convert ratio to percentage and round
@@ -107,15 +109,24 @@ bool TemperatureManager::IncreaseHeating() {
     Serial.println("%)");
     return true;
   } else {
-    // Hydraulic at max, turn on electric heater
+    // Hydraulic at max or disabled, turn on electric heater
     float electric_power = electric_heater_->GetPower();
 
-    if (electric_power < 1.0f) {
+    if (electric_enabled_ && electric_power < 1.0f) {
       electric_heater_->SetPower(1.0f);
       Serial.println("Turned on electric heater");
       return true;
     } else {
-      Serial.println("Both heaters at maximum - cannot increase");
+      // Cannot increase - log reason based on enabled heaters
+      if (!hydraulic_enabled_ && !electric_enabled_) {
+        Serial.println("Cannot increase heating: both heaters disabled");
+      } else if (!hydraulic_enabled_) {
+        Serial.println("Cannot increase heating: electric on, hydraulic disabled");
+      } else if (!electric_enabled_) {
+        Serial.println("Cannot increase heating: hydraulic at maximum, electric disabled");
+      } else {
+        Serial.println("Cannot increase heating: both heaters at maximum");
+      }
       return false;
     }
   }
@@ -125,16 +136,16 @@ bool TemperatureManager::DecreaseHeating() {
   // Priority: Electric first, then hydraulic
   float electric_power = electric_heater_->GetPower();
 
-  if (electric_power > 0.0f) {
+  if (electric_enabled_ && electric_power > 0.0f) {
     // Turn off electric heater
     electric_heater_->SetPower(0.0f);
     Serial.println("Turned off electric heater");
     return true;
   } else {
-    // Electric off, decrease hydraulic heater
+    // Electric off or disabled, decrease hydraulic heater
     uint8_t hydraulic_power = hydraulic_heater_->GetPower();
 
-    if (hydraulic_power > 0) {
+    if (hydraulic_enabled_ && hydraulic_power > 0) {
       float step_ratio = CalculateStep();
       uint8_t step_percent = (uint8_t)(step_ratio * 100.0f + 0.5f);  // Convert ratio to percentage and round
 
@@ -154,7 +165,16 @@ bool TemperatureManager::DecreaseHeating() {
       Serial.println("%)");
       return true;
     } else {
-      Serial.println("Both heaters at minimum - cannot decrease");
+      // Cannot decrease - log reason based on enabled heaters
+      if (!hydraulic_enabled_ && !electric_enabled_) {
+        Serial.println("Cannot decrease heating: both heaters disabled");
+      } else if (!hydraulic_enabled_) {
+        Serial.println("Cannot decrease heating: electric off, hydraulic disabled");
+      } else if (!electric_enabled_) {
+        Serial.println("Cannot decrease heating: hydraulic at minimum, electric disabled");
+      } else {
+        Serial.println("Cannot decrease heating: both heaters at minimum");
+      }
       return false;
     }
   }

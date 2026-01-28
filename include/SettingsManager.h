@@ -28,11 +28,15 @@ struct PersistentSettings {
   // Air recycling rate (0-100%)
   float recycling_rate;
 
+  // Energy sources enable/disable
+  bool hydraulic_enabled;
+  bool electric_enabled;
+
   // Checksum for data integrity
   uint16_t checksum;
 
   PersistentSettings()
-    : version(5),
+    : version(6),
       session_running(false),
       cycle_index(0),
       phase_index_in_cycle(0),
@@ -41,6 +45,8 @@ struct PersistentSettings {
       temperature_params(),
       total_duty_time_s(0),
       recycling_rate(50.0f),
+      hydraulic_enabled(true),
+      electric_enabled(true),
       checksum(0) {}
 };
 
@@ -61,7 +67,9 @@ class SettingsManager {
                         uint32_t cycle_elapsed_time_s,
                         const TemperatureParams& temperature_params,
                         uint32_t total_duty_time_s,
-                        float recycling_rate);
+                        float recycling_rate,
+                        bool hydraulic_enabled,
+                        bool electric_enabled);
 
   // Load session state from EEPROM (new format)
   bool LoadSessionState(bool& session_running,
@@ -71,7 +79,9 @@ class SettingsManager {
                         uint32_t& cycle_elapsed_time_s,
                         TemperatureParams& temperature_params,
                         uint32_t& total_duty_time_s,
-                        float& recycling_rate);
+                        float& recycling_rate,
+                        bool& hydraulic_enabled,
+                        bool& electric_enabled);
 
   // Quick save of running state only
   void SaveDryerState(bool running);
@@ -80,7 +90,7 @@ class SettingsManager {
   void ResetToDefaults();
 
  private:
-  static constexpr uint16_t kSettingsVersion = 5;
+  static constexpr uint16_t kSettingsVersion = 6;
   static constexpr size_t kEepromSize = sizeof(PersistentSettings);
   static constexpr uint16_t kEepromAddress = 0;
 

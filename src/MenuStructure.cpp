@@ -230,6 +230,18 @@ private:
 static DynamicOperationsSubmenu operations_submenu;
 
 // ========== S2 Chauffage (Heating) Menu ==========
+static BoolMenuItem heating_item_hydraulic_enabled(
+  "Hydraulic",
+  MenuStructure::GetHydraulicEnabled,
+  MenuStructure::SetHydraulicEnabled
+);
+
+static BoolMenuItem heating_item_electric_enabled(
+  "Electric",
+  MenuStructure::GetElectricEnabled,
+  MenuStructure::SetElectricEnabled
+);
+
 static NumberMenuItem heating_item_temperature_target(
   "T cible",
   MenuStructure::GetTemperatureTarget,
@@ -275,6 +287,8 @@ static NumberMenuItem heating_item_full_scale(
 static BackMenuItem heating_back("Retour");
 
 static MenuItem* heating_items[] = {
+  &heating_item_hydraulic_enabled,
+  &heating_item_electric_enabled,
   &heating_item_temperature_target,
   &heating_item_min_wait,
   &heating_item_deadband,

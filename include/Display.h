@@ -44,6 +44,8 @@ public:
   void SetHydraulicHeaterPower(float percent);
   void SetWaterTemperature(float temperature);
   void SetElectricHeaterPower(bool state);
+  void SetHydraulicHeaterEnabled(bool enabled);
+  void SetElectricHeaterEnabled(bool enabled);
 
   // Menu rendering
   void ClearMenuArea();
@@ -71,6 +73,8 @@ private:
   float hydraulic_heater_power_;
   float water_temperature_;
   bool electric_heater_state_;
+  bool hydraulic_heater_enabled_;
+  bool electric_heater_enabled_;
 
   void PrintAlignedRight(int16_t x, int16_t y, const char *text);
   void RenderHomePage();

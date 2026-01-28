@@ -648,6 +648,9 @@ void UpdateDisplay()
 
       display.SetElectricHeaterPower(dryer.GetHeaterOutput() > 0.5);
 
+      display.SetHydraulicHeaterEnabled(dryer.GetHydraulicEnabled());
+      display.SetElectricHeaterEnabled(dryer.GetElectricEnabled());
+
       display.Update();
       // Serial.println("Home page rendered");
     }

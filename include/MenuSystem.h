@@ -11,6 +11,7 @@
 enum class MenuItemType {
   kSubmenu,   // Opens a submenu
   kNumber,    // Numeric value to edit
+  kBool,      // Boolean value to toggle
   kCommand,   // Action to execute
   kBack,      // Return to parent menu
   kInfo       // Display-only information
@@ -92,6 +93,32 @@ class NumberMenuItem : public MenuItem {
   float min_value_;
   float max_value_;
   float step_;
+  bool editing_ = false;
+
+  friend class MenuSystem;
+};
+
+/**
+ * Boolean menu item
+ */
+class BoolMenuItem : public MenuItem {
+ public:
+  typedef bool (*GetBoolFunc)(Dryer*);
+  typedef void (*SetBoolFunc)(Dryer*, bool);
+
+  BoolMenuItem(const char* text, GetBoolFunc get_func, SetBoolFunc set_func)
+    : MenuItem(text, MenuItemType::kBool),
+      get_func_(get_func),
+      set_func_(set_func) {}
+
+  void OnEnter(MenuSystem* menu) override;
+  void OnIncrement(MenuSystem* menu) override;
+  void OnDecrement(MenuSystem* menu) override;
+  String GetValueString() const override;
+
+ private:
+  GetBoolFunc get_func_;
+  SetBoolFunc set_func_;
   bool editing_ = false;
 
   friend class MenuSystem;
@@ -203,6 +230,7 @@ class MenuSystem {
   void ExitSubmenu();
 
   friend class NumberMenuItem;
+  friend class BoolMenuItem;
   friend class SubmenuItem;
   friend class BackMenuItem;
   friend class DynamicOperationsSubmenu;

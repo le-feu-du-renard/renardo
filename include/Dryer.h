@@ -101,6 +101,12 @@ public:
   float GetHeaterFullScaleDelta() const;
   void SetHeaterFullScaleDelta(float value);
 
+  // Energy source enable/disable
+  bool GetHydraulicEnabled() const;
+  void SetHydraulicEnabled(bool enabled);
+  bool GetElectricEnabled() const;
+  void SetElectricEnabled(bool enabled);
+
 private:
   // Components
   ElectricHeater electric_heater_;
