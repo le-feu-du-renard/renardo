@@ -35,6 +35,7 @@ public:
   void SetCycleDuration(uint32_t seconds);
   void SetPhaseDuration(uint32_t seconds);
   void SetPhase(const char *phase_name);
+  void SetProgramName(const char *program_name);
 
   void SetInletAirData(float temperature, float humidity);
   void SetOutletAirData(float temperature, float humidity);
@@ -62,6 +63,7 @@ private:
   uint32_t cycle_duration_;
   uint32_t phase_duration_;
   String phase_name_;
+  String program_name_;
 
   float inlet_air_temperature_;
   float inlet_air_humidity_;

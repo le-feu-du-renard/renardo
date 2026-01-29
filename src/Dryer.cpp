@@ -217,6 +217,13 @@ void Dryer::UpdateDutyTime()
 
 void Dryer::SaveSettings()
 {
+  // Get current program ID (default to 0 if no program is set)
+  uint8_t current_program_id = 0;
+  const Program* current_program = session_manager_.GetProgram();
+  if (current_program != nullptr) {
+    current_program_id = current_program->id;
+  }
+
   // Save with new session state format
   settings_manager_.SaveSessionState(
       session_manager_.IsRunning(),
@@ -224,6 +231,7 @@ void Dryer::SaveSettings()
       session_manager_.GetCurrentPhaseIndexInCycle(),
       session_manager_.GetPhaseElapsedTime(),
       session_manager_.GetCycleElapsedTime(),
+      current_program_id,
       temperature_manager_.GetParams(),
       total_duty_time_s_,
       air_recycling_manager_.GetRecyclingRate(),
@@ -238,6 +246,7 @@ void Dryer::LoadSettings()
   uint8_t saved_phase_index = 0;
   uint32_t saved_phase_elapsed = 0;
   uint32_t saved_cycle_elapsed = 0;
+  uint8_t saved_program_id = 0;
   TemperatureParams temp_params;
   uint32_t saved_duty_time = 0;
   float saved_recycling_rate = 50.0f;
@@ -250,6 +259,7 @@ void Dryer::LoadSettings()
       saved_phase_index,
       saved_phase_elapsed,
       saved_cycle_elapsed,
+      saved_program_id,
       temp_params,
       saved_duty_time,
       saved_recycling_rate,
@@ -258,6 +268,20 @@ void Dryer::LoadSettings()
 
   if (success)
   {
+    // Restore program if available
+    if (saved_program_id > 0) {
+      const Program* saved_program = program_loader_.GetProgramById(saved_program_id);
+      if (saved_program != nullptr) {
+        session_manager_.SetProgram(saved_program);
+        Serial.print("Restored program: ");
+        Serial.println(saved_program->name);
+      } else {
+        Serial.print("Warning: Program ID ");
+        Serial.print(saved_program_id);
+        Serial.println(" not found, using default program");
+      }
+    }
+
     // Restore parameters
     temperature_manager_.GetParams() = temp_params;
     total_duty_time_s_ = saved_duty_time;

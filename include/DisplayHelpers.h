@@ -43,11 +43,27 @@ inline const char *FormatTemperature(float temperature)
 
   if (std::isnan(temperature))
   {
-    snprintf(buf, sizeof(buf), "--.-°");
+    snprintf(buf, sizeof(buf), "--.-º");
   }
   else
   {
-    snprintf(buf, sizeof(buf), "%.1f%cC", temperature, (char)247);
+    snprintf(buf, sizeof(buf), "%.1fºC", temperature);
+  }
+
+  return buf;
+}
+
+inline const char *FormatTemperatureDegree(float temperature)
+{
+  static char buf[16];
+
+  if (std::isnan(temperature))
+  {
+    snprintf(buf, sizeof(buf), "--.-º");
+  }
+  else
+  {
+    snprintf(buf, sizeof(buf), "%.1fº", temperature);
   }
 
   return buf;

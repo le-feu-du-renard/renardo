@@ -630,6 +630,18 @@ void UpdateDisplay()
       // Phase name
       display.SetPhase(dryer.GetPhaseName());
 
+      // Program ID (e.g., "p1", "p2") - only display when dryer is running
+      if (dryer.IsRunning()) {
+        const Program* current_program = dryer.GetSessionManager()->GetProgram();
+        if (current_program != nullptr) {
+          char program_id_str[8];
+          snprintf(program_id_str, sizeof(program_id_str), "p%d", current_program->id);
+          display.SetProgramName(program_id_str);
+        }
+      } else {
+        display.SetProgramName("");
+      }
+
       // Air data
       display.SetInletAirData(
           dryer.GetInletTemperature(),

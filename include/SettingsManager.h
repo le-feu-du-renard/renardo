@@ -19,6 +19,9 @@ struct PersistentSettings {
   uint32_t phase_elapsed_time_s;
   uint32_t cycle_elapsed_time_s;
 
+  // Program ID (for crash recovery)
+  uint8_t program_id;
+
   // Temperature parameters
   TemperatureParams temperature_params;
 
@@ -36,12 +39,13 @@ struct PersistentSettings {
   uint16_t checksum;
 
   PersistentSettings()
-    : version(6),
+    : version(7),
       session_running(false),
       cycle_index(0),
       phase_index_in_cycle(0),
       phase_elapsed_time_s(0),
       cycle_elapsed_time_s(0),
+      program_id(0),
       temperature_params(),
       total_duty_time_s(0),
       recycling_rate(50.0f),
@@ -65,6 +69,7 @@ class SettingsManager {
                         uint8_t phase_index_in_cycle,
                         uint32_t phase_elapsed_time_s,
                         uint32_t cycle_elapsed_time_s,
+                        uint8_t program_id,
                         const TemperatureParams& temperature_params,
                         uint32_t total_duty_time_s,
                         float recycling_rate,
@@ -77,6 +82,7 @@ class SettingsManager {
                         uint8_t& phase_index_in_cycle,
                         uint32_t& phase_elapsed_time_s,
                         uint32_t& cycle_elapsed_time_s,
+                        uint8_t& program_id,
                         TemperatureParams& temperature_params,
                         uint32_t& total_duty_time_s,
                         float& recycling_rate,
@@ -90,7 +96,7 @@ class SettingsManager {
   void ResetToDefaults();
 
  private:
-  static constexpr uint16_t kSettingsVersion = 6;
+  static constexpr uint16_t kSettingsVersion = 7;
   static constexpr size_t kEepromSize = sizeof(PersistentSettings);
   static constexpr uint16_t kEepromAddress = 0;
 

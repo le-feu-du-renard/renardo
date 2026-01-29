@@ -19,6 +19,7 @@ bool SettingsManager::LoadSessionState(bool &session_running,
                                         uint8_t &phase_index_in_cycle,
                                         uint32_t &phase_elapsed_time_s,
                                         uint32_t &cycle_elapsed_time_s,
+                                        uint8_t &program_id,
                                         TemperatureParams &temperature_params,
                                         uint32_t &total_duty_time_s,
                                         float &recycling_rate,
@@ -37,6 +38,7 @@ bool SettingsManager::LoadSessionState(bool &session_running,
   phase_index_in_cycle = settings_.phase_index_in_cycle;
   phase_elapsed_time_s = settings_.phase_elapsed_time_s;
   cycle_elapsed_time_s = settings_.cycle_elapsed_time_s;
+  program_id = settings_.program_id;
   temperature_params = settings_.temperature_params;
   total_duty_time_s = settings_.total_duty_time_s;
   recycling_rate = settings_.recycling_rate;
@@ -50,6 +52,8 @@ bool SettingsManager::LoadSessionState(bool &session_running,
   Serial.println(cycle_index);
   Serial.print("  Phase index: ");
   Serial.println(phase_index_in_cycle);
+  Serial.print("  Program ID: ");
+  Serial.println(program_id);
   Serial.print("  Target temperature: ");
   Serial.println(temperature_params.temperature_target);
   Serial.print("  Total duty time: ");
@@ -67,6 +71,7 @@ void SettingsManager::SaveSessionState(bool session_running,
                                         uint8_t phase_index_in_cycle,
                                         uint32_t phase_elapsed_time_s,
                                         uint32_t cycle_elapsed_time_s,
+                                        uint8_t program_id,
                                         const TemperatureParams &temperature_params,
                                         uint32_t total_duty_time_s,
                                         float recycling_rate,
@@ -79,6 +84,7 @@ void SettingsManager::SaveSessionState(bool session_running,
   settings_.phase_index_in_cycle = phase_index_in_cycle;
   settings_.phase_elapsed_time_s = phase_elapsed_time_s;
   settings_.cycle_elapsed_time_s = cycle_elapsed_time_s;
+  settings_.program_id = program_id;
   settings_.temperature_params = temperature_params;
   settings_.total_duty_time_s = total_duty_time_s;
   settings_.recycling_rate = recycling_rate;

@@ -8,6 +8,7 @@ Display::Display(Adafruit_SSD1306 *oled)
       cycle_duration_(0),
       phase_duration_(0),
       phase_name_("STOP"),
+      program_name_(""),
       inlet_air_temperature_(NAN),
       inlet_air_humidity_(NAN),
       outlet_air_temperature_(NAN),
@@ -71,10 +72,14 @@ void Display::RenderHomePage()
   // Init
   oled_->setTextColor(SSD1306_WHITE);
 
-  // Global elapsed time
+  // Global elapsed time with program name (e.g., "00:20:10 - p1")
   oled_->setFont(&Chicago5pt7b);
   oled_->setCursor(padding, y + 10);
   oled_->print(FormatDuration(total_duty_time_));
+  if (program_name_.length() > 0) {
+    oled_->print(" - ");
+    oled_->print(program_name_);
+  }
 
   // Progress bar global
   y = y + 13U;
@@ -208,6 +213,11 @@ void Display::SetPhaseDuration(uint32_t seconds)
 void Display::SetPhase(const char *phase_name)
 {
   phase_name_ = String(phase_name);
+}
+
+void Display::SetProgramName(const char *program_name)
+{
+  program_name_ = String(program_name);
 }
 
 void Display::SetInletAirData(float temperature, float humidity)
