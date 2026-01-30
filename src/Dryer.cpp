@@ -337,6 +337,17 @@ float Dryer::GetTemperatureTarget() const
 void Dryer::SetTemperatureTarget(float value)
 {
   temperature_manager_.GetParams().temperature_target = value;
+  temperature_manager_.SetTargetTemperature(value);
+
+  // If in manual mode, update the manual program
+  const Program* current_program = session_manager_.GetProgram();
+  if (current_program != nullptr && current_program->id == 255) {
+    // Get current humidity max to preserve it
+    float current_hr_max = humidity_manager_.GetTargetHumidity();
+    program_loader_.UpdateManualProgram(value, current_hr_max);
+    Serial.println("[Dryer] Manual program updated with new temperature");
+  }
+
   NotifySettingsChanged();
 }
 
@@ -392,6 +403,27 @@ float Dryer::GetHeaterFullScaleDelta() const
 void Dryer::SetHeaterFullScaleDelta(float value)
 {
   temperature_manager_.GetParams().heater_full_scale_delta = value;
+  NotifySettingsChanged();
+}
+
+float Dryer::GetHumidityMax() const
+{
+  return humidity_manager_.GetTargetHumidity();
+}
+
+void Dryer::SetHumidityMax(float value)
+{
+  humidity_manager_.SetTargetHumidity(value);
+
+  // If in manual mode, update the manual program
+  const Program* current_program = session_manager_.GetProgram();
+  if (current_program != nullptr && current_program->id == 255) {
+    // Get current temperature target to preserve it
+    float current_temp = temperature_manager_.GetTargetTemperature();
+    program_loader_.UpdateManualProgram(current_temp, value);
+    Serial.println("[Dryer] Manual program updated with new humidity max");
+  }
+
   NotifySettingsChanged();
 }
 

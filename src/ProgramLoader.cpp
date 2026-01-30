@@ -2,214 +2,58 @@
 
 ProgramLoader::ProgramLoader()
     : program_count_(0),
-      fs_available_(false) {
-  memset(programs_, 0, sizeof(programs_));
+      manual_program_created_(false) {
+  memset(program_pointers_, 0, sizeof(program_pointers_));
+  memset(&manual_program_, 0, sizeof(manual_program_));
 }
 
 bool ProgramLoader::Begin() {
-  Serial.println("ProgramLoader: Initializing LittleFS...");
-
-  if (!LittleFS.begin()) {
-    Serial.println("ProgramLoader: LittleFS mount failed!");
-    fs_available_ = false;
-    return false;
-  }
-
-  fs_available_ = true;
-  Serial.println("ProgramLoader: LittleFS mounted successfully");
-
-  // List files in /programs directory
-  File root = LittleFS.open("/programs", "r");
-  if (!root || !root.isDirectory()) {
-    Serial.println("ProgramLoader: /programs directory not found");
-    return true;  // Not an error, just no programs
-  }
-  root.close();
-
+  Serial.println("ProgramLoader: Initializing built-in programs...");
   return true;
 }
 
 uint8_t ProgramLoader::LoadPrograms() {
-  if (!fs_available_) {
-    Serial.println("ProgramLoader: Filesystem not available");
-    return 0;
-  }
-
   program_count_ = 0;
 
-  File root = LittleFS.open("/programs", "r");
-  if (!root || !root.isDirectory()) {
-    Serial.println("ProgramLoader: Cannot open /programs directory");
-    return 0;
-  }
-
-  File file = root.openNextFile();
-  while (file && program_count_ < MAX_PROGRAMS) {
-    String filename = file.name();
-
-    // Only process .json files
-    if (filename.endsWith(".json")) {
-      String fullPath = "/programs/" + filename;
-      Serial.print("ProgramLoader: Loading ");
-      Serial.println(fullPath);
-
-      if (LoadProgramFromFile(fullPath.c_str(), programs_[program_count_])) {
-        Serial.print("ProgramLoader: Loaded program '");
-        Serial.print(programs_[program_count_].name);
-        Serial.print("' (ID: ");
-        Serial.print(programs_[program_count_].id);
-        Serial.println(")");
-        program_count_++;
-      } else {
-        Serial.print("ProgramLoader: Failed to load ");
-        Serial.println(fullPath);
-      }
-    }
-
-    file.close();
-    file = root.openNextFile();
-  }
-
-  root.close();
+  // Load built-in programs
+  program_pointers_[program_count_++] = GetProgram1_Standard();
+  program_pointers_[program_count_++] = GetProgram2_Doux();
+  program_pointers_[program_count_++] = GetProgram3_Germination();
 
   Serial.print("ProgramLoader: Loaded ");
   Serial.print(program_count_);
-  Serial.println(" programs");
+  Serial.println(" built-in programs");
+
+  // Print loaded programs
+  for (uint8_t i = 0; i < program_count_; i++) {
+    const Program* prog = program_pointers_[i];
+    if (prog != nullptr) {
+      Serial.print("  - Program ");
+      Serial.print(prog->id);
+      Serial.print(": '");
+      Serial.print(prog->name);
+      Serial.print("' (");
+      Serial.print(prog->phase_count);
+      Serial.print(" phases, ");
+      Serial.print(prog->cycle_count);
+      Serial.println(" cycles)");
+    }
+  }
 
   return program_count_;
-}
-
-bool ProgramLoader::LoadProgramFromFile(const char* path, Program& program) {
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    Serial.print("ProgramLoader: Cannot open file: ");
-    Serial.println(path);
-    return false;
-  }
-
-  // ArduinoJson v7 document
-  JsonDocument doc;
-
-  DeserializationError error = deserializeJson(doc, file);
-  file.close();
-
-  if (error) {
-    Serial.print("ProgramLoader: JSON parse error: ");
-    Serial.println(error.c_str());
-    return false;
-  }
-
-  // Clear program structure
-  memset(&program, 0, sizeof(Program));
-
-  // Parse program metadata
-  program.id = doc["id"] | 0;
-  if (program.id == 0) {
-    Serial.println("ProgramLoader: Invalid program ID");
-    return false;
-  }
-
-  const char* name = doc["name"] | "Unknown";
-  strncpy(program.name, name, sizeof(program.name) - 1);
-  program.name[sizeof(program.name) - 1] = '\0';
-
-  // Parse phases
-  JsonArray phases = doc["phases"];
-  program.phase_count = 0;
-
-  for (JsonObject phase : phases) {
-    if (program.phase_count >= MAX_PHASES_PER_PROGRAM) {
-      Serial.println("ProgramLoader: Too many phases, truncating");
-      break;
-    }
-
-    if (ParsePhase(phase, program.phases[program.phase_count])) {
-      program.phase_count++;
-    }
-  }
-
-  // Parse cycles
-  JsonArray cycles = doc["cycles"];
-  program.cycle_count = 0;
-
-  for (JsonObject cycle : cycles) {
-    if (program.cycle_count >= MAX_CYCLES_PER_PROGRAM) {
-      Serial.println("ProgramLoader: Too many cycles, truncating");
-      break;
-    }
-
-    if (ParseCycle(cycle, program.cycles[program.cycle_count])) {
-      program.cycle_count++;
-    }
-  }
-
-  return program.phase_count > 0 && program.cycle_count > 0;
-}
-
-bool ProgramLoader::ParsePhase(JsonObject& json, Phase& phase) {
-  phase.id = json["id"] | 0;
-  if (phase.id == 0) {
-    return false;
-  }
-
-  const char* name = json["name"] | "Phase";
-  strncpy(phase.name, name, sizeof(phase.name) - 1);
-  phase.name[sizeof(phase.name) - 1] = '\0';
-
-  phase.temperature_target = json["temperature_target"] | 0.0f;
-  // Use .as<bool>() to handle both true/false and 1/0 in JSON
-  phase.transition_on_temperature = json["transition_on_temperature"].as<bool>();
-  phase.humidity_max = json["humidity_max"] | 0.0f;
-  phase.transition_on_humidity = json["transition_on_humidity"].as<bool>();
-  phase.duration_s = json["duration_s"] | 0;
-
-  Serial.print("[ProgramLoader] Parsed phase '");
-  Serial.print(phase.name);
-  Serial.print("' - transition_on_temp from JSON: ");
-  Serial.print(json["transition_on_temperature"].as<bool>());
-  Serial.print(" -> stored as: ");
-  Serial.print(phase.transition_on_temperature ? "TRUE" : "FALSE");
-  Serial.print(", transition_on_hum from JSON: ");
-  Serial.print(json["transition_on_humidity"].as<bool>());
-  Serial.print(" -> stored as: ");
-  Serial.println(phase.transition_on_humidity ? "TRUE" : "FALSE");
-
-  return true;
-}
-
-bool ProgramLoader::ParseCycle(JsonObject& json, Cycle& cycle) {
-  cycle.id = json["id"] | 0;
-  if (cycle.id == 0) {
-    return false;
-  }
-
-  cycle.repeat_duration_s = json["repeat_duration_s"] | 0;
-
-  // Parse phase_ids array
-  JsonArray phase_ids = json["phase_ids"];
-  cycle.phase_count = 0;
-
-  for (JsonVariant id : phase_ids) {
-    if (cycle.phase_count >= MAX_PHASES_PER_CYCLE) {
-      break;
-    }
-    cycle.phase_ids[cycle.phase_count++] = id.as<uint8_t>();
-  }
-
-  return cycle.phase_count > 0;
 }
 
 const Program* ProgramLoader::GetProgram(uint8_t index) const {
   if (index >= program_count_) {
     return nullptr;
   }
-  return &programs_[index];
+  return program_pointers_[index];
 }
 
 const Program* ProgramLoader::GetProgramById(uint8_t id) const {
   for (uint8_t i = 0; i < program_count_; i++) {
-    if (programs_[i].id == id) {
-      return &programs_[i];
+    if (program_pointers_[i] != nullptr && program_pointers_[i]->id == id) {
+      return program_pointers_[i];
     }
   }
   return nullptr;
@@ -219,5 +63,95 @@ const Program* ProgramLoader::GetDefaultProgram() const {
   if (program_count_ == 0) {
     return nullptr;
   }
-  return &programs_[0];
+  return program_pointers_[0];
+}
+
+const Program* ProgramLoader::CreateManualProgram(float temperature_target, float humidity_max) {
+  // Clear the manual program structure
+  memset(&manual_program_, 0, sizeof(Program));
+
+  // Set program metadata
+  manual_program_.id = 255;  // Special ID for manual mode
+  strncpy(manual_program_.name, "Manuel", sizeof(manual_program_.name) - 1);
+
+  // Create Phase 1: Init
+  manual_program_.phases[0].id = 1;
+  strncpy(manual_program_.phases[0].name, "Init", sizeof(manual_program_.phases[0].name) - 1);
+  manual_program_.phases[0].temperature_target = temperature_target;
+  manual_program_.phases[0].transition_on_temperature = true;
+  manual_program_.phases[0].humidity_max = humidity_max;
+  manual_program_.phases[0].transition_on_humidity = false;
+  manual_program_.phases[0].duration_s = 3600;
+
+  // Create Phase 2: Extraction
+  manual_program_.phases[1].id = 2;
+  strncpy(manual_program_.phases[1].name, "Extraction", sizeof(manual_program_.phases[1].name) - 1);
+  manual_program_.phases[1].temperature_target = temperature_target;
+  manual_program_.phases[1].transition_on_temperature = false;
+  manual_program_.phases[1].humidity_max = -1.0f;
+  manual_program_.phases[1].transition_on_humidity = false;
+  manual_program_.phases[1].duration_s = 120;
+
+  // Create Phase 3: Circulation
+  manual_program_.phases[2].id = 3;
+  strncpy(manual_program_.phases[2].name, "Circulation", sizeof(manual_program_.phases[2].name) - 1);
+  manual_program_.phases[2].temperature_target = temperature_target;
+  manual_program_.phases[2].transition_on_temperature = false;
+  manual_program_.phases[2].humidity_max = humidity_max;
+  manual_program_.phases[2].transition_on_humidity = true;  // Transition when HR_max reached
+  manual_program_.phases[2].duration_s = 300;
+
+  manual_program_.phase_count = 3;
+
+  // Create Cycle 1: Init
+  manual_program_.cycles[0].id = 1;
+  manual_program_.cycles[0].phase_ids[0] = 1;
+  manual_program_.cycles[0].phase_count = 1;
+  manual_program_.cycles[0].repeat_duration_s = 0;
+
+  // Create Cycle 2: Drying (Extraction + Circulation loop)
+  manual_program_.cycles[1].id = 2;
+  manual_program_.cycles[1].phase_ids[0] = 2;
+  manual_program_.cycles[1].phase_ids[1] = 3;
+  manual_program_.cycles[1].phase_count = 2;
+  manual_program_.cycles[1].repeat_duration_s = -1;  // Infinite loop
+
+  manual_program_.cycle_count = 2;
+
+  manual_program_created_ = true;
+
+  Serial.println("ProgramLoader: Manual program created");
+  Serial.print("  Temperature target: ");
+  Serial.println(temperature_target);
+  Serial.print("  Humidity max: ");
+  Serial.println(humidity_max);
+
+  return &manual_program_;
+}
+
+const Program* ProgramLoader::GetManualProgram() const {
+  if (!manual_program_created_) {
+    return nullptr;
+  }
+  return &manual_program_;
+}
+
+void ProgramLoader::UpdateManualProgram(float temperature_target, float humidity_max) {
+  if (!manual_program_created_) {
+    Serial.println("ProgramLoader: Cannot update manual program - not created");
+    return;
+  }
+
+  // Update all phases with new values
+  manual_program_.phases[0].temperature_target = temperature_target;
+  manual_program_.phases[0].humidity_max = humidity_max;
+  manual_program_.phases[1].temperature_target = temperature_target;
+  manual_program_.phases[2].temperature_target = temperature_target;
+  manual_program_.phases[2].humidity_max = humidity_max;
+
+  Serial.println("ProgramLoader: Manual program updated");
+  Serial.print("  New temperature target: ");
+  Serial.println(temperature_target);
+  Serial.print("  New humidity max: ");
+  Serial.println(humidity_max);
 }

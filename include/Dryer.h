@@ -101,6 +101,10 @@ public:
   float GetHeaterFullScaleDelta() const;
   void SetHeaterFullScaleDelta(float value);
 
+  // Humidity parameters
+  float GetHumidityMax() const;
+  void SetHumidityMax(float value);
+
   // Energy source enable/disable
   bool GetHydraulicEnabled() const;
   void SetHydraulicEnabled(bool enabled);

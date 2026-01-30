@@ -256,7 +256,8 @@ void SessionManager::EnterPhase(uint8_t phase_id)
   }
   temperature_manager_->ResetCooldown();
 
-  // Configure HumidityManager - no target needed, we just check against humidity_max
+  // Configure HumidityManager with the phase's humidity target
+  humidity_manager_->SetTargetHumidity(current_phase_->humidity_max);
   humidity_manager_->ResetCooldown();
 
   // Start with hydraulic at max for heating phases

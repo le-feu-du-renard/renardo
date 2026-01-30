@@ -4,6 +4,37 @@
 // ========== Program Selection Submenu ==========
 // Dynamically builds a menu of available programs
 
+// Default values for manual mode
+constexpr float MANUAL_DEFAULT_TEMP = 40.0f;
+constexpr float MANUAL_DEFAULT_HR = 70.0f;
+
+// Handler for manual mode
+static void SelectManualMode(MenuSystem* menu) {
+  Dryer* dryer = menu->GetDryer();
+
+  // Create manual program with default values
+  const Program* program = dryer->GetProgramLoader()->CreateManualProgram(
+    MANUAL_DEFAULT_TEMP,
+    MANUAL_DEFAULT_HR
+  );
+
+  if (program != nullptr) {
+    Serial.println("Starting manual mode...");
+    Serial.print("  Temperature: ");
+    Serial.print(MANUAL_DEFAULT_TEMP);
+    Serial.println("°C");
+    Serial.print("  Humidity max: ");
+    Serial.print(MANUAL_DEFAULT_HR);
+    Serial.println("%");
+
+    dryer->GetSessionManager()->SetProgram(program);
+    dryer->Start();
+    menu->Hide();
+  } else {
+    Serial.println("ERROR: Failed to create manual program");
+  }
+}
+
 // Static handlers for program selection (one per program slot)
 static void SelectProgram0(MenuSystem* menu) {
   Dryer* dryer = menu->GetDryer();
@@ -115,6 +146,7 @@ class ProgramSelectSubmenu : public SubmenuItem {
 public:
   ProgramSelectSubmenu()
     : SubmenuItem("Demarrer", nullptr, 0),
+      manual_item_("Manuel", SelectManualMode),
       back_item_("Retour") {
     // Initialize program items storage
     for (uint8_t i = 0; i < MAX_PROGRAMS; i++) {
@@ -129,6 +161,9 @@ public:
 
     uint8_t program_count = loader->GetProgramCount();
     uint8_t item_count = 0;
+
+    // Add manual mode first
+    items_buffer_[item_count++] = &manual_item_;
 
     // Create menu items for each program
     for (uint8_t i = 0; i < program_count; i++) {
@@ -170,9 +205,10 @@ private:
     CommandMenuItem* item;
   };
 
+  CommandMenuItem manual_item_;
   ProgramItemStorage program_item_storage_[MAX_PROGRAMS];
   BackMenuItem back_item_;
-  MenuItem* items_buffer_[MAX_PROGRAMS + 1]; // +1 for back button
+  MenuItem* items_buffer_[MAX_PROGRAMS + 2]; // +1 for manual, +1 for back button
 };
 
 static ProgramSelectSubmenu program_select_submenu;
@@ -284,12 +320,20 @@ static NumberMenuItem heating_item_full_scale(
   10.0f, 30.0f, 1.0f
 );
 
+static NumberMenuItem heating_item_humidity_max(
+  "HR max %",
+  MenuStructure::GetHumidityMax,
+  MenuStructure::SetHumidityMax,
+  40.0f, 90.0f, 1.0f
+);
+
 static BackMenuItem heating_back("Retour");
 
 static MenuItem* heating_items[] = {
   &heating_item_hydraulic_enabled,
   &heating_item_electric_enabled,
   &heating_item_temperature_target,
+  &heating_item_humidity_max,
   &heating_item_min_wait,
   &heating_item_deadband,
   &heating_item_step_min,

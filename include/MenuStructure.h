@@ -34,6 +34,10 @@ class MenuStructure {
   static float GetRecyclingRate(Dryer* dryer) { return dryer->GetRecyclingRate(); }
   static void SetRecyclingRate(Dryer* dryer, float value) { dryer->SetRecyclingRate(value); }
 
+  // Humidity parameters
+  static float GetHumidityMax(Dryer* dryer) { return dryer->GetHumidityMax(); }
+  static void SetHumidityMax(Dryer* dryer, float value) { dryer->SetHumidityMax(value); }
+
   // Energy source enable/disable
   static bool GetHydraulicEnabled(Dryer* dryer) { return dryer->GetHydraulicEnabled(); }
   static void SetHydraulicEnabled(Dryer* dryer, bool value) { dryer->SetHydraulicEnabled(value); }

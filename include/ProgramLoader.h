@@ -2,29 +2,26 @@
 #define PROGRAM_LOADER_H
 
 #include <Arduino.h>
-#include <LittleFS.h>
-#include <ArduinoJson.h>
 #include "ProgramDefinitions.h"
+#include "Programs.h"
 
 /**
- * Loads drying programs from JSON files
+ * Loads drying programs
  *
- * Programs are loaded from:
- * - LittleFS: /programs/*.json (built-in programs)
- * - SD card: /programs/*.json (user programs, future)
+ * Programs are defined in C++ files (src/programs/) and loaded at compile time.
  */
 class ProgramLoader {
  public:
   ProgramLoader();
 
   /**
-   * Initialize the program loader and filesystem
+   * Initialize the program loader
    * @return true if initialization successful
    */
   bool Begin();
 
   /**
-   * Load all programs from filesystem
+   * Load all built-in programs
    * @return Number of programs loaded
    */
   uint8_t LoadPrograms();
@@ -55,32 +52,31 @@ class ProgramLoader {
   uint8_t GetProgramCount() const { return program_count_; }
 
   /**
-   * Check if filesystem is available
+   * Create a manual program with custom temperature and humidity
+   * @param temperature_target Target temperature for the manual program
+   * @param humidity_max Maximum humidity for the manual program
+   * @return Pointer to the manual program
    */
-  bool IsFilesystemAvailable() const { return fs_available_; }
+  const Program* CreateManualProgram(float temperature_target, float humidity_max);
+
+  /**
+   * Get the manual program if it exists
+   * @return Pointer to manual program or nullptr if not created
+   */
+  const Program* GetManualProgram() const;
+
+  /**
+   * Update manual program parameters (while running)
+   * @param temperature_target New target temperature
+   * @param humidity_max New maximum humidity
+   */
+  void UpdateManualProgram(float temperature_target, float humidity_max);
 
  private:
-  Program programs_[MAX_PROGRAMS];
+  const Program* program_pointers_[MAX_PROGRAMS];
   uint8_t program_count_;
-  bool fs_available_;
-
-  /**
-   * Load a single program from JSON file
-   * @param path File path
-   * @param program Output program structure
-   * @return true if successful
-   */
-  bool LoadProgramFromFile(const char* path, Program& program);
-
-  /**
-   * Parse phase from JSON object
-   */
-  bool ParsePhase(JsonObject& json, Phase& phase);
-
-  /**
-   * Parse cycle from JSON object
-   */
-  bool ParseCycle(JsonObject& json, Cycle& cycle);
+  Program manual_program_;
+  bool manual_program_created_;
 };
 
 #endif  // PROGRAM_LOADER_H
