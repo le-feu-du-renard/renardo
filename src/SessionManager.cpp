@@ -110,7 +110,6 @@ void SessionManager::Stop()
   // Turn off heaters
   temperature_manager_->GetElectricHeater()->SetPower(0.0f);
   temperature_manager_->GetHydraulicHeater()->SetPower(0.0f);
-  temperature_manager_->ResetCooldown();
 
   // Reset humidity control
   humidity_manager_->SetTargetHumidity(0.0f);
@@ -254,7 +253,6 @@ void SessionManager::EnterPhase(uint8_t phase_id)
   {
     temperature_manager_->SetTargetTemperature(current_phase_->temperature_target);
   }
-  temperature_manager_->ResetCooldown();
 
   // Configure HumidityManager with the phase's humidity target
   humidity_manager_->SetTargetHumidity(current_phase_->humidity_max);

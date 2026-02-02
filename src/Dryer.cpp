@@ -129,7 +129,8 @@ void Dryer::UpdateControl()
     Serial.println(outlet_humidity_);
     session_manager_.Update(inlet_temperature_, outlet_humidity_);
 
-    // Update temperature manager with current temperature
+    // Update temperature manager with current temperature and water temperature
+    temperature_manager_.SetWaterTemperature(water_temperature_);
     temperature_manager_.Update(inlet_temperature_);
 
     // Update humidity manager with current humidity values
@@ -351,61 +352,6 @@ void Dryer::SetTemperatureTarget(float value)
   NotifySettingsChanged();
 }
 
-float Dryer::GetTemperatureDeadband() const
-{
-  return temperature_manager_.GetParams().temperature_deadband;
-}
-
-void Dryer::SetTemperatureDeadband(float value)
-{
-  temperature_manager_.GetParams().temperature_deadband = value;
-  NotifySettingsChanged();
-}
-
-float Dryer::GetHeatingActionMinWait() const
-{
-  return temperature_manager_.GetParams().heating_action_min_wait_s;
-}
-
-void Dryer::SetHeatingActionMinWait(float value)
-{
-  temperature_manager_.GetParams().heating_action_min_wait_s = value;
-  NotifySettingsChanged();
-}
-
-float Dryer::GetHeaterStepMin() const
-{
-  return temperature_manager_.GetParams().heater_step_min;
-}
-
-void Dryer::SetHeaterStepMin(float value)
-{
-  temperature_manager_.GetParams().heater_step_min = value;
-  NotifySettingsChanged();
-}
-
-float Dryer::GetHeaterStepMax() const
-{
-  return temperature_manager_.GetParams().heater_step_max;
-}
-
-void Dryer::SetHeaterStepMax(float value)
-{
-  temperature_manager_.GetParams().heater_step_max = value;
-  NotifySettingsChanged();
-}
-
-float Dryer::GetHeaterFullScaleDelta() const
-{
-  return temperature_manager_.GetParams().heater_full_scale_delta;
-}
-
-void Dryer::SetHeaterFullScaleDelta(float value)
-{
-  temperature_manager_.GetParams().heater_full_scale_delta = value;
-  NotifySettingsChanged();
-}
-
 float Dryer::GetHumidityMax() const
 {
   return humidity_manager_.GetTargetHumidity();
@@ -446,5 +392,138 @@ bool Dryer::GetElectricEnabled() const
 void Dryer::SetElectricEnabled(bool enabled)
 {
   temperature_manager_.SetElectricEnabled(enabled);
+  NotifySettingsChanged();
+}
+
+// ========== PID Parameters - Hydraulic ==========
+
+float Dryer::GetHydraulicKp() const
+{
+  return temperature_manager_.GetParams().hydraulic_kp;
+}
+
+void Dryer::SetHydraulicKp(float value)
+{
+  temperature_manager_.GetParams().hydraulic_kp = value;
+  temperature_manager_.GetHydraulicPID()->SetParameters(
+      value,
+      temperature_manager_.GetParams().hydraulic_ki,
+      temperature_manager_.GetParams().hydraulic_kd);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetHydraulicKi() const
+{
+  return temperature_manager_.GetParams().hydraulic_ki;
+}
+
+void Dryer::SetHydraulicKi(float value)
+{
+  temperature_manager_.GetParams().hydraulic_ki = value;
+  temperature_manager_.GetHydraulicPID()->SetParameters(
+      temperature_manager_.GetParams().hydraulic_kp,
+      value,
+      temperature_manager_.GetParams().hydraulic_kd);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetHydraulicKd() const
+{
+  return temperature_manager_.GetParams().hydraulic_kd;
+}
+
+void Dryer::SetHydraulicKd(float value)
+{
+  temperature_manager_.GetParams().hydraulic_kd = value;
+  temperature_manager_.GetHydraulicPID()->SetParameters(
+      temperature_manager_.GetParams().hydraulic_kp,
+      temperature_manager_.GetParams().hydraulic_ki,
+      value);
+  NotifySettingsChanged();
+}
+
+// ========== PID Parameters - Electric ==========
+
+float Dryer::GetElectricKp() const
+{
+  return temperature_manager_.GetParams().electric_kp;
+}
+
+void Dryer::SetElectricKp(float value)
+{
+  temperature_manager_.GetParams().electric_kp = value;
+  temperature_manager_.GetElectricPID()->SetParameters(
+      value,
+      temperature_manager_.GetParams().electric_ki,
+      temperature_manager_.GetParams().electric_kd);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetElectricKi() const
+{
+  return temperature_manager_.GetParams().electric_ki;
+}
+
+void Dryer::SetElectricKi(float value)
+{
+  temperature_manager_.GetParams().electric_ki = value;
+  temperature_manager_.GetElectricPID()->SetParameters(
+      temperature_manager_.GetParams().electric_kp,
+      value,
+      temperature_manager_.GetParams().electric_kd);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetElectricKd() const
+{
+  return temperature_manager_.GetParams().electric_kd;
+}
+
+void Dryer::SetElectricKd(float value)
+{
+  temperature_manager_.GetParams().electric_kd = value;
+  temperature_manager_.GetElectricPID()->SetParameters(
+      temperature_manager_.GetParams().electric_kp,
+      temperature_manager_.GetParams().electric_ki,
+      value);
+  NotifySettingsChanged();
+}
+
+// ========== PID Advanced Parameters ==========
+
+float Dryer::GetPidIntegralMax() const
+{
+  return temperature_manager_.GetParams().pid_integral_max;
+}
+
+void Dryer::SetPidIntegralMax(float value)
+{
+  temperature_manager_.GetParams().pid_integral_max = value;
+  temperature_manager_.GetHydraulicPID()->SetIntegralLimit(value);
+  temperature_manager_.GetElectricPID()->SetIntegralLimit(value);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetPidDerivativeFilter() const
+{
+  return temperature_manager_.GetParams().pid_derivative_filter;
+}
+
+void Dryer::SetPidDerivativeFilter(float value)
+{
+  temperature_manager_.GetParams().pid_derivative_filter = value;
+  temperature_manager_.GetHydraulicPID()->SetDerivativeFilter(value);
+  temperature_manager_.GetElectricPID()->SetDerivativeFilter(value);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetWaterTempMargin() const
+{
+  return temperature_manager_.GetParams().water_temp_margin;
+}
+
+void Dryer::SetWaterTempMargin(float value)
+{
+  temperature_manager_.GetParams().water_temp_margin = value;
   NotifySettingsChanged();
 }

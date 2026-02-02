@@ -90,16 +90,30 @@ public:
   // Heating parameters
   float GetTemperatureTarget() const;
   void SetTemperatureTarget(float value);
-  float GetTemperatureDeadband() const;
-  void SetTemperatureDeadband(float value);
-  float GetHeatingActionMinWait() const;
-  void SetHeatingActionMinWait(float value);
-  float GetHeaterStepMin() const;
-  void SetHeaterStepMin(float value);
-  float GetHeaterStepMax() const;
-  void SetHeaterStepMax(float value);
-  float GetHeaterFullScaleDelta() const;
-  void SetHeaterFullScaleDelta(float value);
+
+  // PID parameters - Hydraulic
+  float GetHydraulicKp() const;
+  void SetHydraulicKp(float value);
+  float GetHydraulicKi() const;
+  void SetHydraulicKi(float value);
+  float GetHydraulicKd() const;
+  void SetHydraulicKd(float value);
+
+  // PID parameters - Electric
+  float GetElectricKp() const;
+  void SetElectricKp(float value);
+  float GetElectricKi() const;
+  void SetElectricKi(float value);
+  float GetElectricKd() const;
+  void SetElectricKd(float value);
+
+  // PID advanced parameters
+  float GetPidIntegralMax() const;
+  void SetPidIntegralMax(float value);
+  float GetPidDerivativeFilter() const;
+  void SetPidDerivativeFilter(float value);
+  float GetWaterTempMargin() const;
+  void SetWaterTempMargin(float value);
 
   // Humidity parameters
   float GetHumidityMax() const;

@@ -285,39 +285,56 @@ static NumberMenuItem heating_item_temperature_target(
   20.0f, 45.0f, 0.5f
 );
 
-static NumberMenuItem heating_item_min_wait(
-  "Min wait s",
-  MenuStructure::GetHeatingActionMinWait,
-  MenuStructure::SetHeatingActionMinWait,
-  1.0f, 120.0f, 1.0f
+// PID Hydraulic parameters
+static NumberMenuItem heating_item_hydraulic_kp(
+  "Hydr Kp",
+  MenuStructure::GetHydraulicKp,
+  MenuStructure::SetHydraulicKp,
+  0.1f, 20.0f, 0.5f
 );
 
-static NumberMenuItem heating_item_deadband(
-  "Deadband",
-  MenuStructure::GetTemperatureDeadband,
-  MenuStructure::SetTemperatureDeadband,
-  0.0f, 2.0f, 0.1f
+static NumberMenuItem heating_item_hydraulic_ki(
+  "Hydr Ki",
+  MenuStructure::GetHydraulicKi,
+  MenuStructure::SetHydraulicKi,
+  0.0f, 2.0f, 0.05f
 );
 
-static NumberMenuItem heating_item_step_min(
-  "Step min",
-  MenuStructure::GetHeaterStepMin,
-  MenuStructure::SetHeaterStepMin,
-  1.0f, 10.0f, 0.5f
+static NumberMenuItem heating_item_hydraulic_kd(
+  "Hydr Kd",
+  MenuStructure::GetHydraulicKd,
+  MenuStructure::SetHydraulicKd,
+  0.0f, 5.0f, 0.1f
 );
 
-static NumberMenuItem heating_item_step_max(
-  "Step max",
-  MenuStructure::GetHeaterStepMax,
-  MenuStructure::SetHeaterStepMax,
-  2.0f, 10.0f, 0.5f
+// PID Electric parameters
+static NumberMenuItem heating_item_electric_kp(
+  "Elec Kp",
+  MenuStructure::GetElectricKp,
+  MenuStructure::SetElectricKp,
+  0.1f, 20.0f, 0.5f
 );
 
-static NumberMenuItem heating_item_full_scale(
-  "Full scale",
-  MenuStructure::GetHeaterFullScaleDelta,
-  MenuStructure::SetHeaterFullScaleDelta,
-  10.0f, 30.0f, 1.0f
+static NumberMenuItem heating_item_electric_ki(
+  "Elec Ki",
+  MenuStructure::GetElectricKi,
+  MenuStructure::SetElectricKi,
+  0.0f, 2.0f, 0.05f
+);
+
+static NumberMenuItem heating_item_electric_kd(
+  "Elec Kd",
+  MenuStructure::GetElectricKd,
+  MenuStructure::SetElectricKd,
+  0.0f, 5.0f, 0.1f
+);
+
+// Water temperature margin
+static NumberMenuItem heating_item_water_margin(
+  "Water margin",
+  MenuStructure::GetWaterTempMargin,
+  MenuStructure::SetWaterTempMargin,
+  0.0f, 10.0f, 0.5f
 );
 
 static NumberMenuItem heating_item_humidity_max(
@@ -334,11 +351,13 @@ static MenuItem* heating_items[] = {
   &heating_item_electric_enabled,
   &heating_item_temperature_target,
   &heating_item_humidity_max,
-  &heating_item_min_wait,
-  &heating_item_deadband,
-  &heating_item_step_min,
-  &heating_item_step_max,
-  &heating_item_full_scale,
+  &heating_item_hydraulic_kp,
+  &heating_item_hydraulic_ki,
+  &heating_item_hydraulic_kd,
+  &heating_item_electric_kp,
+  &heating_item_electric_ki,
+  &heating_item_electric_kd,
+  &heating_item_water_margin,
   &heating_back
 };
 

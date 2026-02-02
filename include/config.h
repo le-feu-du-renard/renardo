@@ -56,14 +56,83 @@
 // ========== DRYER DEFAULT PARAMETERS ==========
 
 // Heating parameters
-#define DEFAULT_TEMPERATURE_TARGET 50.0      // °C (20-80)
-#define DEFAULT_TEMPERATURE_DEADBAND 0.5     // °C (0.5-10)
-#define DEFAULT_HEATING_ACTION_MIN_WAIT 10.0 // seconds (5-120)
-#define DEFAULT_HEATER_STEP_MIN 0.05         // ratio (0.01-0.5)
-#define DEFAULT_HEATER_STEP_MAX 0.2          // ratio (0.05-1.0)
-#define DEFAULT_HEATER_FULL_SCALE_DELTA 10.0 // °C (5-30)
-#define DEFAULT_HYDRAULIC_ENABLED true       // Enable hydraulic heater
-#define DEFAULT_ELECTRIC_ENABLED true        // Enable electric heater
+#define DEFAULT_TEMPERATURE_TARGET 50.0 // °C (20-45)
+#define DEFAULT_HYDRAULIC_ENABLED true  // Enable hydraulic heater
+#define DEFAULT_ELECTRIC_ENABLED true   // Enable electric heater
+
+// ===== PID Hydraulic Heater Parameters =====
+// The hydraulic heater uses proportional control (0-100% power)
+// It has high thermal inertia (slow response)
+
+// Kp: Proportional gain - Immediate response to temperature error
+//     Higher Kp = stronger immediate reaction
+//     - INCREASE if: system is too slow to reach target, undershoots
+//     - DECREASE if: system oscillates, overshoots target
+//     Range: 0.1-20, Default: 5.0 (moderate response)
+#define DEFAULT_HYDRAULIC_KP 5.0
+
+// Ki: Integral gain - Eliminates steady-state error over time
+//     Accumulates error and provides correction
+//     - INCREASE if: system never reaches exact target (offset remains)
+//     - DECREASE if: system is sluggish, overshoots after long time
+//     Range: 0.0-2, Default: 0.1 (slow integral action)
+#define DEFAULT_HYDRAULIC_KI 0.1
+
+// Kd: Derivative gain - Anticipates future error based on rate of change
+//     Dampens oscillations and improves stability
+//     - INCREASE if: system oscillates, overshoots frequently
+//     - DECREASE if: system is too cautious, reacts to noise
+//     Range: 0.0-5, Default: 2.0 (strong damping for high inertia)
+#define DEFAULT_HYDRAULIC_KD 2.0
+
+// ===== PID Electric Heater Parameters =====
+// The electric heater uses binary control (ON/OFF with 0.5 threshold)
+// It is undersized and has slow response
+
+// Kp: Proportional gain - Immediate response to temperature error
+//     Higher value needed for binary control to trigger quickly
+//     - INCREASE if: electric heater rarely turns on, too conservative
+//     - DECREASE if: electric heater switches too frequently
+//     Range: 0.1-20, Default: 10.0 (strong response for binary control)
+#define DEFAULT_ELECTRIC_KP 10.0
+
+// Ki: Integral gain - Accumulates error for persistent heating needs
+//     Important for maintaining heat when hydraulic is insufficient
+//     - INCREASE if: temperature drops slowly over time
+//     - DECREASE if: system becomes unstable after long periods
+//     Range: 0.0-2, Default: 0.2 (moderate integral for backup heating)
+#define DEFAULT_ELECTRIC_KI 0.2
+
+// Kd: Derivative gain - Reduces overshoot from binary switching
+//     Helps prevent excessive heating when temperature rises quickly
+//     - INCREASE if: electric causes temperature spikes
+//     - DECREASE if: electric turns off too early
+//     Range: 0.0-5, Default: 1.0 (moderate damping)
+#define DEFAULT_ELECTRIC_KD 1.0
+
+// ===== PID Advanced Parameters =====
+// These parameters affect both PIDs and should rarely need adjustment
+
+// Integral max: Anti-windup limit - Prevents integral from growing unbounded
+//     Limits the accumulated error to prevent overshoot when constraint is removed
+//     - INCREASE if: system is slow to respond after constraint removal
+//     - DECREASE if: system overshoots significantly after constraint removal
+//     Range: 10-100, Default: 50.0
+//     Note: Only adjust if you observe windup issues (large overshoots after
+//           hydraulic heater is blocked by water temperature constraint)
+#define DEFAULT_PID_INTEGRAL_MAX 50.0
+
+// Derivative filter: Low-pass filter coefficient for derivative term
+//     Reduces noise sensitivity in derivative calculation
+//     0.0 = heavy filtering (smooth but slow), 1.0 = no filtering (fast but noisy)
+//     - INCREASE if: control output is jittery/unstable
+//     - DECREASE if: derivative term is too slow to react
+//     Range: 0.01-0.5, Default: 0.1 (heavy filtering for noisy sensor)
+//     Note: Only adjust if temperature sensor is very noisy or very stable
+#define DEFAULT_PID_DERIVATIVE_FILTER 0.1
+
+// Water temperature constraint for hydraulic heater
+#define DEFAULT_WATER_TEMP_MARGIN 2.0 // °C - Minimum margin between water temp and air setpoint
 
 // Phase parameters
 #define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (5-7200) = 1 hour

@@ -16,20 +16,29 @@ class MenuStructure {
   static float GetTemperatureTarget(Dryer* dryer) { return dryer->GetTemperatureTarget(); }
   static void SetTemperatureTarget(Dryer* dryer, float value) { dryer->SetTemperatureTarget(value); }
 
-  static float GetTemperatureDeadband(Dryer* dryer) { return dryer->GetTemperatureDeadband(); }
-  static void SetTemperatureDeadband(Dryer* dryer, float value) { dryer->SetTemperatureDeadband(value); }
+  // PID parameters - Hydraulic
+  static float GetHydraulicKp(Dryer* dryer) { return dryer->GetHydraulicKp(); }
+  static void SetHydraulicKp(Dryer* dryer, float value) { dryer->SetHydraulicKp(value); }
+  static float GetHydraulicKi(Dryer* dryer) { return dryer->GetHydraulicKi(); }
+  static void SetHydraulicKi(Dryer* dryer, float value) { dryer->SetHydraulicKi(value); }
+  static float GetHydraulicKd(Dryer* dryer) { return dryer->GetHydraulicKd(); }
+  static void SetHydraulicKd(Dryer* dryer, float value) { dryer->SetHydraulicKd(value); }
 
-  static float GetHeatingActionMinWait(Dryer* dryer) { return dryer->GetHeatingActionMinWait(); }
-  static void SetHeatingActionMinWait(Dryer* dryer, float value) { dryer->SetHeatingActionMinWait(value); }
+  // PID parameters - Electric
+  static float GetElectricKp(Dryer* dryer) { return dryer->GetElectricKp(); }
+  static void SetElectricKp(Dryer* dryer, float value) { dryer->SetElectricKp(value); }
+  static float GetElectricKi(Dryer* dryer) { return dryer->GetElectricKi(); }
+  static void SetElectricKi(Dryer* dryer, float value) { dryer->SetElectricKi(value); }
+  static float GetElectricKd(Dryer* dryer) { return dryer->GetElectricKd(); }
+  static void SetElectricKd(Dryer* dryer, float value) { dryer->SetElectricKd(value); }
 
-  static float GetHeaterStepMin(Dryer* dryer) { return dryer->GetHeaterStepMin(); }
-  static void SetHeaterStepMin(Dryer* dryer, float value) { dryer->SetHeaterStepMin(value); }
-
-  static float GetHeaterStepMax(Dryer* dryer) { return dryer->GetHeaterStepMax(); }
-  static void SetHeaterStepMax(Dryer* dryer, float value) { dryer->SetHeaterStepMax(value); }
-
-  static float GetHeaterFullScaleDelta(Dryer* dryer) { return dryer->GetHeaterFullScaleDelta(); }
-  static void SetHeaterFullScaleDelta(Dryer* dryer, float value) { dryer->SetHeaterFullScaleDelta(value); }
+  // PID advanced parameters
+  static float GetPidIntegralMax(Dryer* dryer) { return dryer->GetPidIntegralMax(); }
+  static void SetPidIntegralMax(Dryer* dryer, float value) { dryer->SetPidIntegralMax(value); }
+  static float GetPidDerivativeFilter(Dryer* dryer) { return dryer->GetPidDerivativeFilter(); }
+  static void SetPidDerivativeFilter(Dryer* dryer, float value) { dryer->SetPidDerivativeFilter(value); }
+  static float GetWaterTempMargin(Dryer* dryer) { return dryer->GetWaterTempMargin(); }
+  static void SetWaterTempMargin(Dryer* dryer, float value) { dryer->SetWaterTempMargin(value); }
 
   static float GetRecyclingRate(Dryer* dryer) { return dryer->GetRecyclingRate(); }
   static void SetRecyclingRate(Dryer* dryer, float value) { dryer->SetRecyclingRate(value); }
