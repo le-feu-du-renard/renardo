@@ -52,15 +52,6 @@ This dehydration system is suitable for:
 
 If you want to contribute to the project, modify the code, or compile the firmware, see the [DEVELOPMENT.md](DEVELOPMENT.md) guide.
 
-## Safety
-
-**Important:** This is a professional-grade control system. Ensure all electrical connections are properly insulated and follow safety guidelines when working with heating elements and water-based systems.
-
-- Never leave the system unattended during initial uses
-- Regularly check electrical connections
-- Respect maximum temperatures for materials used
-- Ensure adequate ventilation of the enclosure
-
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE-GPL-3.0) file for details.

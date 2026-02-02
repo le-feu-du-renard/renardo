@@ -20,27 +20,6 @@ Before development, ensure you have:
 - All sensors and actuators wired according to the hardware schematic
 - Power supply capable of handling the heating elements
 
-## Project Structure
-
-```
-dryer/
-├── src/                 # Main source code
-│   ├── main.cpp        # Application entry point
-│   ├── pid/            # PID controller implementation
-│   ├── sensors/        # Sensor drivers
-│   └── actuators/      # Actuator control
-├── include/            # Header files
-├── test/               # Unit tests
-│   ├── test_pid/       # PID controller tests
-│   └── test_sensors/   # Sensor tests
-├── data/               # Filesystem data
-│   ├── fonts/          # Display fonts
-│   └── config/         # Configuration files
-├── lib/                # Project libraries
-├── platformio.ini      # PlatformIO configuration
-└── README.md           # Project overview
-```
-
 ## Building the Project
 
 ### Standard Build
@@ -178,58 +157,8 @@ The display uses bitmap fonts generated from TrueType fonts.
    - Character set: Include only needed characters to save memory
    - Output format: Adafruit GFX format
 4. **Download generated files** - Usually `.h` files
-5. **Place in data directory** - Copy to `data/fonts/`
+5. **Place in data directory** - Copy to `assets/fonts/`
 6. **Upload filesystem** - Run `pio run -t uploadfs -e pico_w`
-
-### Font Organization
-
-```
-data/fonts/
-├── display_small.h      # Small font for detailed info
-├── display_medium.h     # Medium font for regular text
-└── display_large.h      # Large font for main values
-```
-
-## Usage and Testing
-
-### First-Time Setup
-
-1. **Power on the system** - Connect the Raspberry Pi Pico to power
-2. **Set date/time** - Use the menu interface to configure the RTC
-3. **Calibrate sensors** - Verify temperature and humidity readings
-4. **Configure programs** - Select or customize drying programs for your needs
-
-### Starting a Drying Cycle
-
-1. Load your food into the dehydrator
-2. Select a preset program or create a custom profile
-3. Start the cycle from the menu
-4. Monitor progress on the display
-
-### Data Logs
-
-Session logs are automatically saved to the SD card in CSV format for later analysis. Each log includes:
-- Timestamp
-- Temperature readings (chamber and water)
-- Humidity levels
-- Active phase information
-- Actuator states
-
-This data allows you to optimize your drying recipes and ensure complete process traceability.
-
-**Log file location:** SD card root directory, named with timestamp (e.g., `log_2024-01-15_14-30-00.csv`)
-
-## Code Style Guidelines
-
-- **C++ Standard:** C++17
-- **Indentation:** 2 spaces (no tabs)
-- **Naming:**
-  - Classes/Structs: `PascalCase`
-  - Functions/Methods: `camelCase`
-  - Variables: `snake_case`
-  - Constants: `UPPER_CASE`
-- **Comments:** Use `//` for single line, `/* */` for blocks
-- **Include guards:** Use `#pragma once`
 
 ## Debugging
 
@@ -271,39 +200,3 @@ build_flags =
 
 - Check baud rate matches (default: 115200)
 - Ensure correct port is selected
-
-### Build Errors
-
-- Run `pio run -t clean` and rebuild
-- Update PlatformIO: `pio upgrade`
-- Check `platformio.ini` for correct library versions
-
-## Contributing
-
-### Workflow
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes with clear commit messages
-4. Add tests for new functionality
-5. Ensure all tests pass: `pio test -e native`
-6. Submit a pull request
-
-### Pull Request Checklist
-
-- [ ] Code follows style guidelines
-- [ ] All tests pass
-- [ ] New features include tests
-- [ ] Documentation updated (if needed)
-- [ ] Commit messages are clear and descriptive
-
-## Resources
-
-- [PlatformIO Documentation](https://docs.platformio.org/)
-- [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk)
-- [Arduino-Pico Core](https://github.com/earlephilhower/arduino-pico)
-- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library)
-
-## License
-
-[Add your license here]
