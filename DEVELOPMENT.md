@@ -1,3 +1,5 @@
+WORK IN PROGRESS
+
 # Development Guide
 
 This guide contains technical information for developers who want to build, modify, or contribute to the dehydrator controller project.
