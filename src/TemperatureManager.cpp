@@ -13,7 +13,13 @@ TemperatureManager::TemperatureManager(ElectricHeater* electric_heater, Hydrauli
     water_temperature_(0.0f),
     last_update_ms_(0),
     hydraulic_enabled_(true),
-    electric_enabled_(true) {
+    electric_enabled_(true),
+    operating_mode_(OperatingMode::PERFORMANCE),
+    reduced_mode_active_(false),
+    eco_night_start_hour_(DEFAULT_ECO_NIGHT_START_HOUR),
+    eco_night_end_hour_(DEFAULT_ECO_NIGHT_END_HOUR),
+    eco_night_percentage_(DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE),
+    current_hour_(12) {  // Default to noon
 }
 
 void TemperatureManager::Begin() {
@@ -62,34 +68,48 @@ void TemperatureManager::Update(float current_temperature) {
 void TemperatureManager::UpdateHeating() {
   float dt = 1.0f;  // Assume 1s control loop (actual dt calculated in Update)
 
+  // Determine effective target temperature based on operating mode
+  float effective_target = params_.temperature_target;
+
+  // ECO mode: reduce target during night hours (20h-10h by default)
+  if (operating_mode_ == OperatingMode::ECO) {
+    bool is_night = IsNightMode();
+
+    // Update reduced mode status and log transitions
+    if (is_night && !reduced_mode_active_) {
+      reduced_mode_active_ = true;
+      Log.notice("ECO mode: Entering night mode - reducing target to %.0f%% (%.1f°C)",
+                 eco_night_percentage_, params_.temperature_target * (eco_night_percentage_ / 100.0f));
+    } else if (!is_night && reduced_mode_active_) {
+      reduced_mode_active_ = false;
+      Log.notice("ECO mode: Exiting night mode - returning to full target (%.1f°C)",
+                 params_.temperature_target);
+    }
+
+    // Apply night percentage if in night mode
+    if (reduced_mode_active_) {
+      effective_target = params_.temperature_target * (eco_night_percentage_ / 100.0f);
+    }
+  } else {
+    // PERFORMANCE mode: always use full target
+    if (reduced_mode_active_) {
+      reduced_mode_active_ = false;
+      Log.notice("Exiting night mode (switched to PERFORMANCE mode)");
+    }
+  }
+
   // === Hydraulic Heater Control ===
   float hydraulic_output = 0.0f;
 
   if (hydraulic_enabled_) {
-    // Compute PID output
-    hydraulic_output = hydraulic_pid_.Compute(params_.temperature_target, current_temperature_, dt);
-
-    // Apply water temperature constraint
-    // Only constrain if water temperature is valid (circulator running)
-    if (IsWaterTemperatureValid()) {
-      float min_water_temp = params_.temperature_target + params_.water_temp_margin;
-
-      if (water_temperature_ < min_water_temp) {
-        // Water too cold to heat the air effectively - disable hydraulic heater
-        Log.verbose("Water temp constraint active: T_water=%.1f°C < T_min=%.1f°C - hydraulic output forced to 0",
-                   water_temperature_, min_water_temp);
-        hydraulic_output = 0.0f;
-
-        // Reset PID integral to prevent windup when constrained
-        hydraulic_pid_.Reset();
-      }
-    }
+    // Compute PID output with effective target
+    hydraulic_output = hydraulic_pid_.Compute(effective_target, current_temperature_, dt);
 
     // Set hydraulic heater power
     hydraulic_heater_->SetPower((uint8_t)(hydraulic_output + 0.5f));  // Round to nearest integer
 
     Log.verbose("Hydraulic PID: setpoint=%.1f°C, temp=%.1f°C, output=%.1f%%, P=%.2f, I=%.2f, D=%.2f",
-               params_.temperature_target, current_temperature_, hydraulic_output,
+               effective_target, current_temperature_, hydraulic_output,
                hydraulic_pid_.GetProportionalTerm(),
                hydraulic_pid_.GetIntegralTerm(),
                hydraulic_pid_.GetDerivativeTerm());
@@ -103,15 +123,15 @@ void TemperatureManager::UpdateHeating() {
   float electric_output = 0.0f;
 
   if (electric_enabled_) {
-    // Compute PID output
-    electric_output = electric_pid_.Compute(params_.temperature_target, current_temperature_, dt);
+    // Compute PID output with effective target
+    electric_output = electric_pid_.Compute(effective_target, current_temperature_, dt);
 
     // Convert to binary (on/off) with threshold at 0.5
     float electric_power = (electric_output > 0.5f) ? 1.0f : 0.0f;
     electric_heater_->SetPower(electric_power);
 
     Log.verbose("Electric PID: setpoint=%.1f°C, temp=%.1f°C, output=%.2f, power=%s, P=%.2f, I=%.2f, D=%.2f",
-               params_.temperature_target, current_temperature_, electric_output,
+               effective_target, current_temperature_, electric_output,
                (electric_power > 0.5f) ? "ON" : "OFF",
                electric_pid_.GetProportionalTerm(),
                electric_pid_.GetIntegralTerm(),
@@ -175,21 +195,58 @@ void TemperatureManager::SetElectricEnabled(bool enabled) {
   }
 }
 
-bool TemperatureManager::IsWaterTemperatureValid() const {
-  // Water temperature is valid if:
-  // 1. It's within reasonable range (5-95°C)
-  // 2. Hydraulic heater is running (circulator active, power > 0)
-
-  // Check if temperature is in valid range
-  if (water_temperature_ < 5.0f || water_temperature_ > 95.0f) {
-    return false;
+bool TemperatureManager::IsNightMode() const {
+  // Check if current hour is within night mode window
+  // Handle wrap-around (e.g., 20h-10h crosses midnight)
+  if (eco_night_start_hour_ < eco_night_end_hour_) {
+    // Normal case: e.g., 2h-6h (no wrap-around)
+    return (current_hour_ >= eco_night_start_hour_ && current_hour_ < eco_night_end_hour_);
+  } else {
+    // Wrap-around case: e.g., 20h-10h (crosses midnight)
+    return (current_hour_ >= eco_night_start_hour_ || current_hour_ < eco_night_end_hour_);
   }
+}
 
-  // Check if circulator is running (hydraulic heater power > 0)
-  uint8_t hydraulic_power = hydraulic_heater_->GetPower();
-  if (hydraulic_power == 0) {
-    return false;  // Circulator off, water is stagnant
+void TemperatureManager::SetOperatingMode(OperatingMode mode) {
+  if (operating_mode_ != mode) {
+    operating_mode_ = mode;
+    reduced_mode_active_ = false;  // Reset night mode state when changing mode
+
+    Log.notice("Operating mode changed to: %s",
+               mode == OperatingMode::ECO ? "ECO (night mode)" : "PERFORMANCE");
   }
+}
 
-  return true;
+float TemperatureManager::GetEffectiveTargetTemperature() const {
+  if (reduced_mode_active_) {
+    return params_.temperature_target * (eco_night_percentage_ / 100.0f);
+  }
+  return params_.temperature_target;
+}
+
+void TemperatureManager::SetEcoNightStartHour(uint8_t hour) {
+  if (hour > 23) hour = 23;  // Clamp to valid range
+  if (eco_night_start_hour_ != hour) {
+    eco_night_start_hour_ = hour;
+    Log.notice("ECO night start hour set to: %02d:00", hour);
+  }
+}
+
+void TemperatureManager::SetEcoNightEndHour(uint8_t hour) {
+  if (hour > 23) hour = 23;  // Clamp to valid range
+  if (eco_night_end_hour_ != hour) {
+    eco_night_end_hour_ = hour;
+    Log.notice("ECO night end hour set to: %02d:00", hour);
+  }
+}
+
+void TemperatureManager::SetEcoNightPercentage(float percentage) {
+  // Clamp to reasonable range (50% to 95%)
+  if (percentage < 50.0f) percentage = 50.0f;
+  if (percentage > 95.0f) percentage = 95.0f;
+
+  if (eco_night_percentage_ != percentage) {
+    eco_night_percentage_ = percentage;
+    Log.notice("ECO night percentage set to: %.0f%%", percentage);
+  }
 }

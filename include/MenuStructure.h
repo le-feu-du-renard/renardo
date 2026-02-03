@@ -53,6 +53,18 @@ class MenuStructure {
   static bool GetElectricEnabled(Dryer* dryer) { return dryer->GetElectricEnabled(); }
   static void SetElectricEnabled(Dryer* dryer, bool value) { dryer->SetElectricEnabled(value); }
 
+  // Operating mode (0=ECO, 1=PERFORMANCE)
+  static float GetOperatingMode(Dryer* dryer) { return static_cast<float>(dryer->GetOperatingMode()); }
+  static void SetOperatingMode(Dryer* dryer, float value) { dryer->SetOperatingMode(static_cast<uint8_t>(value)); }
+
+  // ECO mode night hours configuration
+  static float GetEcoNightStartHour(Dryer* dryer) { return static_cast<float>(dryer->GetEcoNightStartHour()); }
+  static void SetEcoNightStartHour(Dryer* dryer, float value) { dryer->SetEcoNightStartHour(static_cast<uint8_t>(value)); }
+  static float GetEcoNightEndHour(Dryer* dryer) { return static_cast<float>(dryer->GetEcoNightEndHour()); }
+  static void SetEcoNightEndHour(Dryer* dryer, float value) { dryer->SetEcoNightEndHour(static_cast<uint8_t>(value)); }
+  static float GetEcoNightPercentage(Dryer* dryer) { return dryer->GetEcoNightPercentage(); }
+  static void SetEcoNightPercentage(Dryer* dryer, float value) { dryer->SetEcoNightPercentage(value); }
+
   // Command handlers
   static void ExitMenuCommand(MenuSystem* menu);
   static void StopDryerCommand(MenuSystem* menu);

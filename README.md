@@ -9,11 +9,12 @@ A high-performance dehydration control system built for the Raspberry Pi Pico. T
 This project follows a **low-tech** approach: sustainable, repairable, and accessible technology. The controller is designed to be:
 
 - **Affordable** - Based on standard, low-cost components (Raspberry Pi Pico, common sensors)
+- **Energy Frugal** - Designed to minimize energy consumption through intelligent operating modes and hydraulic heating priority
 - **Modular** - Flexible architecture allowing easy adaptation or replacement of components according to your needs
 - **Versatile** - Capable of drying a wide variety of products (fruits, vegetables, meats, herbs, mushrooms...)
 - **Easy to Use** - Intuitive interface with display and navigation menu for all users
 
-The goal is to create a professional-grade dehydration system accessible to individuals, small farms, and artisans, while maintaining industrial equipment performance.
+The goal is to create a professional-grade dehydration system accessible to individuals, small farms, and artisans, while maintaining industrial equipment performance and consuming as little energy as possible.
 
 ## Overview
 
@@ -26,6 +27,7 @@ The system is designed for professional-grade food dehydration with precise temp
 ## Key Features
 
 - **Hybrid PID Temperature Control** - Advanced control logic to balance a hydraulic radiator (circulator pump) and an electric heater for optimal energy efficiency
+- **Two Operating Modes (ECO & PERFORMANCE)** - ECO mode implements night mode (20h-10h by default) with reduced target temperature (85% by default) for extended, energy-efficient drying using hydraulic heating only. PERFORMANCE mode maintains full target temperature 24/7 using all available heaters for maximum drying speed
 - **Airflow & Ventilation Management** - Dynamic control of ventilation and motorized air dampers to manage air recycling vs. fresh air intake
 - **Multi-Phase Drying Programs** - Support for complex drying profiles with different temperature and humidity setpoints over time
 - **Smart Presets** - Built-in programs tailored for different food categories

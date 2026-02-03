@@ -24,7 +24,9 @@ bool SettingsManager::LoadSessionState(bool &session_running,
                                         uint32_t &total_duty_time_s,
                                         float &recycling_rate,
                                         bool &hydraulic_enabled,
-                                        bool &electric_enabled)
+                                        bool &electric_enabled,
+                                        uint8_t &operating_mode,
+                                        float &reduced_mode_percentage)
 {
   if (!ReadFromEeprom())
   {
@@ -44,6 +46,8 @@ bool SettingsManager::LoadSessionState(bool &session_running,
   recycling_rate = settings_.recycling_rate;
   hydraulic_enabled = settings_.hydraulic_enabled;
   electric_enabled = settings_.electric_enabled;
+  operating_mode = settings_.operating_mode;
+  reduced_mode_percentage = settings_.reduced_mode_percentage;
 
   Serial.println("Settings loaded from EEPROM:");
   Serial.print("  Session running: ");
@@ -76,7 +80,9 @@ void SettingsManager::SaveSessionState(bool session_running,
                                         uint32_t total_duty_time_s,
                                         float recycling_rate,
                                         bool hydraulic_enabled,
-                                        bool electric_enabled)
+                                        bool electric_enabled,
+                                        uint8_t operating_mode,
+                                        float reduced_mode_percentage)
 {
   settings_.version = kSettingsVersion;
   settings_.session_running = session_running;
@@ -90,6 +96,8 @@ void SettingsManager::SaveSessionState(bool session_running,
   settings_.recycling_rate = recycling_rate;
   settings_.hydraulic_enabled = hydraulic_enabled;
   settings_.electric_enabled = electric_enabled;
+  settings_.operating_mode = operating_mode;
+  settings_.reduced_mode_percentage = reduced_mode_percentage;
 
   WriteToEeprom();
 

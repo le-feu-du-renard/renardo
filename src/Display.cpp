@@ -19,7 +19,10 @@ Display::Display(Adafruit_SSD1306 *oled)
       water_temperature_(NAN),
       electric_heater_state_(false),
       hydraulic_heater_enabled_(true),
-      electric_heater_enabled_(true)
+      electric_heater_enabled_(true),
+      operating_mode_(1),  // PERFORMANCE by default
+      target_temperature_(0.0f),
+      reduced_mode_active_(false)
 {
 }
 
@@ -277,6 +280,24 @@ void Display::SetHydraulicHeaterEnabled(bool enabled)
 void Display::SetElectricHeaterEnabled(bool enabled)
 {
   electric_heater_enabled_ = enabled;
+}
+
+void Display::SetOperatingMode(uint8_t mode)
+{
+  operating_mode_ = mode;
+  // TODO: Implement display rendering for operating mode (ECO/PERFORMANCE)
+}
+
+void Display::SetTargetTemperature(float temperature)
+{
+  target_temperature_ = temperature;
+  // TODO: Implement display rendering for target temperature
+}
+
+void Display::SetReducedModeActive(bool active)
+{
+  reduced_mode_active_ = active;
+  // TODO: Implement display rendering for reduced mode indicator
 }
 
 // Menu rendering

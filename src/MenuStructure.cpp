@@ -278,6 +278,36 @@ static BoolMenuItem heating_item_electric_enabled(
   MenuStructure::SetElectricEnabled
 );
 
+// Operating mode (0=ECO, 1=PERFORMANCE)
+static NumberMenuItem heating_item_operating_mode(
+  "Mode",
+  MenuStructure::GetOperatingMode,
+  MenuStructure::SetOperatingMode,
+  0.0f, 1.0f, 1.0f  // 0=ECO, 1=PERF
+);
+
+// ECO mode night hours configuration
+static NumberMenuItem heating_item_eco_night_start(
+  "ECO debut h",
+  MenuStructure::GetEcoNightStartHour,
+  MenuStructure::SetEcoNightStartHour,
+  0.0f, 23.0f, 1.0f  // 0-23 hours
+);
+
+static NumberMenuItem heating_item_eco_night_end(
+  "ECO fin h",
+  MenuStructure::GetEcoNightEndHour,
+  MenuStructure::SetEcoNightEndHour,
+  0.0f, 23.0f, 1.0f  // 0-23 hours
+);
+
+static NumberMenuItem heating_item_eco_night_percentage(
+  "ECO nuit %",
+  MenuStructure::GetEcoNightPercentage,
+  MenuStructure::SetEcoNightPercentage,
+  50.0f, 95.0f, 1.0f
+);
+
 static NumberMenuItem heating_item_temperature_target(
   "T cible",
   MenuStructure::GetTemperatureTarget,
@@ -349,6 +379,10 @@ static BackMenuItem heating_back("Retour");
 static MenuItem* heating_items[] = {
   &heating_item_hydraulic_enabled,
   &heating_item_electric_enabled,
+  &heating_item_operating_mode,
+  &heating_item_eco_night_start,
+  &heating_item_eco_night_end,
+  &heating_item_eco_night_percentage,
   &heating_item_temperature_target,
   &heating_item_humidity_max,
   &heating_item_hydraulic_kp,

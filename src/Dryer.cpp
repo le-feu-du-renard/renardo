@@ -237,7 +237,9 @@ void Dryer::SaveSettings()
       total_duty_time_s_,
       air_recycling_manager_.GetRecyclingRate(),
       temperature_manager_.GetHydraulicEnabled(),
-      temperature_manager_.GetElectricEnabled());
+      temperature_manager_.GetElectricEnabled(),
+      static_cast<uint8_t>(temperature_manager_.GetOperatingMode()),
+      temperature_manager_.GetEcoNightPercentage());
 }
 
 void Dryer::LoadSettings()
@@ -253,6 +255,8 @@ void Dryer::LoadSettings()
   float saved_recycling_rate = 50.0f;
   bool saved_hydraulic_enabled = true;
   bool saved_electric_enabled = true;
+  uint8_t saved_operating_mode = 1;  // PERFORMANCE by default
+  float saved_reduced_mode_percentage = 85.0f;
 
   bool success = settings_manager_.LoadSessionState(
       saved_running_state,
@@ -265,7 +269,9 @@ void Dryer::LoadSettings()
       saved_duty_time,
       saved_recycling_rate,
       saved_hydraulic_enabled,
-      saved_electric_enabled);
+      saved_electric_enabled,
+      saved_operating_mode,
+      saved_reduced_mode_percentage);
 
   if (success)
   {
@@ -288,7 +294,19 @@ void Dryer::LoadSettings()
     total_duty_time_s_ = saved_duty_time;
     air_recycling_manager_.SetRecyclingRate(saved_recycling_rate);
     temperature_manager_.SetHydraulicEnabled(saved_hydraulic_enabled);
-    temperature_manager_.SetElectricEnabled(saved_electric_enabled);
+
+    // Set operating mode first, then handle electric based on mode
+    temperature_manager_.SetOperatingMode(static_cast<OperatingMode>(saved_operating_mode));
+
+    // In ECO mode, always start with electric disabled (hydraulic only)
+    if (saved_operating_mode == static_cast<uint8_t>(OperatingMode::ECO)) {
+      temperature_manager_.SetElectricEnabled(false);
+      Serial.println("ECO mode loaded - starting with hydraulic only");
+    } else {
+      temperature_manager_.SetElectricEnabled(saved_electric_enabled);
+    }
+
+    temperature_manager_.SetEcoNightPercentage(saved_reduced_mode_percentage);
 
     // Restore running state if dryer was running before reboot
     if (saved_running_state)
@@ -393,6 +411,57 @@ void Dryer::SetElectricEnabled(bool enabled)
 {
   temperature_manager_.SetElectricEnabled(enabled);
   NotifySettingsChanged();
+}
+
+// ========== Operating Mode ==========
+
+uint8_t Dryer::GetOperatingMode() const
+{
+  return static_cast<uint8_t>(temperature_manager_.GetOperatingMode());
+}
+
+void Dryer::SetOperatingMode(uint8_t mode)
+{
+  temperature_manager_.SetOperatingMode(static_cast<OperatingMode>(mode));
+  NotifySettingsChanged();
+}
+
+uint8_t Dryer::GetEcoNightStartHour() const
+{
+  return temperature_manager_.GetEcoNightStartHour();
+}
+
+void Dryer::SetEcoNightStartHour(uint8_t hour)
+{
+  temperature_manager_.SetEcoNightStartHour(hour);
+  NotifySettingsChanged();
+}
+
+uint8_t Dryer::GetEcoNightEndHour() const
+{
+  return temperature_manager_.GetEcoNightEndHour();
+}
+
+void Dryer::SetEcoNightEndHour(uint8_t hour)
+{
+  temperature_manager_.SetEcoNightEndHour(hour);
+  NotifySettingsChanged();
+}
+
+float Dryer::GetEcoNightPercentage() const
+{
+  return temperature_manager_.GetEcoNightPercentage();
+}
+
+void Dryer::SetEcoNightPercentage(float percentage)
+{
+  temperature_manager_.SetEcoNightPercentage(percentage);
+  NotifySettingsChanged();
+}
+
+bool Dryer::IsReducedModeActive() const
+{
+  return temperature_manager_.IsReducedModeActive();
 }
 
 // ========== PID Parameters - Hydraulic ==========

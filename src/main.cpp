@@ -663,6 +663,11 @@ void UpdateDisplay()
       display.SetHydraulicHeaterEnabled(dryer.GetHydraulicEnabled());
       display.SetElectricHeaterEnabled(dryer.GetElectricEnabled());
 
+      // Operating mode and target temperature (for ECO mode display)
+      display.SetOperatingMode(dryer.GetOperatingMode());
+      display.SetTargetTemperature(dryer.GetTargetTemperature());
+      display.SetReducedModeActive(dryer.IsReducedModeActive());
+
       display.Update();
       // Serial.println("Home page rendered");
     }
@@ -676,6 +681,14 @@ void UpdateControl()
   if (now - last_control_update >= CONTROL_LOOP_INTERVAL)
   {
     last_control_update = now;
+
+    // Update current hour from RTC for ECO mode night mode calculation
+    if (time_manager.IsRunning())
+    {
+      DateTime rtc_time = time_manager.GetNow();
+      dryer.GetTemperatureManager()->SetCurrentHour(rtc_time.hour());
+    }
+
     dryer.Update();
   }
 }

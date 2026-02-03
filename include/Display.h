@@ -48,6 +48,11 @@ public:
   void SetHydraulicHeaterEnabled(bool enabled);
   void SetElectricHeaterEnabled(bool enabled);
 
+  // Operating mode and temperature target (ECO mode)
+  void SetOperatingMode(uint8_t mode);  // 0=ECO, 1=PERFORMANCE
+  void SetTargetTemperature(float temperature);
+  void SetReducedModeActive(bool active);
+
   // Menu rendering
   void ClearMenuArea();
   void DrawMenuHeader(const char *title);
@@ -77,6 +82,11 @@ private:
   bool electric_heater_state_;
   bool hydraulic_heater_enabled_;
   bool electric_heater_enabled_;
+
+  // Operating mode
+  uint8_t operating_mode_;        // 0=ECO, 1=PERFORMANCE
+  float target_temperature_;      // Target temperature
+  bool reduced_mode_active_;      // True if in reduced mode (ECO only)
 
   void PrintAlignedRight(int16_t x, int16_t y, const char *text);
   void RenderHomePage();

@@ -125,6 +125,19 @@ public:
   bool GetElectricEnabled() const;
   void SetElectricEnabled(bool enabled);
 
+  // Operating mode (ECO / PERFORMANCE)
+  uint8_t GetOperatingMode() const;
+  void SetOperatingMode(uint8_t mode);
+
+  // ECO mode night hours configuration
+  uint8_t GetEcoNightStartHour() const;
+  void SetEcoNightStartHour(uint8_t hour);
+  uint8_t GetEcoNightEndHour() const;
+  void SetEcoNightEndHour(uint8_t hour);
+  float GetEcoNightPercentage() const;
+  void SetEcoNightPercentage(float percentage);
+  bool IsReducedModeActive() const;
+
 private:
   // Components
   ElectricHeater electric_heater_;

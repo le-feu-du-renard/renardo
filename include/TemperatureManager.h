@@ -8,6 +8,14 @@
 #include "PIDController.h"
 
 /**
+ * Operating modes for the dryer
+ */
+enum class OperatingMode {
+  ECO,          // Eco mode: reduces target when hydraulic insufficient
+  PERFORMANCE   // Performance mode: uses all available heaters
+};
+
+/**
  * Temperature control parameters
  */
 struct TemperatureParams {
@@ -86,6 +94,25 @@ class TemperatureManager {
   void SetElectricEnabled(bool enabled);
   bool GetElectricEnabled() const { return electric_enabled_; }
 
+  // Operating mode (ECO / PERFORMANCE)
+  void SetOperatingMode(OperatingMode mode);
+  OperatingMode GetOperatingMode() const { return operating_mode_; }
+
+  // Reduced mode status (for UI display)
+  bool IsReducedModeActive() const { return reduced_mode_active_; }
+  float GetEffectiveTargetTemperature() const;
+
+  // ECO mode night hours configuration
+  void SetEcoNightStartHour(uint8_t hour);
+  uint8_t GetEcoNightStartHour() const { return eco_night_start_hour_; }
+  void SetEcoNightEndHour(uint8_t hour);
+  uint8_t GetEcoNightEndHour() const { return eco_night_end_hour_; }
+  void SetEcoNightPercentage(float percentage);
+  float GetEcoNightPercentage() const { return eco_night_percentage_; }
+
+  // Set current hour (from RTC) for ECO mode calculation
+  void SetCurrentHour(uint8_t hour) { current_hour_ = hour; }
+
  private:
   ElectricHeater* electric_heater_;
   HydraulicHeater* hydraulic_heater_;
@@ -103,9 +130,19 @@ class TemperatureManager {
   bool hydraulic_enabled_;
   bool electric_enabled_;
 
+  // Operating mode
+  OperatingMode operating_mode_;
+  bool reduced_mode_active_;       // True if currently in night mode (ECO only)
+
+  // ECO mode night hours configuration
+  uint8_t eco_night_start_hour_;   // Hour to start night mode (0-23), default 20
+  uint8_t eco_night_end_hour_;     // Hour to end night mode (0-23), default 10
+  float eco_night_percentage_;     // Target percentage during night (50-95%), default 85%
+  uint8_t current_hour_;           // Current hour from RTC (0-23)
+
   // Control logic
   void UpdateHeating();
-  bool IsWaterTemperatureValid() const;
+  bool IsNightMode() const;        // Check if current time is in night mode window
 };
 
 // Backward compatibility alias

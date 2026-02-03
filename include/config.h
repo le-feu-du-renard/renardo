@@ -134,6 +134,26 @@
 // Water temperature constraint for hydraulic heater
 #define DEFAULT_WATER_TEMP_MARGIN 2.0 // °C - Minimum margin between water temp and air setpoint
 
+// ===== ECO Mode Parameters =====
+// ECO mode = Night mode for energy conservation
+// During night hours (20h-10h by default), reduce target temperature to save energy
+// and extend operation time with hydraulic heating only
+
+// Night mode start hour (0-23)
+//     Hour when reduced target mode begins
+//     Range: 0-23, Default: 20 (8:00 PM)
+#define DEFAULT_ECO_NIGHT_START_HOUR 20
+
+// Night mode end hour (0-23)
+//     Hour when reduced target mode ends and returns to normal target
+//     Range: 0-23, Default: 10 (10:00 AM)
+#define DEFAULT_ECO_NIGHT_END_HOUR 10
+
+// Reduced target percentage during night mode
+//     Percentage of normal target to use during night hours
+//     Range: 50-95%, Default: 85%
+#define DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE 85.0f
+
 // Phase parameters
 #define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (5-7200) = 1 hour
 #define DEFAULT_EXTRACTION_PHASE_DURATION 120  // seconds (5-7200) = 2 minutes
