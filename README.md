@@ -43,9 +43,8 @@ For detailed information about the hardware components, wiring, and assembly, se
 
 This dehydration system is suitable for:
 
-- **Fruits and vegetables** - Harvest preservation, healthy snacks
 - **Herbs** - Gentle drying preserving aromas
-- **Meats and fish** - Jerky, biltong, dried meats
+- **Fruits and vegetables** - Harvest preservation, healthy snacks
 - **Mushrooms** - Drying for long-term storage
 - **Flowers and plants** - Herbalism, herbal teas
 - **Artisan preparations** - Fruit leathers, raw crackers, etc.

@@ -304,22 +304,6 @@ Water temperature is only valid when circulator is running:
 
 ---
 
-## Additional Resources
-
-### Code References
-- PID implementation: [include/PIDController.h](include/PIDController.h), [src/PIDController.cpp](src/PIDController.cpp)
-- Temperature manager: [include/TemperatureManager.h](include/TemperatureManager.h), [src/TemperatureManager.cpp](src/TemperatureManager.cpp)
-- Default parameters: [include/config.h](include/config.h)
-
-### Unit Tests
-- PID controller tests: [test/unit/test_pid_controller/pid_controller.cpp](test/unit/test_pid_controller/pid_controller.cpp)
-- Water constraint tests: [test/unit/test_temperature_manager_pid/temperature_manager_pid.cpp](test/unit/test_temperature_manager_pid/temperature_manager_pid.cpp)
-
-Run tests with:
-```bash
-pio test -e native
-```
-
 ### Menu Navigation
 PID parameters can be adjusted via the device menu:
 ```
