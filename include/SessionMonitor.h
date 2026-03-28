@@ -7,6 +7,7 @@
 #include "config.h"
 #include "Dryer.h"
 #include "TimeManager.h"
+#include "Logger.h"
 
 // Use SDLib namespace to avoid ambiguity with fs::File
 using SDFile = SDLib::File;

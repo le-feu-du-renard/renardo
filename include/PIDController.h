@@ -15,8 +15,9 @@
  * - Derivative filtering (to reduce noise)
  * - Output clamping
  */
-class PIDController {
- public:
+class PIDController
+{
+public:
   /**
    * Constructor
    * @param kp Proportional gain
@@ -46,17 +47,13 @@ class PIDController {
    */
   void Reset();
 
-  /**
-   * Update PID parameters
-   */
+  // Update PID parameters
   void SetParameters(float kp, float ki, float kd);
   void SetOutputLimits(float output_min, float output_max);
   void SetIntegralLimit(float integral_max);
   void SetDerivativeFilter(float filter_coef);
 
-  /**
-   * Get current state (for debugging/monitoring)
-   */
+  // Get current state (for debugging/monitoring)
   float GetLastError() const { return last_error_; }
   float GetIntegral() const { return integral_; }
   float GetDerivative() const { return derivative_filtered_; }
@@ -67,7 +64,7 @@ class PIDController {
   float GetIntegralTerm() const { return i_term_; }
   float GetDerivativeTerm() const { return d_term_; }
 
- private:
+private:
   // PID gains
   float kp_;
   float ki_;

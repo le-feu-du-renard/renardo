@@ -6,175 +6,84 @@
 #include "HydraulicHeater.h"
 #include "TemperatureManager.h"
 #include "HumidityManager.h"
+#include "AirDamper.h"
+#include "IndicatorLEDs.h"
 #include "SessionManager.h"
-#include "SettingsManager.h"
-#include "AirRecyclingManager.h"
-#include "ProgramLoader.h"
+#include "PersistentStateManager.h"
 
-// Callback type for settings changed notification
-typedef void (*SettingsChangedCallback)();
-
-/**
- * Main dryer controller
- * Coordinates managers and handles high-level logic
- */
+// Main dryer coordinator.
+// Owns all hardware managers and forwards sensor readings / mode updates to them.
 class Dryer
 {
 public:
-  Dryer(DFRobot_GP8403 *dac);
+  Dryer();
 
-  void Begin();
+  void Begin(IndicatorLEDs &leds);
   void Update();
 
-  // Control
+  // Session control
   void Start();
   void Stop();
   bool IsRunning() const { return session_manager_.IsRunning(); }
 
   // State
-  const char *GetPhaseName() const;
-  uint8_t GetCurrentPhaseId() const;
-  uint8_t GetCurrentCycleIndex() const;
-  unsigned long GetElapsedTime() const;
-  unsigned long GetPhaseElapsedTime() const;
+  const char *GetPhaseName()        const;
+  DryerPhase  GetCurrentPhase()     const;
+  uint32_t    GetTotalElapsedTime() const;
+  uint32_t    GetPhaseElapsedTime() const;
 
-  // Temperatures
-  void SetInletTemperature(float temperature) { inlet_temperature_ = temperature; }
-  void SetOutletTemperature(float temperature) { outlet_temperature_ = temperature; }
-  void SetWaterTemperature(float temperature) { water_temperature_ = temperature; }
-  void SetTargetTemperature(float temperature);
+  // Sensor inputs
+  void  SetInletTemperature(float t)  { inlet_temperature_ = t; }
+  void  SetOutletTemperature(float t) { outlet_temperature_ = t; }
+  void  SetInletHumidity(float h)     { inlet_humidity_ = h; }
+  void  SetOutletHumidity(float h)    { outlet_humidity_ = h; }
 
-  float GetInletTemperature() const { return inlet_temperature_; }
+  float GetInletTemperature()  const { return inlet_temperature_; }
   float GetOutletTemperature() const { return outlet_temperature_; }
-  float GetWaterTemperature() const { return water_temperature_; }
+  float GetInletHumidity()     const { return inlet_humidity_; }
+  float GetOutletHumidity()    const { return outlet_humidity_; }
+
+  // Target setpoints (from potentiometers, updated each loop)
+  void  SetTargetTemperature(float temperature);
   float GetTargetTemperature() const;
 
-  // Humidity
-  void SetInletHumidity(float humidity) { inlet_humidity_ = humidity; }
-  void SetOutletHumidity(float humidity) { outlet_humidity_ = humidity; }
-  float GetInletHumidity() const { return inlet_humidity_; }
-  float GetOutletHumidity() const { return outlet_humidity_; }
+  // Operating mode (from physical mode selector, updated each loop)
+  void SetOperatingMode(OperatingMode mode);
 
-  // Outputs (0.0 to 1.0)
-  float GetHeaterOutput() const;
-  float GetFanOutput() const { return fan_output_; }
-  float GetCirculatorOutput() const;
-
-  // Air recycling control
-  void SetRecyclingRate(float rate);
-  float GetRecyclingRate() const;
+  // Outputs
+  float GetHeaterOutput()     const;  // electric 0.0/1.0
+  float GetCirculatorOutput() const;  // hydraulic 0-100%
+  float GetFanOutput()        const { return fan_output_; }
 
   // Manager access
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
-  HumidityManager *GetHumidityManager() { return &humidity_manager_; }
-  SessionManager *GetSessionManager() { return &session_manager_; }
-  SettingsManager *GetSettingsManager() { return &settings_manager_; }
-  AirRecyclingManager *GetAirRecyclingManager() { return &air_recycling_manager_; }
-  ProgramLoader *GetProgramLoader() { return &program_loader_; }
-
-  // Backward compatibility aliases
-  TemperatureManager *GetHeatersManager() { return &temperature_manager_; }
-
-  // Duty time tracking
-  uint32_t GetTotalDutyTime() const { return total_duty_time_s_; }
+  HumidityManager    *GetHumidityManager()    { return &humidity_manager_; }
+  SessionManager     *GetSessionManager()     { return &session_manager_; }
+  PersistentStateManager *GetPersistentStateManager() { return &state_manager_; }
 
   // Settings persistence
   void SaveSettings();
   void LoadSettings();
 
-  // Settings change notification
-  void SetSettingsChangedCallback(SettingsChangedCallback callback) { settings_changed_callback_ = callback; }
-  void NotifySettingsChanged();
-
-  // Menu parameter access
-  // Heating parameters
-  float GetTemperatureTarget() const;
-  void SetTemperatureTarget(float value);
-
-  // PID parameters - Hydraulic
-  float GetHydraulicKp() const;
-  void SetHydraulicKp(float value);
-  float GetHydraulicKi() const;
-  void SetHydraulicKi(float value);
-  float GetHydraulicKd() const;
-  void SetHydraulicKd(float value);
-
-  // PID parameters - Electric
-  float GetElectricKp() const;
-  void SetElectricKp(float value);
-  float GetElectricKi() const;
-  void SetElectricKi(float value);
-  float GetElectricKd() const;
-  void SetElectricKd(float value);
-
-  // PID advanced parameters
-  float GetPidIntegralMax() const;
-  void SetPidIntegralMax(float value);
-  float GetPidDerivativeFilter() const;
-  void SetPidDerivativeFilter(float value);
-  float GetWaterTempMargin() const;
-  void SetWaterTempMargin(float value);
-
-  // Humidity parameters
-  float GetHumidityMax() const;
-  void SetHumidityMax(float value);
-
-  // Energy source enable/disable
-  bool GetHydraulicEnabled() const;
-  void SetHydraulicEnabled(bool enabled);
-  bool GetElectricEnabled() const;
-  void SetElectricEnabled(bool enabled);
-
-  // Operating mode (ECO / PERFORMANCE)
-  uint8_t GetOperatingMode() const;
-  void SetOperatingMode(uint8_t mode);
-
-  // ECO mode night hours configuration
-  uint8_t GetEcoNightStartHour() const;
-  void SetEcoNightStartHour(uint8_t hour);
-  uint8_t GetEcoNightEndHour() const;
-  void SetEcoNightEndHour(uint8_t hour);
-  float GetEcoNightPercentage() const;
-  void SetEcoNightPercentage(float percentage);
-  bool IsReducedModeActive() const;
-
 private:
-  // Components
-  ElectricHeater electric_heater_;
-  HydraulicHeater hydraulic_heater_;
+  ElectricHeater     electric_heater_;
+  HydraulicHeater    hydraulic_heater_;
+  AirDamper          air_damper_;
   TemperatureManager temperature_manager_;
-  AirRecyclingManager air_recycling_manager_;
-  HumidityManager humidity_manager_;
-  SessionManager session_manager_;
-  SettingsManager settings_manager_;
-  ProgramLoader program_loader_;
+  HumidityManager    humidity_manager_;
+  SessionManager     session_manager_;
+  PersistentStateManager state_manager_;
 
-  // State
-  uint32_t total_duty_time_s_;
-  unsigned long last_duty_time_save_;
-  unsigned long start_time_;
-
-  // Settings change callback
-  SettingsChangedCallback settings_changed_callback_;
-
-  // Sensors
   float inlet_temperature_;
   float outlet_temperature_;
-  float water_temperature_;
   float inlet_humidity_;
   float outlet_humidity_;
-
-  // Outputs
   float fan_output_;
 
-  // Control update intervals
-  unsigned long last_control_update_;
-  static constexpr unsigned long kControlUpdateInterval = 1000; // 1s
+  uint32_t last_control_update_ms_;
+  static constexpr uint32_t kControlIntervalMs = 1000;
 
-  // Control logic
   void UpdateControl();
-  void UpdateVentilationControl();
-  void UpdateDutyTime();
 };
 
 #endif // DRYER_H

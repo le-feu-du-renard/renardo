@@ -1,317 +1,178 @@
-WORK IN PROGRESS
-
-# Dryer Control System Documentation
+# Technical Documentation — renard'o Dryer Controller
 
 ## Table of Contents
+
+- [Drying Sequence](#drying-sequence)
 - [PID Temperature Control](#pid-temperature-control)
-  - [Overview](#overview)
-  - [Understanding PID Control](#understanding-pid-control)
-  - [Dual Heater System](#dual-heater-system)
-  - [PID Parameters Reference](#pid-parameters-reference)
-  - [Tuning Guide](#tuning-guide)
-  - [Water Temperature Constraint](#water-temperature-constraint)
-  - [Troubleshooting](#troubleshooting)
+- [Operating Modes](#operating-modes)
+- [Humidity Control](#humidity-control)
+- [Session Persistence](#session-persistence)
+- [Data Logging](#data-logging)
+
+---
+
+## Drying Sequence
+
+The controller runs a fixed three-phase cycle. Durations and thresholds are defined in `config.h`.
+
+```
+Init ──► Brassage ──► Extraction ──► Brassage ──► Extraction ──► ...
+ (×1)        (×∞ loop)
+```
+
+### Phase: Init
+
+- **Purpose:** Bring the chamber up to target temperature before starting the cycle.
+- **Exit condition:** Inlet temperature ≥ target, OR `DEFAULT_INIT_PHASE_DURATION` seconds elapsed (whichever comes first).
+- **Heaters:** Hydraulic at full power, electric follows PID.
+
+### Phase: Brassage
+
+- **Purpose:** Homogenise temperature and humidity throughout the chamber.
+- **Exit condition:** `DEFAULT_BRASSAGE_PHASE_DURATION` seconds elapsed.
+- **Air damper:** Closed (recirculation).
+
+### Phase: Extraction
+
+- **Purpose:** Evacuate accumulated moisture from the chamber.
+- **Exit condition:** Inlet humidity ≤ `DEFAULT_EXTRACTION_HUM_THRESHOLD`, OR `DEFAULT_EXTRACTION_PHASE_DURATION` seconds elapsed.
+- **Air damper:** Opens when humidity exceeds threshold + 5 %RH deadband; closes when humidity drops to threshold.
 
 ---
 
 ## PID Temperature Control
 
-### Overview
+Two independent PID controllers regulate the heating system.
 
-The dryer uses **PID (Proportional-Integral-Derivative) control** to maintain precise temperature regulation. This replaces the previous hysteresis-based control that caused large temperature oscillations.
+### Hydraulic Heater (primary)
 
-The system implements **two independent PID controllers**:
-- **Hydraulic Heater PID**: Controls water circulation heater (0-100% power)
-- **Electric Heater PID**: Controls backup electric heater (ON/OFF)
+- **Output:** 0–100 % circulator power (proportional)
+- **Characteristics:** High thermal inertia — slow but energy-efficient
+- **Tuning:** Strong damping (Kd) to handle slow thermal response
 
-Both controllers work together to maintain the target temperature with minimal oscillation.
-
----
-
-### Understanding PID Control
-
-A PID controller calculates the control output based on three terms:
-
-#### P - Proportional Term
 ```
-P = Kp × error
-```
-- **What it does**: Provides immediate response proportional to the current error
-- **Error** = Target Temperature - Current Temperature
-- **Effect**: Larger error → stronger response
-
-**Example**: If target is 40°C and current is 35°C:
-- Error = 5°C
-- With Kp = 5.0: P term = 25 (strong heating)
-- As temperature approaches 40°C, P term gradually decreases
-
-#### I - Integral Term
-```
-I = Ki × (accumulated error over time)
-```
-- **What it does**: Eliminates steady-state error by accumulating past errors
-- **Effect**: If temperature consistently stays below target, integral builds up to increase heating
-
-**Example**: Temperature stays at 39.5°C when target is 40°C:
-- Small constant error of 0.5°C
-- Integral accumulates: 0.5 + 0.5 + 0.5... = grows over time
-- Eventually provides enough correction to reach exactly 40°C
-
-#### D - Derivative Term
-```
-D = Kd × (rate of change of error)
-```
-- **What it does**: Anticipates future error based on how fast temperature is changing
-- **Effect**: Dampens oscillations and prevents overshoot
-
-**Example**: Temperature rising rapidly from 38°C to 39°C:
-- Error decreasing quickly (good trend)
-- Derivative term reduces heating power preemptively
-- Prevents overshoot past target
-
-#### Combined Output
-```
-PID Output = P + I + D
-```
-The output is then clamped to valid range (0-100 for hydraulic, 0-1 for electric).
-
----
-
-### Dual Heater System
-
-#### Hydraulic Heater (Primary)
-- **Type**: Water circulation heater
-- **Control**: Proportional (0-100% power)
-- **Characteristics**: High thermal inertia, slow but efficient
-- **PID Output**: Direct mapping to circulator power
-
-```cpp
-float hydraulic_output = hydraulic_pid.Compute(target, current, dt);
-hydraulic_heater->SetPower((uint8_t)hydraulic_output);  // 0-100
+hydraulic_output = PID(target, inlet_temperature, dt)
+circulator_power = hydraulic_output  // 0–100%
 ```
 
-#### Electric Heater (Backup)
-- **Type**: Resistive heating element
-- **Control**: Binary (ON/OFF)
-- **Characteristics**: Undersized, provides supplemental heat
-- **PID Output**: Converted to binary using 0.5 threshold
+### Electric Heater (supplement)
 
-```cpp
-float electric_output = electric_pid.Compute(target, current, dt);
-electric_heater->SetPower(electric_output > 0.5 ? 1.0 : 0.0);
+- **Output:** Binary ON/OFF (threshold: PID output > 0.5)
+- **Characteristics:** Fast response, high power consumption
+- **Disabled in ECO mode**
+
+```
+electric_output = PID(target, inlet_temperature, dt)
+heater_state = electric_output > 0.5 ? ON : OFF
 ```
 
-**Why separate PIDs?**
-- Different thermal characteristics require different tuning
-- Hydraulic: needs strong damping (high Kd) due to inertia
-- Electric: needs strong response (high Kp) for quick on/off switching
+### Default PID Parameters
 
----
+| Parameter | Hydraulic | Electric |
+|-----------|-----------|---------|
+| Kp | 5.0 | 10.0 |
+| Ki | 0.1 | 0.2 |
+| Kd | 2.0 | 1.0 |
+| Integral max (anti-windup) | 50.0 | 50.0 |
+| Derivative filter | 0.1 | 0.1 |
 
-### PID Parameters Reference
-
-#### Hydraulic Heater Parameters
-
-| Parameter | Default | Range | Description |
-|-----------|---------|-------|-------------|
-| `hydraulic_kp` | 5.0 | 0.1-20 | Proportional gain - immediate response strength |
-| `hydraulic_ki` | 0.1 | 0.0-2 | Integral gain - steady-state error correction |
-| `hydraulic_kd` | 2.0 | 0.0-5 | Derivative gain - oscillation damping |
-
-**Typical behavior with defaults**:
-- Moderate immediate response to temperature error
-- Slow integral accumulation (prevents windup)
-- Strong damping (anticipates slow thermal response)
-
-#### Electric Heater Parameters
-
-| Parameter | Default | Range | Description |
-|-----------|---------|-------|-------------|
-| `electric_kp` | 10.0 | 0.1-20 | Proportional gain - trigger threshold |
-| `electric_ki` | 0.2 | 0.0-2 | Integral gain - persistent demand |
-| `electric_kd` | 1.0 | 0.0-5 | Derivative gain - overshoot prevention |
-
-**Typical behavior with defaults**:
-- Strong immediate response (needed for binary control)
-- Moderate integral (provides backup when hydraulic insufficient)
-- Moderate damping (prevents excessive cycling)
-
-#### Advanced Parameters
-
-| Parameter | Default | Range | Description |
-|-----------|---------|-------|-------------|
-| `pid_integral_max` | 50.0 | 10-100 | Anti-windup limit for integral term |
-| `pid_derivative_filter` | 0.1 | 0.01-0.5 | Low-pass filter coefficient for derivative |
-| `water_temp_margin` | 2.0 | 0-10 | Min temperature margin for hydraulic operation (°C) |
-
----
+All values are defined in `config.h` and take effect at compile time.
 
 ### Tuning Guide
 
-#### Step 1: Start with Default Values
-The default parameters are designed for typical operation. Start here and only adjust if needed.
+**System too slow / never reaches target** → increase Kp
 
-#### Step 2: Identify the Problem
+**System oscillates / overshoots** → decrease Kp, or increase Kd
 
-**System too slow / Never reaches target**:
-→ Increase Kp (proportional gain)
+**Stable offset below target** (e.g. settles at 39 °C instead of 40 °C) → increase Ki
 
-**System oscillates / Overshoots target**:
-→ Decrease Kp, or increase Kd (damping)
+**Integral windup after hours of operation** → decrease `pid_integral_max` or Ki
 
-**Target reached but offset remains** (e.g., settles at 39°C instead of 40°C):
-→ Increase Ki (integral gain)
+**Noisy derivative output** → decrease `pid_derivative_filter` (more filtering)
 
-**System becomes unstable after running for hours**:
-→ Decrease Ki, or decrease `pid_integral_max`
-
-**Control output is jittery/noisy**:
-→ Decrease `pid_derivative_filter` (more filtering)
-
-#### Step 3: Adjust One Parameter at a Time
-
-**Example: System oscillates between 38°C and 42°C**
-
-1. Problem: Oscillation → likely high Kp or low Kd
-2. Try: Increase `hydraulic_kd` from 2.0 to 3.0
-3. Observe: If oscillations reduce, good. If not, try decreasing `hydraulic_kp`
-4. Iterate until stable
-
-#### Step 4: Fine-Tune
-
-**Ziegler-Nichols Method** (advanced):
-1. Set Ki = 0, Kd = 0 (P-only control)
-2. Increase Kp until system oscillates with constant amplitude
-3. Note Kp_critical and oscillation period T
-4. Calculate:
-   - Kp = 0.6 × Kp_critical
-   - Ki = 1.2 × Kp_critical / T
-   - Kd = 0.075 × Kp_critical × T
-5. Use these as starting point and fine-tune
-
-#### Step 5: Test Edge Cases
-
-- **Startup**: Does system reach target smoothly?
-- **Setpoint change**: Change target from 40°C to 50°C - does it transition well?
-- **Disturbance**: Open door briefly - does it recover quickly?
-- **Long run**: After 24 hours, is temperature still stable?
+Adjust one parameter at a time. Observe for at least 10 minutes before the next change (the integral term is slow).
 
 ---
 
-### Water Temperature Constraint
+## Operating Modes
 
-The hydraulic heater has a physical limitation: it can only heat air if the water temperature is sufficiently high.
+Selected via physical switch on GPIO 22. Applies immediately each control cycle — no reboot needed.
 
-#### Constraint Logic
+### PERFORMANCE
+
+- Both heaters active
+- Full target temperature
+
+### ECO
+
+- Electric heater **always OFF**
+- Effective target = `temperature_target × DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE / 100`
+- Default reduction: 85 % of target (e.g. target 40 °C → effective 34 °C)
+- Intended for low-energy overnight runs
+
+---
+
+## Humidity Control
+
+The air damper (Belimo LM24A-SR) is controlled as a binary open/close valve.
 
 ```
-min_water_temp = target_air_temp + water_temp_margin
-
-IF water_temp < min_water_temp THEN
-  disable hydraulic heater (set power to 0)
-  reset hydraulic PID (prevent integral windup)
-ELSE
-  use hydraulic PID output normally
-END IF
+if inlet_humidity > target + 5 %RH deadband:
+    open damper  (evacuate moisture)
+elif inlet_humidity <= target:
+    close damper (stop extraction)
 ```
 
-**Example**:
-- Target air temperature: 40°C
-- Water temperature margin: 2°C
-- Minimum water temperature required: 42°C
+A 10-second cooldown is enforced between state changes to prevent hunting.
 
-If water is at 41°C:
-- Hydraulic heater disabled (water not hot enough)
-- Electric heater takes over
-- When water reaches 42°C, hydraulic re-enabled
-
-#### Why Reset PID?
-
-When hydraulic is disabled, its PID is reset to prevent **integral windup**:
-- Without reset, integral term would keep accumulating during constraint
-- When constraint lifts, huge accumulated integral causes massive overshoot
-- Reset keeps system stable
-
-#### Circulator State
-
-Water temperature is only valid when circulator is running:
-- If circulator off (power = 0), water is stagnant
-- Stagnant water temperature doesn't represent heating capacity
-- Constraint is not applied when circulator off
+During **Brassage** phase, the target is set to 0 (no control) — damper stays closed.
+During **Extraction** phase, the target is `DEFAULT_EXTRACTION_HUM_THRESHOLD`.
 
 ---
 
-### Troubleshooting
+## Session Persistence
 
-#### Problem: Temperature oscillates ±5°C around target
+Session state is written to EEPROM via `PersistentStateManager` at key events:
 
-**Likely cause**: Kp too high or Kd too low
+| Event | What is saved |
+|-------|--------------|
+| START pressed | session_running = true, phase = Init, elapsed = 0 |
+| STOP pressed | session_running = false |
+| Every 5 minutes (while running) | current phase + elapsed times |
 
-**Solution**:
-1. Reduce `hydraulic_kp` by 20% (e.g., 5.0 → 4.0)
-2. If still oscillating, increase `hydraulic_kd` by 50% (e.g., 2.0 → 3.0)
+On boot, if `session_running = true` is found in EEPROM, the session resumes from the saved phase and elapsed time. The EEPROM checksum and version number guard against corrupt data.
 
----
-
-#### Problem: Temperature stabilizes 2°C below target
-
-**Likely cause**: Ki too low (insufficient integral action)
-
-**Solution**:
-1. Increase `hydraulic_ki` by 50% (e.g., 0.1 → 0.15)
-2. Wait 10+ minutes to observe effect (integral is slow)
+EEPROM version: **9** — changing the `PersistentState` struct requires bumping `kStateVersion` in `PersistentStateManager.h`.
 
 ---
 
-#### Problem: Temperature is stable, but electric heater cycles too frequently
+## Data Logging
 
-**Likely cause**: Electric Kp too sensitive to small errors
+Log files are written to the SD card in CSV format.
 
-**Solution**:
-1. Decrease `electric_kp` by 20% (e.g., 10.0 → 8.0)
-2. Slightly increase `electric_ki` to compensate (e.g., 0.2 → 0.25)
+**Path:** `/sessions/YYYY/MM/YYMMXXXX.csv`
+- `YYMM` — year + month (2-digit each)
+- `XXXX` — sequential batch number within the month
 
----
+**Log interval:** `DATA_LOG_INTERVAL` ms (default: 60 000 ms = 1 minute)
 
-#### Problem: After 6+ hours, temperature suddenly overshoots to 45°C (target 40°C)
+**Columns:**
 
-**Likely cause**: Integral windup
+| Column | Unit | Description |
+|--------|------|-------------|
+| timestamp | datetime | Human-readable date/time from RTC |
+| inlet_temperature | °C | Air inlet temperature |
+| inlet_hr | %RH | Air inlet humidity |
+| outlet_temperature | °C | Air outlet temperature |
+| outlet_hr | %RH | Air outlet humidity |
+| fan_state | 0/1 | Fan relay state |
+| hydraulic_heater_state | 0/1 | Circulator active |
+| hydraulic_heater_power | % | Circulator power (0–100) |
+| electric_heater_state | 0/1 | Electric heater relay state |
+| air_damper_open | 0/1 | Damper open = 1, closed = 0 |
+| target_temperature | °C | Current potentiometer setpoint |
+| phase_name | string | Init / Brassage / Extraction |
+| total_elapsed_s | seconds | Time since session start |
+| phase_elapsed_s | seconds | Time since current phase start |
 
-**Solution**:
-1. Decrease `pid_integral_max` by 30% (e.g., 50.0 → 35.0)
-2. Or decrease Ki if integral accumulates too fast
-
----
-
-#### Problem: Hydraulic heater stays at 0% even though water is hot
-
-**Likely cause**: Water temperature constraint too strict
-
-**Solution**:
-1. Check water temperature sensor reading
-2. Reduce `water_temp_margin` if reasonable (e.g., 2.0 → 1.5)
-3. Verify circulator is running (power > 0)
-
----
-
-#### Problem: Control output changes erratically every second
-
-**Likely cause**: Temperature sensor noise affecting derivative term
-
-**Solution**:
-1. Increase filtering: decrease `pid_derivative_filter` (e.g., 0.1 → 0.05)
-2. This adds more smoothing to derivative calculation
-
----
-
-### Menu Navigation
-PID parameters can be adjusted via the device menu:
-```
-Main Menu → Heating → Hydraulic Kp/Ki/Kd
-Main Menu → Heating → Electric Kp/Ki/Kd
-Main Menu → Heating → Water margin
-```
-
----
-
-**Last Updated**: 2026-02-02
+If the SD card is unavailable at session start, logging is disabled for that session. The controller retries SD initialisation every 30 seconds.

@@ -1,202 +1,161 @@
-WORK IN PROGRESS
-
 # Development Guide
 
-This guide contains technical information for developers who want to build, modify, or contribute to the dehydrator controller project.
+Technical reference for building, uploading, and debugging the renard'o dryer controller.
 
 ## Prerequisites
 
-### Required Software
+### Software
 
-- [PlatformIO](https://platformio.org/) - Development platform for embedded systems
-  - Can be installed as a VSCode extension or standalone CLI
-- USB cable for connecting the Raspberry Pi Pico
-- Serial terminal for monitoring (included with PlatformIO)
+- [PlatformIO](https://platformio.org/) — as a VSCode extension or standalone CLI
+- USB cable (data-capable, not charge-only)
 
-### Hardware Setup
+### Hardware
 
-Before development, ensure you have:
-- Raspberry Pi Pico properly connected
-- All sensors and actuators wired according to the hardware schematic
-- Power supply capable of handling the heating elements
+- Raspberry Pi Pico W connected via USB
+- Serial terminal for log output (included with PlatformIO)
 
-## Building the Project
+---
 
-### Standard Build
+## Build
 
 ```bash
-# Build all targets
+# Standard build
 pio run
 
-# Build specific environment
-pio run -e pico_w
-```
-
-### Clean Build
-
-```bash
-# Clean build artifacts
-pio run -t clean
-
-# Clean and rebuild
+# Clean build
 pio run -t clean && pio run
 ```
 
-## Uploading to the Pico
+Environments defined in `platformio.ini`:
 
-### Initial Setup
+| Environment | Target | Use |
+|-------------|--------|-----|
+| `pico_w` | Raspberry Pi Pico W | Main firmware |
+| `native` | Host machine (x86/x64) | Unit tests only |
 
-1. **Connect the Pico** - Hold the BOOTSEL button while connecting USB
-2. **Upload filesystem first** - This contains fonts, configs, etc.
+---
 
-```bash
-# Upload filesystem (data/ directory)
-pio run -t uploadfs -e pico_w
-```
+## Upload
 
-3. **Upload firmware** - Main application code
+### First upload (or after hardware change)
 
-```bash
-# Upload firmware and start serial monitor
-pio run -t upload -t monitor -e pico_w
-```
-
-### Development Workflow
-
-For faster iteration during development:
+1. Hold **BOOTSEL** while connecting USB — Pico appears as a mass storage device
+2. Upload firmware:
 
 ```bash
-# Upload and monitor in one command
-pio run -t upload -t monitor -e pico_w
-
-# Exit monitor: Ctrl+C
-```
-
-### Hydraulic System Testing
-
-A special test environment is available for testing the hydraulic control system:
-
-```bash
-# Upload and run hydraulic tests
-pio run -t upload -t monitor -e test_hydraulic
-```
-
-## Testing
-
-### Unit Tests
-
-Unit tests run on your local machine (native environment) for rapid testing without hardware:
-
-```bash
-# Run all tests with verbose output
-pio test -vvv -e native
-
-# Run specific test
-pio test -e native -f test_pid
-
-# Run tests with coverage (if configured)
-pio test -e native --coverage
-```
-
-### Hardware Tests
-
-Some tests require actual hardware and run on the Pico:
-
-```bash
-# Upload and run hardware tests
-pio test -e pico_w
-```
-
-### Test Structure
-
-- `test/` directory contains all test files
-- Tests use the Unity testing framework
-- Each module should have corresponding tests
-- Aim for >80% code coverage on critical components (PID, safety logic)
-
-## Building for Different Targets
-
-The project supports multiple build environments:
-
-### Pico W (Main Target)
-
-```bash
-# Standard Pico W build with WiFi support
-pio run -e pico_w
 pio run -t upload -e pico_w
 ```
 
-### Hydraulic Test Build
+### Normal upload
 
 ```bash
-# Specialized build for testing hydraulic system
-pio run -e test_hydraulic
-pio run -t upload -t monitor -e test_hydraulic
+# Upload and open serial monitor
+pio run -t upload -t monitor -e pico_w
 ```
 
-### Native (x86/x64)
+> There is no filesystem to upload — the SD card is used for session logs only, and all configuration is in `config.h`.
+
+---
+
+## Serial Monitor
 
 ```bash
-# Build for local machine (for unit tests)
-pio run -e native
-
-# Run the native executable
-.pio/build/native/program
-```
-
-## Generating Custom Fonts
-
-The display uses bitmap fonts generated from TrueType fonts.
-
-### Steps
-
-1. **Select a TrueType font** - Choose a .ttf file suitable for embedded displays
-2. **Use the converter tool** - https://rop.nl/truetype2gfx/
-3. **Configure settings:**
-   - Font size: Based on your display resolution
-   - Character set: Include only needed characters to save memory
-   - Output format: Adafruit GFX format
-4. **Download generated files** - Usually `.h` files
-5. **Place in data directory** - Copy to `assets/fonts/`
-6. **Upload filesystem** - Run `pio run -t uploadfs -e pico_w`
-
-## Debugging
-
-### Serial Output
-
-```bash
-# Monitor serial output
+# Open monitor (115200 baud)
 pio device monitor
 
-# Monitor with specific baud rate
+# Or with explicit baud rate
 pio device monitor -b 115200
 ```
 
-### Debug Logging
+Log output uses [ArduinoLog](https://github.com/thijse/Arduino-Log) via the `Logger` wrapper:
 
-The project includes debug macros:
-
-```cpp
-DEBUG_PRINT("Temperature: ");
-DEBUG_PRINTLN(temperature);
+```
+[INFO ] SessionMonitor: SD card initialized successfully
+[WARN ] Inlet sensor read failed (errors=1)
+[ERROR] PersistentStateManager: EEPROM commit failed
 ```
 
-Enable/disable in `platformio.ini`:
+### Log levels
 
-```ini
-build_flags =
-    -DDEBUG_ENABLED=1
+Controlled in `setup()` via `Logger::Init(level)`:
+
+| Level | Constant | Output |
+|-------|----------|--------|
+| 0 | `LOG_LEVEL_SILENT` | Nothing |
+| 1 | `LOG_LEVEL_FATAL` | Fatal errors only |
+| 2 | `LOG_LEVEL_ERROR` | Errors |
+| 3 | `LOG_LEVEL_WARNING` | Warnings + errors |
+| 4 | `LOG_LEVEL_NOTICE` | `Logger::Info()` calls |
+| 5 | `LOG_LEVEL_TRACE` | — |
+| 6 | `LOG_LEVEL_VERBOSE` | `Logger::Debug()` calls |
+
+Default: `LOG_LEVEL_VERBOSE` (all messages visible).
+
+---
+
+## Unit Tests
+
+Tests run on the host machine without hardware:
+
+```bash
+# Run all tests
+pio test -vvv -e native
+
+# Run a specific test file
+pio test -e native -f test_pid
 ```
+
+Test files live in `test/`. The Unity framework is used.
+
+---
+
+## Configuration
+
+All hardware parameters are in `include/config.h`. Change a value and rebuild — no reflashing of a filesystem needed.
+
+Key sections:
+
+| Section | What it controls |
+|---------|-----------------|
+| Pin assignments | GPIO numbers for every peripheral |
+| I2C addresses | MCP23017, RTC |
+| LED pin mapping | Which GPA bit drives which indicator |
+| Voltmeter channel mapping | Which GPIO drives which voltmeter |
+| Modbus register map | SHT30 register addresses and scale |
+| Phase durations | Init / Brassage / Extraction timings |
+| PID gains | Hydraulic and electric PID parameters |
+| Potentiometer ranges | ADC → physical unit mapping |
+| Voltmeter ranges | Full-scale value per channel |
+
+---
 
 ## Common Issues
 
-### Upload Fails
+### Upload fails
 
-- Ensure Pico is in BOOTSEL mode (hold button while connecting)
-- Check USB cable supports data (not just power)
+- Hold BOOTSEL while plugging USB
+- Check the USB cable supports data transfer
 - Try a different USB port
 
-### Serial Monitor Shows Garbage
+### Serial monitor shows garbage
 
-- Check baud rate matches (default: 115200)
-- Ensure correct port is selected
+- Verify baud rate: 115200
+- Re-open monitor after upload completes
+
+### SD card not detected
+
+- Verify FAT32 format
+- Check SPI wiring (GPIO 2/3/4/5)
+- Inspect log: `SessionMonitor: SD card initialization failed`
+
+### Sensors not responding
+
+- Check RS485 wiring (GPIO 8/9) and DE pin (GPIO 6)
+- Verify Modbus addresses match `MODBUS_INLET_ADDRESS` / `MODBUS_OUTLET_ADDRESS` in `config.h`
+- Check baud rate: 9600
+
+### Watchdog resets
+
+- A reset is logged as `!!! Recovered from watchdog reset !!!` on next boot
+- Timeout is 8 seconds — if the main loop blocks longer than that, the Pico reboots
+- Check for blocking I2C or SPI calls

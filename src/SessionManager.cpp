@@ -1,441 +1,170 @@
 #include "SessionManager.h"
+#include "Logger.h"
 
-SessionManager::SessionManager(TemperatureManager *temperature_manager, HumidityManager *humidity_manager)
+SessionManager::SessionManager(TemperatureManager *temperature_manager,
+                               HumidityManager    *humidity_manager)
     : temperature_manager_(temperature_manager),
       humidity_manager_(humidity_manager),
-      current_program_(nullptr),
       state_(SessionState::kStopped),
-      current_cycle_index_(0),
-      current_phase_index_in_cycle_(0),
-      phase_start_time_(0),
-      cycle_start_time_(0),
-      current_phase_(nullptr),
-      current_cycle_(nullptr)
-{
-}
+      current_phase_(DryerPhase::kStop),
+      phase_start_ms_(0),
+      session_start_ms_(0) {}
 
 void SessionManager::Begin()
 {
-  state_ = SessionState::kStopped;
-  current_cycle_index_ = 0;
-  current_phase_index_in_cycle_ = 0;
-  phase_start_time_ = 0;
-  cycle_start_time_ = 0;
-  current_phase_ = nullptr;
-  current_cycle_ = nullptr;
-
-  Serial.println("Session manager initialized");
+  state_            = SessionState::kStopped;
+  current_phase_    = DryerPhase::kStop;
+  phase_start_ms_   = 0;
+  session_start_ms_ = 0;
+  Logger::Info("SessionManager: initialized");
 }
 
 void SessionManager::Update(float current_temperature, float current_humidity)
 {
-  if (state_ != SessionState::kRunning)
-  {
-    Serial.println("[SessionManager] Update skipped - not running");
-    return;
-  }
-
-  if (current_program_ == nullptr)
-  {
-    Serial.println("Error: No program loaded");
-    Stop();
-    return;
-  }
-
-  Serial.print("[SessionManager] Update called - temp=");
-  Serial.print(current_temperature);
-  Serial.print(", humidity=");
-  Serial.println(current_humidity);
-
-  // Check for phase transitions
+  if (state_ != SessionState::kRunning) return;
   CheckPhaseTransition(current_temperature, current_humidity);
-}
-
-void SessionManager::SetProgram(const Program *program)
-{
-  current_program_ = program;
-  current_phase_ = nullptr;
-  current_cycle_ = nullptr;
-
-  if (program != nullptr)
-  {
-    Serial.print("Program set: '");
-    Serial.print(program->name);
-    Serial.print("' (ID=");
-    Serial.print(program->id);
-    Serial.print(", Phases=");
-    Serial.print(program->phase_count);
-    Serial.print(", Cycles=");
-    Serial.print(program->cycle_count);
-    Serial.println(")");
-  }
 }
 
 void SessionManager::Start()
 {
-  if (current_program_ == nullptr)
-  {
-    Serial.println("Error: Cannot start - no program loaded");
-    return;
-  }
-
-  if (current_program_->cycle_count == 0)
-  {
-    Serial.println("Error: Program has no cycles");
-    return;
-  }
-
-  state_ = SessionState::kRunning;
-  current_cycle_index_ = 0;
-  current_phase_index_in_cycle_ = 0;
-  cycle_start_time_ = millis();
-
-  // Set current cycle
-  current_cycle_ = &current_program_->cycles[0];
-
-  // Enter first phase of first cycle
-  if (current_cycle_->phase_count > 0)
-  {
-    uint8_t first_phase_id = current_cycle_->phase_ids[0];
-    EnterPhase(first_phase_id);
-  }
-
-  Serial.println("Session started");
+  state_            = SessionState::kRunning;
+  session_start_ms_ = millis();
+  EnterPhase(DryerPhase::kInit);
+  Logger::Info("SessionManager: session started");
 }
 
 void SessionManager::Stop()
 {
-  state_ = SessionState::kStopped;
+  state_         = SessionState::kStopped;
+  current_phase_ = DryerPhase::kStop;
 
   // Turn off heaters
   temperature_manager_->GetElectricHeater()->SetPower(0.0f);
   temperature_manager_->GetHydraulicHeater()->SetPower(0.0f);
 
-  // Reset humidity control
+  // Disable humidity control
   humidity_manager_->SetTargetHumidity(0.0f);
   humidity_manager_->ResetCooldown();
 
-  current_phase_ = nullptr;
-  current_cycle_ = nullptr;
-
-  Serial.println("Session stopped");
-}
-
-uint8_t SessionManager::GetCurrentPhaseId() const
-{
-  if (current_phase_ == nullptr || state_ != SessionState::kRunning)
-  {
-    return 0;
-  }
-  return current_phase_->id;
+  Logger::Info("SessionManager: session stopped");
 }
 
 const char *SessionManager::GetCurrentPhaseName() const
 {
-  if (state_ != SessionState::kRunning)
+  switch (current_phase_)
   {
-    return "Stop";
-  }
-
-  if (current_phase_ == nullptr)
-  {
-    return "Unknown";
-  }
-
-  return current_phase_->name;
-}
-
-unsigned long SessionManager::GetPhaseElapsedTime() const
-{
-  if (phase_start_time_ == 0)
-  {
-    return 0;
-  }
-  return (millis() - phase_start_time_) / 1000;
-}
-
-unsigned long SessionManager::GetCycleElapsedTime() const
-{
-  if (cycle_start_time_ == 0)
-  {
-    return 0;
-  }
-  return (millis() - cycle_start_time_) / 1000;
-}
-
-uint32_t SessionManager::GetCurrentPhaseDuration() const
-{
-  if (current_phase_ == nullptr)
-  {
-    return 0;
-  }
-  return current_phase_->duration_s;
-}
-
-void SessionManager::RestoreState(uint8_t cycle_index, uint8_t phase_index_in_cycle,
-                                  uint32_t phase_elapsed_s, uint32_t cycle_elapsed_s)
-{
-  if (current_program_ == nullptr)
-  {
-    Serial.println("Error: Cannot restore state - no program loaded");
-    return;
-  }
-
-  // Validate indices
-  if (cycle_index >= current_program_->cycle_count)
-  {
-    Serial.println("Error: Invalid cycle index for restore");
-    return;
-  }
-
-  const Cycle *cycle = &current_program_->cycles[cycle_index];
-  if (phase_index_in_cycle >= cycle->phase_count)
-  {
-    Serial.println("Error: Invalid phase index for restore");
-    return;
-  }
-
-  // Restore state
-  state_ = SessionState::kRunning;
-  current_cycle_index_ = cycle_index;
-  current_phase_index_in_cycle_ = phase_index_in_cycle;
-  current_cycle_ = cycle;
-
-  // Restore timing (simulate elapsed time)
-  unsigned long now = millis();
-  phase_start_time_ = now - (phase_elapsed_s * 1000UL);
-  cycle_start_time_ = now - (cycle_elapsed_s * 1000UL);
-
-  // Enter the phase (configure managers)
-  uint8_t phase_id = cycle->phase_ids[phase_index_in_cycle];
-  EnterPhase(phase_id);
-
-  Serial.print("Session state restored - Cycle: ");
-  Serial.print(cycle_index);
-  Serial.print(", Phase: ");
-  Serial.print(phase_index_in_cycle);
-  Serial.print(", Phase elapsed: ");
-  Serial.print(phase_elapsed_s);
-  Serial.println("s");
-}
-
-void SessionManager::EnterPhase(uint8_t phase_id)
-{
-  const Phase *phase = FindPhaseInProgram(phase_id);
-  if (phase == nullptr)
-  {
-    Serial.print("Error: Phase not found: ");
-    Serial.println(phase_id);
-    return;
-  }
-
-  current_phase_ = phase;
-  phase_start_time_ = millis();
-
-  Serial.print("Entering phase ");
-  Serial.print(current_phase_->id);
-  Serial.print(" (");
-  Serial.print(current_phase_->name);
-  Serial.print(") - Temp target: ");
-  Serial.print(current_phase_->temperature_target);
-  Serial.print("C (transition_on_temp=");
-  Serial.print(current_phase_->transition_on_temperature ? "TRUE" : "FALSE");
-  Serial.print("), Humidity max: ");
-  Serial.print(current_phase_->humidity_max);
-  Serial.print(" (transition_on_hum=");
-  Serial.print(current_phase_->transition_on_humidity ? "TRUE" : "FALSE");
-  Serial.print("), Duration: ");
-  Serial.print(current_phase_->duration_s);
-  Serial.println("s");
-
-  // Configure TemperatureManager
-  if (current_phase_->temperature_target > 0.0f)
-  {
-    temperature_manager_->SetTargetTemperature(current_phase_->temperature_target);
-  }
-
-  // Configure HumidityManager with the phase's humidity target
-  humidity_manager_->SetTargetHumidity(current_phase_->humidity_max);
-  humidity_manager_->ResetCooldown();
-
-  // Start with hydraulic at max for heating phases
-  if (current_phase_->temperature_target > 0.0f)
-  {
-    temperature_manager_->GetHydraulicHeater()->SetPower(100.0f);
-    temperature_manager_->GetElectricHeater()->SetPower(0.0f);
+    case DryerPhase::kInit:       return "Init";
+    case DryerPhase::kBrassage:   return "Brassage";
+    case DryerPhase::kExtraction: return "Extraction";
+    default:                      return "Stop";
   }
 }
 
-void SessionManager::ExitPhase()
+uint32_t SessionManager::GetPhaseElapsedTime() const
 {
-  if (current_phase_ != nullptr)
+  if (phase_start_ms_ == 0) return 0;
+  return (millis() - phase_start_ms_) / 1000UL;
+}
+
+uint32_t SessionManager::GetTotalElapsedTime() const
+{
+  if (session_start_ms_ == 0) return 0;
+  return (millis() - session_start_ms_) / 1000UL;
+}
+
+void SessionManager::RestoreState(DryerPhase phase, uint32_t phase_elapsed_s,
+                                  uint32_t total_elapsed_s)
+{
+  state_            = SessionState::kRunning;
+  current_phase_    = phase;
+  phase_start_ms_   = millis() - phase_elapsed_s * 1000UL;
+  session_start_ms_ = millis() - total_elapsed_s * 1000UL;
+  EnterPhase(phase);
+  Logger::Info("SessionManager: state restored (phase=%s, elapsed=%us)",
+               GetCurrentPhaseName(), total_elapsed_s);
+}
+
+// --- Private ---
+
+void SessionManager::EnterPhase(DryerPhase phase)
+{
+  current_phase_  = phase;
+  phase_start_ms_ = millis();
+
+  switch (phase)
   {
-    Serial.print("Exiting phase ");
-    Serial.println(current_phase_->id);
+    case DryerPhase::kInit:
+      temperature_manager_->SetTargetTemperature(
+          temperature_manager_->GetTargetTemperature());
+      humidity_manager_->SetTargetHumidity(0.0f);
+      humidity_manager_->ResetCooldown();
+      // Start hydraulic at full power for initial ramp-up
+      temperature_manager_->GetHydraulicHeater()->SetPower(100.0f);
+      temperature_manager_->GetElectricHeater()->SetPower(0.0f);
+      Logger::Info("SessionManager: entering Init phase");
+      break;
+
+    case DryerPhase::kBrassage:
+      humidity_manager_->SetTargetHumidity(0.0f);
+      humidity_manager_->ResetCooldown();
+      Logger::Info("SessionManager: entering Brassage phase");
+      break;
+
+    case DryerPhase::kExtraction:
+      // Open damper to evacuate moisture; target humidity from config
+      humidity_manager_->SetTargetHumidity(DEFAULT_EXTRACTION_HUM_THRESHOLD);
+      humidity_manager_->ResetCooldown();
+      Logger::Info("SessionManager: entering Extraction phase");
+      break;
+
+    default:
+      break;
   }
 }
 
 void SessionManager::CheckPhaseTransition(float current_temperature, float current_humidity)
 {
-  if (current_phase_ == nullptr)
+  uint32_t elapsed = GetPhaseElapsedTime();
+
+  switch (current_phase_)
   {
-    Serial.println("[SessionManager] CheckPhaseTransition: current_phase_ is nullptr!");
-    return;
-  }
-
-  Serial.print("[SessionManager] CheckPhaseTransition - Phase: ");
-  Serial.print(current_phase_->name);
-  Serial.print(", temp: ");
-  Serial.print(current_temperature);
-  Serial.print("/");
-  Serial.print(current_phase_->temperature_target);
-  Serial.print(", humidity: ");
-  Serial.print(current_humidity);
-  Serial.print("/");
-  Serial.print(current_phase_->humidity_max);
-  Serial.print(", elapsed: ");
-  Serial.print(GetPhaseElapsedTime());
-  Serial.print("/");
-  Serial.println(current_phase_->duration_s);
-
-  Serial.print("[SessionManager] Flags - transition_on_temperature=");
-  Serial.print(current_phase_->transition_on_temperature ? "TRUE" : "FALSE");
-  Serial.print(", transition_on_humidity=");
-  Serial.println(current_phase_->transition_on_humidity ? "TRUE" : "FALSE");
-
-  bool should_transition = false;
-  const char *reason = "";
-
-  // Check temperature condition
-  if (current_phase_->transition_on_temperature &&
-      current_phase_->temperature_target > 0.0f)
-  {
-    Serial.print("[SessionManager] Checking temperature transition: ");
-    Serial.print(current_temperature);
-    Serial.print(" >= ");
-    Serial.print(current_phase_->temperature_target);
-    Serial.print(" ? ");
-    Serial.println(current_temperature >= current_phase_->temperature_target ? "YES" : "NO");
-
-    if (current_temperature >= current_phase_->temperature_target)
+    case DryerPhase::kInit:
     {
-      should_transition = true;
-      reason = "temperature target reached";
+      // Transition when temperature target is reached OR max duration elapsed
+      bool temp_reached = (current_temperature >= temperature_manager_->GetTargetTemperature());
+      bool timed_out    = (elapsed >= DEFAULT_INIT_PHASE_DURATION);
+      if (temp_reached || timed_out)
+      {
+        Logger::Info("SessionManager: Init -> Brassage (%s)",
+                     temp_reached ? "temp reached" : "timeout");
+        EnterPhase(DryerPhase::kBrassage);
+      }
+      break;
     }
-  }
 
-  // Check humidity condition - transition when humidity drops below max
-  if (!should_transition &&
-      current_phase_->transition_on_humidity &&
-      current_phase_->humidity_max > 0.0f)
-  {
-    if (current_humidity >= current_phase_->humidity_max)
+    case DryerPhase::kBrassage:
+      if (elapsed >= DEFAULT_BRASSAGE_PHASE_DURATION)
+      {
+        Logger::Info("SessionManager: Brassage -> Extraction");
+        EnterPhase(DryerPhase::kExtraction);
+      }
+      break;
+
+    case DryerPhase::kExtraction:
     {
-      should_transition = true;
-      reason = "humidity max reached";
+      // Transition when humidity drops below threshold OR duration elapsed
+      bool hum_ok    = (current_humidity <= DEFAULT_EXTRACTION_HUM_THRESHOLD);
+      bool timed_out = (elapsed >= DEFAULT_EXTRACTION_PHASE_DURATION);
+      if (hum_ok || timed_out)
+      {
+        Logger::Info("SessionManager: Extraction -> Brassage (%s)",
+                     hum_ok ? "humidity ok" : "timeout");
+        EnterPhase(DryerPhase::kBrassage);
+      }
+      break;
     }
+
+    default:
+      break;
   }
-
-  // Check duration (always checked)
-  unsigned long elapsed = GetPhaseElapsedTime();
-  if (!should_transition && elapsed >= current_phase_->duration_s)
-  {
-    should_transition = true;
-    reason = "duration reached";
-  }
-
-  if (should_transition)
-  {
-    Serial.print("Phase transition: ");
-    Serial.println(reason);
-    TransitionToNextPhase();
-  }
-}
-
-void SessionManager::TransitionToNextPhase()
-{
-  ExitPhase();
-
-  if (current_cycle_ == nullptr)
-  {
-    Stop();
-    return;
-  }
-
-  // Move to next phase in cycle
-  current_phase_index_in_cycle_++;
-
-  if (current_phase_index_in_cycle_ >= current_cycle_->phase_count)
-  {
-    // End of cycle - check if we should repeat or move to next cycle
-    unsigned long cycle_elapsed = GetCycleElapsedTime();
-
-    bool should_repeat = false;
-
-    if (current_cycle_->repeat_duration_s < 0)
-    {
-      // Infinite repeat
-      should_repeat = true;
-    }
-    else if (current_cycle_->repeat_duration_s > 0)
-    {
-      // Repeat for duration
-      should_repeat = (cycle_elapsed < (unsigned long)current_cycle_->repeat_duration_s);
-    }
-    // repeat_duration_s == 0 means no repeat
-
-    if (should_repeat)
-    {
-      // Restart cycle from first phase
-      current_phase_index_in_cycle_ = 0;
-      Serial.print("Repeating cycle ");
-      Serial.println(current_cycle_index_);
-    }
-    else
-    {
-      // Move to next cycle
-      TransitionToNextCycle();
-      return;
-    }
-  }
-
-  // Enter next phase
-  uint8_t next_phase_id = current_cycle_->phase_ids[current_phase_index_in_cycle_];
-  EnterPhase(next_phase_id);
-}
-
-void SessionManager::TransitionToNextCycle()
-{
-  current_cycle_index_++;
-
-  if (current_cycle_index_ >= current_program_->cycle_count)
-  {
-    // End of program
-    Serial.println("Program completed");
-    Stop();
-    return;
-  }
-
-  // Start next cycle
-  current_phase_index_in_cycle_ = 0;
-  cycle_start_time_ = millis();
-  current_cycle_ = &current_program_->cycles[current_cycle_index_];
-
-  Serial.print("Starting cycle ");
-  Serial.println(current_cycle_index_);
-
-  if (current_cycle_->phase_count > 0)
-  {
-    uint8_t first_phase_id = current_cycle_->phase_ids[0];
-    EnterPhase(first_phase_id);
-  }
-}
-
-const Phase *SessionManager::FindPhaseInProgram(uint8_t phase_id) const
-{
-  if (current_program_ == nullptr)
-  {
-    return nullptr;
-  }
-  return FindPhaseById(current_program_, phase_id);
 }

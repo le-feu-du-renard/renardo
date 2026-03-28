@@ -19,31 +19,21 @@
 class Logger
 {
 public:
-  /**
-   * @brief Initialize the logger
-   * @param level Log level (LOG_LEVEL_SILENT, LOG_LEVEL_FATAL, LOG_LEVEL_ERROR,
-   *              LOG_LEVEL_WARNING, LOG_LEVEL_NOTICE, LOG_LEVEL_TRACE, LOG_LEVEL_VERBOSE)
-   */
   static void Init(int level = LOG_LEVEL_VERBOSE);
-
-  /**
-   * @brief Set log level
-   * @param level New log level
-   */
   static void SetLevel(int level);
-
-  /**
-   * @brief Flush any buffered log data
-   */
   static void Flush();
-};
 
-// Convenience macros for logging
-#define LOG_TRACE(...) Log.trace(__VA_ARGS__)
-#define LOG_VERBOSE(...) Log.verbose(__VA_ARGS__)
-#define LOG_NOTICE(...) Log.notice(__VA_ARGS__)
-#define LOG_WARNING(...) Log.warning(__VA_ARGS__)
-#define LOG_ERROR(...) Log.error(__VA_ARGS__)
-#define LOG_FATAL(...) Log.fatal(__VA_ARGS__)
+  // Convenience wrappers matching ArduinoLog levels
+  template<class... Args> static void Debug(const char* fmt, Args... args)   { Log.verbose(fmt, args...); }
+  template<class... Args> static void Info(const char* fmt, Args... args)    { Log.notice(fmt, args...); }
+  template<class... Args> static void Warning(const char* fmt, Args... args) { Log.warning(fmt, args...); }
+  template<class... Args> static void Error(const char* fmt, Args... args)   { Log.error(fmt, args...); }
+
+  // No-arg overloads (message only)
+  static void Debug(const char* msg)   { Log.verbose(msg); }
+  static void Info(const char* msg)    { Log.notice(msg); }
+  static void Warning(const char* msg) { Log.warning(msg); }
+  static void Error(const char* msg)   { Log.error(msg); }
+};
 
 #endif // LOGGER_H

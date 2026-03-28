@@ -15,72 +15,55 @@ SessionMonitor::SessionMonitor(Dryer *dryer, TimeManager *time_manager)
 
 bool SessionMonitor::Begin()
 {
-  Serial.println("SessionMonitor::Begin() - START");
-  Serial.flush();
+  Logger::Info("SessionMonitor::Begin() - START");
 
   // Configure CS pin
   pinMode(SD_CARD_CS_PIN, OUTPUT);
   digitalWrite(SD_CARD_CS_PIN, HIGH);
 
   // Configure SPI pins explicitly
-  Serial.print("Configuring SPI pins (MISO=");
-  Serial.print(SD_CARD_MISO_PIN);
-  Serial.print(", MOSI=");
-  Serial.print(SD_CARD_MOSI_PIN);
-  Serial.print(", SCK=");
-  Serial.print(SD_CARD_SCK_PIN);
-  Serial.println(")");
+  Logger::Info("Configuring SPI pins (MISO=%d, MOSI=%d, SCK=%d)",
+               SD_CARD_MISO_PIN, SD_CARD_MOSI_PIN, SD_CARD_SCK_PIN);
 
   SPI.setRX(SD_CARD_MISO_PIN);
   SPI.setTX(SD_CARD_MOSI_PIN);
   SPI.setSCK(SD_CARD_SCK_PIN);
   SPI.begin();
 
-  Serial.print("Attempting SD.begin() with CS pin ");
-  Serial.println(SD_CARD_CS_PIN);
-  Serial.flush();
+  Logger::Info("Attempting SD.begin() with CS pin %d", SD_CARD_CS_PIN);
 
   bool sd_init_result = SD.begin(SD_CARD_CS_PIN);
 
-  Serial.println("SD.begin() returned");
-  Serial.flush();
-
   if (!sd_init_result)
   {
-    Serial.println("ERROR: SD card initialization failed!");
-    Serial.println("Possible causes:");
-    Serial.println("  - No SD card inserted");
-    Serial.println("  - Wrong wiring (MISO=GPIO16, MOSI=GPIO19, SCK=GPIO18, CS=GPIO17)");
-    Serial.println("  - Card not formatted as FAT16/FAT32");
-    Serial.println("Data logging will be disabled.");
+    Logger::Error("SD card initialization failed!");
+    Logger::Warning("Possible causes: no SD card, wrong wiring (MISO=%d MOSI=%d SCK=%d CS=%d), not FAT16/FAT32",
+                    SD_CARD_MISO_PIN, SD_CARD_MOSI_PIN, SD_CARD_SCK_PIN, SD_CARD_CS_PIN);
+    Logger::Warning("Data logging will be disabled.");
     sd_initialized_ = false;
     return false;
   }
 
-  Serial.println("SUCCESS: SD card initialized!");
+  Logger::Info("SD card initialized successfully");
 
   // Try to open root directory to verify SD is working
   SDFile root = SD.open("/");
   if (!root)
   {
-    Serial.println("WARNING: Cannot open root directory!");
+    Logger::Warning("Cannot open root directory");
     sd_initialized_ = false;
     return false;
   }
 
-  Serial.println("Root directory accessible");
+  Logger::Info("Root directory accessible");
 
   // List existing files
-  Serial.println("Listing files on SD card:");
+  Logger::Info("Listing files on SD card:");
   SDFile entry = root.openNextFile();
   int file_count = 0;
   while (entry)
   {
-    Serial.print("  - ");
-    Serial.print(entry.name());
-    Serial.print(" (");
-    Serial.print(entry.size());
-    Serial.println(" bytes)");
+    Logger::Info("  - %s (%u bytes)", entry.name(), (unsigned)entry.size());
     entry.close();
     entry = root.openNextFile();
     file_count++;
@@ -89,21 +72,21 @@ bool SessionMonitor::Begin()
 
   if (file_count == 0)
   {
-    Serial.println("  (no files found - SD card is empty)");
+    Logger::Info("  (no files found - SD card is empty)");
   }
 
   // Try to create a test file
-  Serial.println("Testing write access with test.txt...");
+  Logger::Info("Testing write access with test.txt...");
   SDFile testFile = SD.open("test.txt", FILE_WRITE);
   if (!testFile)
   {
-    Serial.println("ERROR: Cannot create test file - SD may be read-only or full");
+    Logger::Error("Cannot create test file - SD may be read-only or full");
     sd_initialized_ = false;
     return false;
   }
   testFile.println("Test write");
   testFile.close();
-  Serial.println("Test file created successfully!");
+  Logger::Info("Test file created successfully");
 
   sd_initialized_ = true;
   return true;
@@ -113,7 +96,7 @@ bool SessionMonitor::StartSession()
 {
   if (!sd_initialized_)
   {
-    Serial.println("ERROR: Cannot start session - SD card not initialized");
+    Logger::Error("Cannot start session - SD card not initialized");
     return false;
   }
 
@@ -136,85 +119,76 @@ bool SessionMonitor::StartSession()
 
   if (!SD.exists(sessions_dir.c_str()))
   {
-    Serial.print("[SessionMonitor] Creating directory: ");
-    Serial.println(sessions_dir);
-    Serial.flush();
+    Logger::Info("Creating directory: %s", sessions_dir.c_str());
 
     if (!SD.mkdir(sessions_dir.c_str()))
     {
       // Check if it failed because directory already exists (race condition)
       if (SD.exists(sessions_dir.c_str()))
       {
-        Serial.println("[SessionMonitor] Directory already exists (created by another process)");
+        Logger::Info("Sessions directory already exists");
       }
       else
       {
-        Serial.println("[SessionMonitor] ERROR: Failed to create sessions directory!");
-        Serial.println("[SessionMonitor] Possible causes:");
-        Serial.println("[SessionMonitor]   - SD card is full");
-        Serial.println("[SessionMonitor]   - SD card is write-protected");
-        Serial.println("[SessionMonitor]   - SD card filesystem corrupted");
-        Serial.println("[SessionMonitor] Will use root directory as fallback");
+        Logger::Error("Failed to create sessions directory (SD full, write-protected, or corrupted)");
+        Logger::Warning("Will use root directory as fallback");
         use_root_fallback = true;
       }
     }
     else
     {
-      Serial.println("[SessionMonitor] Sessions directory created successfully");
+      Logger::Info("Sessions directory created successfully");
     }
   }
   else
   {
-    Serial.println("[SessionMonitor] Sessions directory already exists");
+    Logger::Info("Sessions directory already exists");
   }
 
   if (!use_root_fallback && !SD.exists(year_dir.c_str()))
   {
-    Serial.print("[SessionMonitor] Creating directory: ");
-    Serial.println(year_dir);
+    Logger::Info("Creating directory: %s", year_dir.c_str());
     if (!SD.mkdir(year_dir.c_str()))
     {
       if (SD.exists(year_dir.c_str()))
       {
-        Serial.println("[SessionMonitor] Year directory already exists");
+        Logger::Info("Year directory already exists");
       }
       else
       {
-        Serial.println("[SessionMonitor] ERROR: Failed to create year directory!");
+        Logger::Error("Failed to create year directory");
         use_root_fallback = true;
       }
     }
   }
   else if (!use_root_fallback)
   {
-    Serial.println("[SessionMonitor] Year directory already exists");
+    Logger::Info("Year directory already exists");
   }
 
   if (!use_root_fallback && !SD.exists(month_dir.c_str()))
   {
-    Serial.print("[SessionMonitor] Creating directory: ");
-    Serial.println(month_dir);
+    Logger::Info("Creating directory: %s", month_dir.c_str());
     if (!SD.mkdir(month_dir.c_str()))
     {
       if (SD.exists(month_dir.c_str()))
       {
-        Serial.println("[SessionMonitor] Month directory already exists");
+        Logger::Info("Month directory already exists");
       }
       else
       {
-        Serial.println("[SessionMonitor] ERROR: Failed to create month directory!");
+        Logger::Error("Failed to create month directory");
         use_root_fallback = true;
       }
     }
   }
   else if (!use_root_fallback)
   {
-    Serial.println("[SessionMonitor] Month directory already exists");
+    Logger::Info("Month directory already exists");
   }
 
   // Scan files in appropriate directory to find the highest batch number
   int max_batch_number = 0;
-  String search_dir = use_root_fallback ? "/" : month_dir;
 
   if (!use_root_fallback)
   {
@@ -281,37 +255,31 @@ bool SessionMonitor::StartSession()
   if (use_root_fallback)
   {
     current_filename_ = "/" + filename;
-    Serial.print("[SessionMonitor] Using root directory, filename: ");
-    Serial.println(current_filename_);
+    Logger::Warning("Using root directory, filename: %s", current_filename_.c_str());
   }
   else
   {
     current_filename_ = month_dir + "/" + filename;
   }
 
-  Serial.print("Creating log file: ");
-  Serial.println(current_filename_);
-  Serial.print("Batch #");
-  Serial.print(batch_number);
-  Serial.print(" - Full timestamp: ");
-  Serial.println(timestamp);
+  Logger::Info("Creating log file: %s (batch #%d, timestamp %s)",
+               current_filename_.c_str(), batch_number, timestamp.c_str());
 
   // Create and open file
   SDFile file = SD.open(current_filename_.c_str(), FILE_WRITE);
   if (!file)
   {
-    Serial.println("ERROR: Failed to create log file!");
-    Serial.println("Trying to list root directory contents:");
+    Logger::Error("Failed to create log file: %s", current_filename_.c_str());
 
-    // Try to list files to debug
+    // List root directory for debug
     SDFile root = SD.open("/");
     if (root)
     {
+      Logger::Info("Root directory contents:");
       SDFile entry = root.openNextFile();
       while (entry)
       {
-        Serial.print("  - ");
-        Serial.println(entry.name());
+        Logger::Info("  - %s", entry.name());
         entry.close();
         entry = root.openNextFile();
       }
@@ -321,13 +289,13 @@ bool SessionMonitor::StartSession()
     return false;
   }
 
-  Serial.println("File opened successfully, writing header...");
+  Logger::Info("File opened successfully, writing header...");
 
   // Write header
   WriteHeader(file);
 
   file.close();
-  Serial.println("SUCCESS: Log file created with header");
+  Logger::Info("Log file created with header");
 
   logging_active_ = true;
   last_log_time_ = millis();
@@ -339,7 +307,7 @@ void SessionMonitor::StopSession()
 {
   if (logging_active_)
   {
-    Serial.println("Stopping data logging session");
+    Logger::Info("Stopping data logging session");
     logging_active_ = false;
     current_filename_ = "";
   }
@@ -353,10 +321,9 @@ void SessionMonitor::Update()
   if (now - last_debug >= 60000)
   {
     last_debug = now;
-    Serial.print("[SessionMonitor] Status: SD=");
-    Serial.print(sd_initialized_ ? "OK" : "NOT_INIT");
-    Serial.print(", Logging=");
-    Serial.println(logging_active_ ? "ACTIVE" : "INACTIVE");
+    Logger::Info("Status: SD=%s, Logging=%s",
+                 sd_initialized_ ? "OK" : "NOT_INIT",
+                 logging_active_ ? "ACTIVE" : "INACTIVE");
   }
 
   if (!logging_active_ || !sd_initialized_)
@@ -369,9 +336,6 @@ void SessionMonitor::Update()
   {
     last_log_time_ = now;
 
-    Serial.println("[SessionMonitor] Time to log - writing directly to SD...");
-
-    // MONO-CORE: Write directly to SD instead of queuing
     unsigned long write_start = millis();
 
     SDFile file = SD.open(current_filename_.c_str(), FILE_WRITE);
@@ -382,9 +346,7 @@ void SessionMonitor::Update()
       file.close();
 
       unsigned long write_time = millis() - write_start;
-      Serial.print("[SessionMonitor] Log written in ");
-      Serial.print(write_time);
-      Serial.println("ms");
+      Logger::Info("Log written in %lums", write_time);
 
       // Reset consecutive failures on success
       consecutive_failures_ = 0;
@@ -392,24 +354,19 @@ void SessionMonitor::Update()
     else
     {
       consecutive_failures_++;
-      Serial.println("[SessionMonitor] ERROR: Failed to open log file");
-      Serial.print("[SessionMonitor] Consecutive failures: ");
-      Serial.print(consecutive_failures_);
-      Serial.print("/");
-      Serial.println(MAX_CONSECUTIVE_FAILURES);
+      Logger::Error("Failed to open log file (consecutive failures: %d/%d)",
+                    consecutive_failures_, MAX_CONSECUTIVE_FAILURES);
 
       // Disable logging after too many failures
       if (consecutive_failures_ >= MAX_CONSECUTIVE_FAILURES)
       {
-        Serial.println("[SessionMonitor] ERROR: Too many failures - disabling SD logging!");
+        Logger::Error("Too many failures - disabling SD logging");
         logging_active_ = false;
         sd_initialized_ = false;
       }
     }
   }
 }
-
-// Queue functions removed - mono-core writes directly to SD
 
 void SessionMonitor::WriteHeader(SDFile &file)
 {
@@ -422,13 +379,11 @@ void SessionMonitor::WriteHeader(SDFile &file)
   file.print("hydraulic_heater_state,");
   file.print("hydraulic_heater_power,");
   file.print("electric_heater_state,");
-  file.print("recycling_rate,");
+  file.print("air_damper_open,");
   file.print("target_temperature,");
-  file.print("target_hr,");
-  file.print("program_id,");
-  file.print("cycle_id,");
-  file.print("phase_id,");
-  file.println("phase_name");
+  file.print("phase_name,");
+  file.print("total_elapsed_s,");
+  file.println("phase_elapsed_s");
 }
 
 void SessionMonitor::WriteDataRow(SDFile &file)
@@ -472,48 +427,22 @@ String SessionMonitor::GetDataRowString()
   row += String(dryer_->GetHeaterOutput() > 0.5 ? 1 : 0);
   row += ",";
 
-  // Recycling rate
-  row += String(dryer_->GetRecyclingRate(), 2);
+  // Air damper state (open=1 / closed=0)
+  row += String(dryer_->GetHumidityManager()->IsHumidityTargetReached() ? 0 : 1);
   row += ",";
 
   // Target temperature
   row += String(dryer_->GetTargetTemperature(), 2);
   row += ",";
 
-  // Target humidity (from humidity manager)
-  row += String(dryer_->GetHumidityManager()->GetTargetHumidity(), 2);
-  row += ",";
-
-  // Program information
-  const Program *program = dryer_->GetSessionManager()->GetProgram();
-  if (program != nullptr)
-  {
-    row += String(program->id);
-  }
-  else
-  {
-    row += "0";
-  }
-  row += ",";
-
-  // Cycle ID
-  uint8_t cycle_index = dryer_->GetSessionManager()->GetCurrentCycleIndex();
-  if (program != nullptr && cycle_index < program->cycle_count)
-  {
-    const Cycle *cycle = &program->cycles[cycle_index];
-    row += String(cycle->id);
-  }
-  else
-  {
-    row += "0";
-  }
-  row += ",";
-
-  // Phase ID and name
-  uint8_t phase_id = dryer_->GetCurrentPhaseId();
-  row += String(phase_id);
-  row += ",";
+  // Phase name
   row += dryer_->GetPhaseName();
+  row += ",";
+
+  // Elapsed times
+  row += String(dryer_->GetTotalElapsedTime());
+  row += ",";
+  row += String(dryer_->GetPhaseElapsedTime());
 
   return row;
 }
@@ -530,7 +459,7 @@ bool SessionMonitor::RetryInitialization()
 
   last_init_attempt_ = now;
 
-  Serial.println("[SessionMonitor] Attempting to reinitialize SD card...");
+  Logger::Info("Attempting to reinitialize SD card...");
 
   // Reset consecutive failures
   consecutive_failures_ = 0;

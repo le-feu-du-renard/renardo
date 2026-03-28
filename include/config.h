@@ -5,164 +5,147 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// I2C Bus 1 (OLED + Outlet Air Sensor)
-#define I2C_BUS_1_SDA_PIN 12
-#define I2C_BUS_1_SCL_PIN 13
+// I2C Bus 1 (MCP23017 LED expander + RTC DS1307)
+#define I2C_BUS_1_SDA_PIN 10
+#define I2C_BUS_1_SCL_PIN 11
 
-// I2C Bus 2 (DAC + Inlet Air Sensor + RTC)
-#define I2C_BUS_2_SDA_PIN 10
-#define I2C_BUS_2_SCL_PIN 11
+// RS485 Modbus RTU (UART1 → MAX3485)
+#define RS485_TX_PIN 12  // UART1 TX → MAX3485 DI
+#define RS485_RX_PIN 13  // UART1 RX ← MAX3485 RO
+#define RS485_DE_PIN 14  // DE/RE direction enable (HIGH = transmit, LOW = receive)
 
-// Rotary Encoder
-#define ROTARY_ENCODER_SW_PIN 22
-#define ROTARY_ENCODER_CLK_PIN 20
-#define ROTARY_ENCODER_DT_PIN 21
+// Hydraulic circulator PWM (0-10V)
+#define WATER_CIRCULATOR_PWM_PIN 15
 
-// Relays
-#define ELECTRIC_HEATER_RELAY_PIN 28
-#define FAN_RELAY_PIN 27
+// SD Card SPI (SPI0)
+#define SD_CARD_MISO_PIN 0   // SPI0 RX
+#define SD_CARD_CS_PIN   1   // Chip Select
+#define SD_CARD_SCK_PIN  2   // SCK
+#define SD_CARD_MOSI_PIN 3   // SPI0 TX
 
-// Water circulator
-#define WATER_CIRCULATOR_PWM_PIN 7
+// Physical buttons (active LOW, internal pullup)
+#define BTN_START_PIN 16
+#define BTN_STOP_PIN  17
 
-// Water Temperature // OneWire
-#define WATER_SENSOR_PIN 6
+// Voltmeter outputs (PWM, 0-3V via RC filter)
+// Channel assignment: change the pin to rewire a voltmeter to a different GPIO.
+#define VOLTMETER_CH1_TEMPERATURE_PIN    18  // CH1 - inlet temperature
+#define VOLTMETER_CH2_HUMIDITY_PIN       19  // CH2 - inlet humidity
+#define VOLTMETER_CH3_TOTAL_DURATION_PIN 20  // CH3 - total session duration
+#define VOLTMETER_CH4_PHASE_DURATION_PIN 21  // CH4 - current phase duration
 
-// SD Card SPI
-#define SD_CARD_CS_PIN 5   // Chip Select
-#define SD_CARD_MISO_PIN 4 // MISO (SPI0 RX)
-#define SD_CARD_MOSI_PIN 3 // MOSI (SPI0 TX)
-#define SD_CARD_SCK_PIN 2  // SCK (SPI0 SCK)
+// Mode selector (LOW = ECO, HIGH = PERFORMANCE)
+#define MODE_SELECTOR_PIN 22
 
-// Screen
-#define SCREEN_SSD1306_ADDR 0x3C
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define SCREEN_OLED_RESET -1
+// Potentiometers (ADC)
+#define POT_TEMPERATURE_PIN 26  // ADC0
+#define POT_HUMIDITY_PIN    27  // ADC1
 
 // ========== I2C ADDRESSES ==========
-#define DAC_GP8403_ADDR 0x5F
-#define CHT8305_INLET_ADDR 0x40
-#define CHT8305_OUTLET_ADDR 0x40
-#define RTC_DS1307_ADDR 0x68
+#define LED_EXPANDER_ADDRESS 0x20  // MCP23017 (on I2C Bus 1)
+#define RTC_DS1307_ADDR      0x68  // DS1307 (on I2C Bus 1)
+
+// ========== MCP23017 PIN MAPPING ==========
+
+// Port A – Indicator LEDs (GPA bit index 0-7)
+#define LED_PIN_ECO_MODE         0  // GPA0 - voyant ECO
+#define LED_PIN_PHASE_INIT       1  // GPA1 - voyant phase initialisation
+#define LED_PIN_PHASE_BRASSAGE   2  // GPA2 - voyant phase brassage
+#define LED_PIN_PHASE_EXTRACTION 3  // GPA3 - voyant phase extraction
+#define LED_PIN_ELECTRIC_HEATER  4  // GPA4 - voyant chauffage électrique
+#define LED_PIN_HYDRO_HEATER     5  // GPA5 - voyant chauffage hydraulique
+#define LED_PIN_FAN              6  // GPA6 - voyant ventilation
+#define LED_PIN_AIR_RENEWAL      7  // GPA7 - voyant renouvellement d'air
+
+// Port B – Digital outputs (Adafruit library: pin = 8 + GPB bit index)
+#define MCP_BTN_START_LED_PIN   8   // GPB0 - voyant bouton START
+#define MCP_BTN_STOP_LED_PIN    9   // GPB1 - voyant bouton STOP
+#define MCP_ELECTRIC_HEATER_PIN 10  // GPB2 - relais chauffage électrique
+#define MCP_FAN_PIN             11  // GPB3 - relais ventilation
+#define MCP_AIR_DAMPER_PIN      12  // GPB4 - registre d'air
+
+// ========== RS485 / MODBUS ==========
+#define MODBUS_BAUDRATE        9600
+#define MODBUS_INLET_ADDRESS   1
+#define MODBUS_OUTLET_ADDRESS  2
+
+// SHT30 RS485 sensor register map (function code FC03)
+#define MODBUS_REG_HUMIDITY    0x0000  // raw / MODBUS_RAW_SCALE = %RH
+#define MODBUS_REG_TEMPERATURE 0x0001  // raw / MODBUS_RAW_SCALE = C
+#define MODBUS_RAW_SCALE       10.0f   // sensor raw value divisor
 
 // ========== TIMING CONSTANTS ==========
-#define SENSOR_UPDATE_INTERVAL 2000   // ms
-#define DISPLAY_UPDATE_INTERVAL 100   // ms
-#define CONTROL_LOOP_INTERVAL 1000    // ms
-#define SETTINGS_SAVE_INTERVAL 300000 // ms (300 seconds = 5 minutes)
-#define DATA_LOG_INTERVAL 60000       // ms (60 seconds = 1 minute)
+#define SENSOR_UPDATE_INTERVAL  2000    // ms
+#define CONTROL_LOOP_INTERVAL   1000    // ms
+#define SETTINGS_SAVE_INTERVAL  300000  // ms (5 minutes)
+#define DATA_LOG_INTERVAL       60000   // ms (1 minute)
+#define INPUT_UPDATE_INTERVAL   50      // ms (button debounce)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 
-// Heating parameters
-#define DEFAULT_TEMPERATURE_TARGET 50.0 // °C (20-45)
-#define DEFAULT_HYDRAULIC_ENABLED true  // Enable hydraulic heater
-#define DEFAULT_ELECTRIC_ENABLED true   // Enable electric heater
+// Temperature target (potentiometer overrides at runtime)
+#define DEFAULT_TEMPERATURE_TARGET 40.0f  // °C
+
+// Potentiometer ADC mapping ranges
+#define POT_TEMP_MIN   20.0f  // °C - potentiometer minimum
+#define POT_TEMP_MAX   45.0f  // °C - potentiometer maximum
+#define POT_HUM_MIN     0.0f  // %RH - potentiometer minimum
+#define POT_HUM_MAX   100.0f  // %RH - potentiometer maximum
+
+// Voltmeter display ranges
+#define VOLTMETER_TEMP_MAX          50.0f   // °C
+#define VOLTMETER_HUM_MAX          100.0f   // %RH
+#define VOLTMETER_TOTAL_DUR_H       48.0f   // hours
+#define VOLTMETER_PHASE_DUR_MIN     60.0f   // minutes
+
+// Heater enable defaults
+#define DEFAULT_HYDRAULIC_ENABLED true
+#define DEFAULT_ELECTRIC_ENABLED  true
 
 // ===== PID Hydraulic Heater Parameters =====
 // The hydraulic heater uses proportional control (0-100% power)
 // It has high thermal inertia (slow response)
 
-// Kp: Proportional gain - Immediate response to temperature error
-//     Higher Kp = stronger immediate reaction
-//     - INCREASE if: system is too slow to reach target, undershoots
-//     - DECREASE if: system oscillates, overshoots target
-//     Range: 0.1-20, Default: 5.0 (moderate response)
+// Kp: Proportional gain - higher = stronger immediate reaction
 #define DEFAULT_HYDRAULIC_KP 5.0
 
-// Ki: Integral gain - Eliminates steady-state error over time
-//     Accumulates error and provides correction
-//     - INCREASE if: system never reaches exact target (offset remains)
-//     - DECREASE if: system is sluggish, overshoots after long time
-//     Range: 0.0-2, Default: 0.1 (slow integral action)
+// Ki: Integral gain - eliminates steady-state offset
 #define DEFAULT_HYDRAULIC_KI 0.1
 
-// Kd: Derivative gain - Anticipates future error based on rate of change
-//     Dampens oscillations and improves stability
-//     - INCREASE if: system oscillates, overshoots frequently
-//     - DECREASE if: system is too cautious, reacts to noise
-//     Range: 0.0-5, Default: 2.0 (strong damping for high inertia)
+// Kd: Derivative gain - damps oscillations
 #define DEFAULT_HYDRAULIC_KD 2.0
 
 // ===== PID Electric Heater Parameters =====
-// The electric heater uses binary control (ON/OFF with 0.5 threshold)
-// It is undersized and has slow response
+// The electric heater uses binary control (ON/OFF, threshold 0.5)
 
-// Kp: Proportional gain - Immediate response to temperature error
-//     Higher value needed for binary control to trigger quickly
-//     - INCREASE if: electric heater rarely turns on, too conservative
-//     - DECREASE if: electric heater switches too frequently
-//     Range: 0.1-20, Default: 10.0 (strong response for binary control)
+// Kp: High value needed to trigger binary control quickly
 #define DEFAULT_ELECTRIC_KP 10.0
 
-// Ki: Integral gain - Accumulates error for persistent heating needs
-//     Important for maintaining heat when hydraulic is insufficient
-//     - INCREASE if: temperature drops slowly over time
-//     - DECREASE if: system becomes unstable after long periods
-//     Range: 0.0-2, Default: 0.2 (moderate integral for backup heating)
+// Ki: Accumulates error for persistent heating needs
 #define DEFAULT_ELECTRIC_KI 0.2
 
-// Kd: Derivative gain - Reduces overshoot from binary switching
-//     Helps prevent excessive heating when temperature rises quickly
-//     - INCREASE if: electric causes temperature spikes
-//     - DECREASE if: electric turns off too early
-//     Range: 0.0-5, Default: 1.0 (moderate damping)
+// Kd: Reduces overshoot from binary switching
 #define DEFAULT_ELECTRIC_KD 1.0
 
 // ===== PID Advanced Parameters =====
-// These parameters affect both PIDs and should rarely need adjustment
-
-// Integral max: Anti-windup limit - Prevents integral from growing unbounded
-//     Limits the accumulated error to prevent overshoot when constraint is removed
-//     - INCREASE if: system is slow to respond after constraint removal
-//     - DECREASE if: system overshoots significantly after constraint removal
-//     Range: 10-100, Default: 50.0
-//     Note: Only adjust if you observe windup issues (large overshoots after
-//           hydraulic heater is blocked by water temperature constraint)
+// Anti-windup integral clamp
 #define DEFAULT_PID_INTEGRAL_MAX 50.0
 
-// Derivative filter: Low-pass filter coefficient for derivative term
-//     Reduces noise sensitivity in derivative calculation
-//     0.0 = heavy filtering (smooth but slow), 1.0 = no filtering (fast but noisy)
-//     - INCREASE if: control output is jittery/unstable
-//     - DECREASE if: derivative term is too slow to react
-//     Range: 0.01-0.5, Default: 0.1 (heavy filtering for noisy sensor)
-//     Note: Only adjust if temperature sensor is very noisy or very stable
+// Derivative low-pass filter (0.0 = heavy filtering, 1.0 = none)
 #define DEFAULT_PID_DERIVATIVE_FILTER 0.1
 
-// Water temperature constraint for hydraulic heater
-#define DEFAULT_WATER_TEMP_MARGIN 2.0 // °C - Minimum margin between water temp and air setpoint
-
 // ===== ECO Mode Parameters =====
-// ECO mode = Night mode for energy conservation
-// During night hours (20h-10h by default), reduce target temperature to save energy
-// and extend operation time with hydraulic heating only
-
-// Night mode start hour (0-23)
-//     Hour when reduced target mode begins
-//     Range: 0-23, Default: 20 (8:00 PM)
-#define DEFAULT_ECO_NIGHT_START_HOUR 20
-
-// Night mode end hour (0-23)
-//     Hour when reduced target mode ends and returns to normal target
-//     Range: 0-23, Default: 10 (10:00 AM)
-#define DEFAULT_ECO_NIGHT_END_HOUR 10
-
-// Reduced target percentage during night mode
-//     Percentage of normal target to use during night hours
-//     Range: 50-95%, Default: 85%
+// ECO mode is selected via physical MODE_SELECTOR_PIN (no time-based scheduling)
+// In ECO mode: electric heater disabled, target reduced by this percentage
 #define DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE 85.0f
 
-// Phase parameters
-#define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (5-7200) = 1 hour
-#define DEFAULT_EXTRACTION_PHASE_DURATION 120  // seconds (5-7200) = 2 minutes
-#define DEFAULT_CIRCULATION_PHASE_DURATION 300 // seconds (5-3600) = 5 minutes
+// ===== Phase Parameters =====
+#define DEFAULT_INIT_PHASE_DURATION        3600   // seconds (1 hour max)
+#define DEFAULT_BRASSAGE_PHASE_DURATION     120   // seconds (2 minutes)
+#define DEFAULT_EXTRACTION_PHASE_DURATION   300   // seconds (5 minutes)
+#define DEFAULT_EXTRACTION_HUM_THRESHOLD   70.0f  // %RH - exit extraction when below
 
-// Session parameters
-#define DEFAULT_DRYING_SESSION_DURATION 172800 // seconds (3600-604800) = 48 hours
-
-// Air recycling
-#define DEFAULT_RECYCLING_RATE 50.0 // % (0-100)
+// Session duration limit
+#define DEFAULT_DRYING_SESSION_DURATION 172800  // seconds (48 hours)
 
 #endif // CONFIG_H

@@ -3,102 +3,48 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "AirRecyclingManager.h"
+#include "AirDamper.h"
 
-/**
- * Humidity control parameters
- */
-struct HumidityParams {
-  float humidity_deadband;           // Deadband for humidity control (default: 5%)
-  float recycling_step_min;          // Minimum step for recycling rate adjustment
-  float recycling_step_max;          // Maximum step for recycling rate adjustment
-  float action_min_wait_s;           // Minimum time between actions
+// Controls the binary air damper to manage inlet humidity.
+//
+// Behaviour:
+//   target = 0   -> damper closed (no humidity control / recirculation)
+//   target > 0   -> open damper when humidity > target, close when humidity <= target
+//
+// A cooldown of 10 s is enforced between state changes to avoid hunting.
+class HumidityManager
+{
+public:
+  explicit HumidityManager(AirDamper *air_damper);
 
-  HumidityParams()
-    : humidity_deadband(5.0f),
-      recycling_step_min(5.0f),
-      recycling_step_max(20.0f),
-      action_min_wait_s(10.0f) {}
-};
-
-/**
- * Manages humidity control via air recycling
- *
- * Controls the air recycling rate to achieve target inlet humidity:
- * - humidity_target = -1: Minimize humidity (recycling = 0%, max fresh air)
- * - humidity_target = 0: No humidity control (recycling = 100%, full recirculation)
- * - humidity_target > 0: Target specific inlet humidity level
- */
-class HumidityManager {
- public:
-  /**
-   * Constructor
-   * @param air_recycling_manager Pointer to AirRecyclingManager instance
-   */
-  HumidityManager(AirRecyclingManager* air_recycling_manager);
-
-  /**
-   * Initialize the humidity manager
-   */
   void Begin();
 
-  /**
-   * Update humidity control based on current readings
-   * @param inlet_humidity Current inlet humidity (%)
-   * @param outlet_humidity Current outlet humidity (%)
-   */
+  // Call each control cycle with fresh sensor readings.
   void Update(float inlet_humidity, float outlet_humidity);
 
-  /**
-   * Set the target humidity
-   * @param target -1 = minimize humidity, 0 = no control, >0 = target %
-   */
-  void SetTargetHumidity(float target);
+  // Set humidity threshold (%RH).  0 = no control (damper closed).
+  void  SetTargetHumidity(float target);
+  float GetTargetHumidity()   const { return target_humidity_; }
+  float GetCurrentHumidity()  const { return current_inlet_humidity_; }
 
-  /**
-   * Get the current target humidity
-   * @return Current target humidity setting
-   */
-  float GetTargetHumidity() const { return target_humidity_; }
-
-  /**
-   * Check if current humidity has reached the target
-   * @return true if target reached (or no target set)
-   */
+  // Returns true when the damper is in the correct state for the current target.
   bool IsHumidityTargetReached() const;
 
-  /**
-   * Get current inlet humidity (last reading)
-   * @return Current inlet humidity
-   */
-  float GetCurrentHumidity() const { return current_inlet_humidity_; }
-
-  // Parameters
-  HumidityParams& GetParams() { return params_; }
-  const HumidityParams& GetParams() const { return params_; }
-
-  // Reset action cooldown
+  // Reset the cooldown timer (call when entering a new phase).
   void ResetCooldown();
 
- private:
-  AirRecyclingManager* air_recycling_manager_;
-  HumidityParams params_;
+private:
+  AirDamper *air_damper_;
 
-  float target_humidity_;           // -1 = min, 0 = off, >0 = target
-  float current_inlet_humidity_;
-  float current_outlet_humidity_;
-  unsigned long action_next_allowed_ms_;
+  float    target_humidity_;
+  float    current_inlet_humidity_;
+  uint32_t action_next_allowed_ms_;
 
-  // Check if action is allowed (cooldown)
+  static constexpr float    kDeadband   = 5.0f;   // %RH hysteresis
+  static constexpr uint32_t kCooldownMs = 10000;  // 10 s between actions
+
   bool IsActionAllowed() const;
-  void ArmActionCooldown();
-
-  // Recycling rate adjustments (return true if value changed)
-  bool IncreaseRecycling();
-  bool DecreaseRecycling();
-
-  // Calculate adaptive step based on error
-  float CalculateStep() const;
+  void ArmCooldown();
 };
 
-#endif  // HUMIDITY_MANAGER_H
+#endif // HUMIDITY_MANAGER_H
