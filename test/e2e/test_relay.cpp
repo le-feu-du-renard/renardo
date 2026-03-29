@@ -8,9 +8,7 @@ const unsigned long TOGGLE_INTERVAL = 2000; // 2 seconds
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) {
-    delay(10);
-  }
+  delay(2000);
 
   Serial.println("\n=== Electric Heater Relay Test ===");
   Serial.println("Testing relay on pin " + String(ELECTRIC_HEATER_RELAY_PIN));

@@ -10,11 +10,10 @@ float current_power = 0.0f;
 unsigned long last_update = 0;
 const unsigned long UPDATE_INTERVAL = 1000; // 1 second
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
-  while (!Serial) {
-    delay(10);
-  }
+  delay(2000);
 
   Serial.println("\n=== Hydraulic Heater Test ===");
   Serial.println("Testing power range from 0% to 100% with 10% steps");
@@ -35,10 +34,12 @@ void setup() {
   Serial.println("-------|------------|--------------|----------");
 }
 
-void loop() {
+void loop()
+{
   unsigned long now = millis();
 
-  if (now - last_update >= UPDATE_INTERVAL) {
+  if (now - last_update >= UPDATE_INTERVAL)
+  {
     last_update = now;
 
     // Set new power level
@@ -69,7 +70,8 @@ void loop() {
     current_power += 10.0f;
 
     // Reset to 0% when reaching 110% (after 100% is displayed)
-    if (current_power > 100.0f) {
+    if (current_power > 100.0f)
+    {
       current_power = 0.0f;
       Serial.println("-------|------------|--------------|----------");
       Serial.println("Cycle complete - resetting to 0%\n");
