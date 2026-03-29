@@ -1,102 +1,85 @@
 # Roadmap
 
-This document outlines planned improvements, features, and bug fixes for the renard'o dehydrator controller.
+Planned improvements for the renard'o dryer controller.
 
-## Current Issues
+---
 
-### High Priority
+## In Progress
 
-- [ ] Review manual program shortcut on display
-- [ ] Implement proper shutdown procedure - ensure electric heating element cools down before power off
-- [ ] Fix state management and EEPROM persistence
-- [ ] Migrate loggers + document how to launch with different debug levels
+- [ ] Hardware validation — first full power-on test with all peripherals
 
-## User Interface Improvements
+---
 
-### Display
+## Short Term
 
-- [ ] Replace current font with more legible alternative
-- [ ] Add proper degree symbol (°) character
-- [ ] Improve menu system:
-  - Add units to parameter displays
-  - Convert certain parameters to hour-based format
-- [ ] Add splash screen on startup
-- [ ] Add startup UI status indicators (SD card, RTC, sensors) for visual system health check
-- [ ] Display max temperature and max humidity based on active program and overrides
-- [ ] Add IN/OUT icons to differentiate sensor values (intake vs. outlet)
+### Sensors & Control
 
-### System Display
+- [ ] Validate SHT30 Modbus readings against reference thermometer/hygrometer
+- [ ] Fine-tune PID gains (Kp/Ki/Kd) based on real thermal behaviour of the chamber
+- [ ] Validate ECO mode temperature reduction in practice
+- [ ] Validate Belimo damper binary control (0 V / 10 V switching)
 
-- [ ] Show current operating mode on screen (Eco/Hybrid/Performance)
-- [ ] Allow mode switching through configuration menu
+### Data Logging
 
-## Core Features
+- [ ] Validate CSV output format and SD card directory structure on real hardware
+- [ ] Test SD card hot-plug recovery (RetryInitialization path)
 
-### Heating Management
+### Panel Interface
 
-- [ ] Add air renewal control in heater manager when temperature exceeds thresholds
-- [ ] Make cycle duration configurable via parameters
-- [ ] Implement three operating modes:
-  - **Eco Mode** - Hydraulic heating only; reduces targets if insufficient energy to preserve hydraulic system
-  - **Hybrid Mode** - Uses solar/hydraulic first, then electric with reduced targets
-  - **Performance Mode** - Maintains target setpoints regardless of energy source
+- [ ] Validate voltmeter calibration (duty cycle → voltage at 3.3 V rail)
+- [ ] Validate potentiometer ADC mapping (12-bit range → °C / %RH)
+- [ ] Validate all 8 indicator LEDs and button backlights (24 V / BC337 circuit)
 
-### Hardware Control
+---
 
-- [ ] Add circulator pump configuration options:
-  - Minimum/maximum speed
-  - Cycle frequency
-  - PWM parameters
-- [ ] Enable configurable heating strategy:
-  - Support multiple heater configurations
-  - Consider impact on display representation
-- [ ] Add relay control for optional dehumidifier module
+## Medium Term
 
-## Configuration & Settings
+### Reliability
 
-- [ ] Add system menu for RTC time/date adjustment
-- [ ] Implement dual-core support for:
-  - SD card logging on second core
-  - EEPROM save operations
-  - Message queue system for inter-core communication
+- [ ] Add sensor failure detection: if a Modbus read fails for N consecutive cycles, flag it in the logs and stop the heaters
+- [ ] Add thermal runaway protection: if temperature exceeds target + safety margin, cut all heaters regardless of PID output
+- [ ] Evaluate adding a fuse on the 24 V rail for LED/button protection
 
-## Future Features
+### Logging & Analysis
 
-### Connectivity
+- [ ] Add a post-session summary line at the end of each CSV file (total duration, average temperature, average humidity)
+- [ ] Build a simple Python script to plot CSV session data
 
-- [ ] WiFi access point mode for data retrieval
-- [ ] Historical data mode - browse and download past drying sessions
+### Configuration
 
-### Advanced Features
+- [ ] Consider exposing phase durations as potentiometer-adjustable at startup (hold START during boot)
 
-- [ ] Multi-chamber support with independent control
-- [ ] Recipe library and sharing
-- [ ] Automatic program recommendations based on food type
+---
 
-## Documentation
+## Future
 
-- [ ] Create comprehensive user documentation
-- [ ] Add Bill of Materials (BOM) with part numbers and sources
-- [ ] Create wiring schematics and diagrams
-- [ ] Add assembly instructions with photos
+### Connectivity (WiFi — Pico W)
 
-## Testing & Quality
+- [ ] WiFi access point mode for log file retrieval without SD card removal
+- [ ] Simple web interface showing live sensor data and current phase
+- [ ] OTA firmware update
 
-### Code Quality
+### Hardware Evolution
 
-- [ ] Establish and enforce coding style guidelines
-- [ ] Increase test coverage (target: >80% for critical components)
-- [ ] Add integration test scenarios:
-  - Complete drying cycle simulation
-  - Error condition handling
-  - Mode switching behavior
-  - Sensor failure scenarios
+- [ ] Evaluate adding a second fan for forced air circulation (independent of extraction fan)
+- [ ] Evaluate adding a dehumidifier module on a spare relay
 
-### Hardware Testing
+---
 
-- [ ] Create device test suite to validate all functionalities:
-  - All sensors reading correctly
-  - All actuators responding
-  - Display rendering properly
-  - RTC keeping accurate time
-  - SD card writing successfully
+## Completed
+
+- [x] Migrate all sensors to Modbus RS485 (SHT30) — removed DHT22 / DS18B20
+- [x] Replace OLED + menu system with physical panel interface
+- [x] Replace proportional air damper (DAC 0-10V) with binary damper (BC337 transistor)
+- [x] Add MCP23017 I2C expander for 8× 24 V indicator LEDs
+- [x] Add 4× panel voltmeters (PWM + RC, 0-3 V)
+- [x] Add START/STOP buttons with 24 V integrated LED
+- [x] Add temperature + humidity potentiometers (ADC)
+- [x] Add ECO/PERFORMANCE physical mode selector
+- [x] Simplify session to fixed 3-phase cycle (Init → Brassage → Extraction)
+- [x] Remove program/cycle/preset system
+- [x] EEPROM persistence for session state (PersistentStateManager)
+- [x] All configuration as compile-time constants in config.h
+- [x] Migrate all Serial.print to Logger (ArduinoLog wrapper)
+- [x] Establish coding guidelines (2-space indent, Allman braces, English comments)
+- [x] Hardware watchdog (8 s timeout)
