@@ -43,8 +43,10 @@ private:
   // Button debounce state
   bool     start_raw_prev_;
   bool     stop_raw_prev_;
-  bool     start_pending_;   // Unconsumed press event
+  bool     start_pending_;    // Unconsumed press event
   bool     stop_pending_;
+  bool     start_consumed_;   // True after event fired; cleared on button release
+  bool     stop_consumed_;
   uint32_t start_debounce_ms_;
   uint32_t stop_debounce_ms_;
 
