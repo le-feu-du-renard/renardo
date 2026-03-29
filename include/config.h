@@ -31,8 +31,8 @@
 // Channel assignment: change the pin to rewire a voltmeter to a different GPIO.
 #define VOLTMETER_CH1_TEMPERATURE_PIN 19    // CH1 - inlet temperature
 #define VOLTMETER_CH2_HUMIDITY_PIN 18       // CH2 - inlet humidity
-#define VOLTMETER_CH3_TOTAL_DURATION_PIN 20 // CH3 - total session duration
-#define VOLTMETER_CH4_PHASE_DURATION_PIN 21 // CH4 - current phase duration
+#define VOLTMETER_CH3_TOTAL_DURATION_PIN 21 // CH3 - total session duration
+#define VOLTMETER_CH4_PHASE_DURATION_PIN 20 // CH4 - current phase duration
 
 // Mode selector (LOW = ECO, HIGH = PERFORMANCE)
 #define MODE_SELECTOR_PIN 22
