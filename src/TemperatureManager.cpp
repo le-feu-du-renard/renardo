@@ -37,9 +37,9 @@ void TemperatureManager::Begin()
   last_update_ms_ = millis();
 
   Logger::Info("TemperatureManager: initialized");
-  Logger::Info("Hydraulic PID: Kp=%.2f Ki=%.2f Kd=%.2f",
+  Logger::Info("Hydraulic PID: Kp=%F Ki=%F Kd=%F",
                params_.hydraulic_kp, params_.hydraulic_ki, params_.hydraulic_kd);
-  Logger::Info("Electric PID: Kp=%.2f Ki=%.2f Kd=%.2f",
+  Logger::Info("Electric PID: Kp=%F Ki=%F Kd=%F",
                params_.electric_kp, params_.electric_ki, params_.electric_kd);
 }
 
@@ -53,7 +53,7 @@ void TemperatureManager::Update(float current_temperature)
 
   if (dt <= 0.0f || dt > 10.0f)
   {
-    Logger::Warning("TemperatureManager: invalid dt (%.3f s), skipping update", dt);
+    Logger::Warning("TemperatureManager: invalid dt (%F s), skipping update", dt);
     return;
   }
 
@@ -69,7 +69,7 @@ void TemperatureManager::UpdateHeating(float dt)
   {
     float output = hydraulic_pid_.Compute(effective_target, current_temperature_, dt);
     hydraulic_heater_->SetPower(static_cast<uint8_t>(output + 0.5f));
-    Logger::Debug("HydraulicPID: sp=%.1f T=%.1f out=%.1f%%",
+    Logger::Debug("HydraulicPID: sp=%F T=%F out=%F%%",
                   effective_target, current_temperature_, output);
   }
   else
@@ -85,7 +85,7 @@ void TemperatureManager::UpdateHeating(float dt)
     float output = electric_pid_.Compute(effective_target, current_temperature_, dt);
     float power  = (output > 0.5f) ? 1.0f : 0.0f;
     electric_heater_->SetPower(power);
-    Logger::Debug("ElectricPID: sp=%.1f T=%.1f out=%.2f (%s)",
+    Logger::Debug("ElectricPID: sp=%F T=%F out=%F (%s)",
                   effective_target, current_temperature_, output,
                   power > 0.5f ? "ON" : "OFF");
   }
@@ -101,7 +101,7 @@ void TemperatureManager::SetTargetTemperature(float temperature)
   temperature = constrain(temperature, 20.0f, 45.0f);
   if (fabs(temperature - params_.temperature_target) > 1.0f)
   {
-    Logger::Info("TemperatureManager: target %.1f C -> %.1f C, resetting PIDs",
+    Logger::Info("TemperatureManager: target %F C -> %F C, resetting PIDs",
                  params_.temperature_target, temperature);
     hydraulic_pid_.Reset();
     electric_pid_.Reset();

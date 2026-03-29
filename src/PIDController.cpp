@@ -42,7 +42,7 @@ PIDController::PIDController(float kp, float ki, float kd,
 float PIDController::Compute(float setpoint, float measured_value, float dt) {
   // Avoid division by zero
   if (dt <= 0.0f) {
-    Log.warning("PID: Invalid dt (%.3f), skipping computation", dt);
+    Log.warning("PID: Invalid dt (%F), skipping computation", dt);
     return last_output_;
   }
 
@@ -96,14 +96,14 @@ void PIDController::SetParameters(float kp, float ki, float kd) {
   ki_ = ki;
   kd_ = kd;
 
-  Log.notice("PID: Parameters updated - Kp=%.3f, Ki=%.3f, Kd=%.3f", kp_, ki_, kd_);
+  Log.notice("PID: Parameters updated - Kp=%F, Ki=%F, Kd=%F", kp_, ki_, kd_);
 }
 
 void PIDController::SetOutputLimits(float output_min, float output_max) {
   output_min_ = output_min;
   output_max_ = output_max;
 
-  Log.trace("PID: Output limits updated - min=%.1f, max=%.1f", output_min_, output_max_);
+  Log.trace("PID: Output limits updated - min=%F, max=%F", output_min_, output_max_);
 }
 
 void PIDController::SetIntegralLimit(float integral_max) {
@@ -112,14 +112,14 @@ void PIDController::SetIntegralLimit(float integral_max) {
   // Clamp current integral if it exceeds new limit
   integral_ = Clamp(integral_, -integral_max_, integral_max_);
 
-  Log.trace("PID: Integral limit updated - max=%.1f", integral_max_);
+  Log.trace("PID: Integral limit updated - max=%F", integral_max_);
 }
 
 void PIDController::SetDerivativeFilter(float filter_coef) {
   // Clamp filter coefficient to valid range
   derivative_filter_ = Clamp(filter_coef, 0.0f, 1.0f);
 
-  Log.trace("PID: Derivative filter updated - coef=%.3f", derivative_filter_);
+  Log.trace("PID: Derivative filter updated - coef=%F", derivative_filter_);
 }
 
 float PIDController::Clamp(float value, float min, float max) const {

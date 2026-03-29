@@ -122,12 +122,14 @@ static void UpdateSensors()
   {
     dryer.SetInletTemperature(inlet_temp);
     dryer.SetInletHumidity(inlet_hum);
-    Logger::Debug("Inlet: %.1f C %.1f%%RH", inlet_temp, inlet_hum);
+    Logger::Debug("Inlet: %F C %F%%RH", inlet_temp, inlet_hum);
   }
   else
   {
     Logger::Warning("Inlet sensor read failed (errors=%d)", modbus_sensors.GetErrorCount());
   }
+
+  delay(50);  // Allow RS485 bus to settle between back-to-back requests
 
   float outlet_temp = dryer.GetOutletTemperature();
   float outlet_hum  = dryer.GetOutletHumidity();
@@ -136,7 +138,7 @@ static void UpdateSensors()
   {
     dryer.SetOutletTemperature(outlet_temp);
     dryer.SetOutletHumidity(outlet_hum);
-    Logger::Debug("Outlet: %.1f C %.1f%%RH", outlet_temp, outlet_hum);
+    Logger::Debug("Outlet: %F C %F%%RH", outlet_temp, outlet_hum);
   }
   else
   {
@@ -214,7 +216,7 @@ static void UpdateOutputs()
   {
     analogWrite(WATER_CIRCULATOR_PWM_PIN, pwm_val);
     last_pwm = pwm_val;
-    Logger::Debug("Circulator PWM: %d/255 (%.0f%%)",
+    Logger::Debug("Circulator PWM: %d/255 (%F%%)",
                   pwm_val, dryer.GetCirculatorOutput() * 100.0f);
   }
 

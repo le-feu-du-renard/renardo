@@ -36,7 +36,7 @@ void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
     {
       air_damper_->Open();
       ArmCooldown();
-      Logger::Info("HumidityManager: damper opened (humidity=%.1f%% > threshold=%.1f%%)",
+      Logger::Info("HumidityManager: damper opened (humidity=%F%% > threshold=%F%%)",
                    inlet_humidity, target_humidity_);
     }
   }
@@ -47,7 +47,7 @@ void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
     {
       air_damper_->Close();
       ArmCooldown();
-      Logger::Info("HumidityManager: damper closed (humidity=%.1f%% <= target=%.1f%%)",
+      Logger::Info("HumidityManager: damper closed (humidity=%F%% <= target=%F%%)",
                    inlet_humidity, target_humidity_);
     }
   }
@@ -57,7 +57,7 @@ void HumidityManager::SetTargetHumidity(float target)
 {
   target = constrain(target, 0.0f, 100.0f);
   target_humidity_ = target;
-  Logger::Info("HumidityManager: target set to %.1f%%", target);
+  Logger::Info("HumidityManager: target set to %F%%", target);
 }
 
 bool HumidityManager::IsHumidityTargetReached() const
