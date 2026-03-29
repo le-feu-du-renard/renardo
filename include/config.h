@@ -92,10 +92,9 @@
 #define POT_HUM_MAX 100.0f // %RH - potentiometer maximum
 
 // Voltmeter display ranges
-#define VOLTMETER_TEMP_MAX 50.0f      // °C
-#define VOLTMETER_HUM_MAX 100.0f      // %RH
-#define VOLTMETER_TOTAL_DUR_H 48.0f   // hours
-#define VOLTMETER_PHASE_DUR_MIN 60.0f // minutes
+#define VOLTMETER_TEMPERATURE_MAX 50.0f  // °C
+#define VOLTMETER_HUMIDITY_MAX 100.0f    // %RH
+#define VOLTMETER_TOTAL_DURATION_H 48.0f // hours
 
 // Heater enable defaults
 #define HYDRAULIC_ENABLED true
@@ -143,7 +142,7 @@
 
 // ===== Phase Parameters =====
 #define INIT_PHASE_DURATION 3600      // seconds (1 hour max)
-#define BRASSAGE_PHASE_DURATION 900   // seconds (15 minutes)
+#define BRASSAGE_PHASE_DURATION 300   // seconds (5 minutes)
 #define EXTRACTION_PHASE_DURATION 300 // seconds (5 minutes)
 
 // ===== Extraction Parameters =====

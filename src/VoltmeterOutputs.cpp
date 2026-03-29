@@ -31,24 +31,26 @@ void VoltmeterOutputs::Begin()
 
 void VoltmeterOutputs::SetTemperature(float celsius)
 {
-  WriteDuty(VOLTMETER_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMP_MAX));
+  WriteDuty(VOLTMETER_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMPERATURE_MAX));
 }
 
 void VoltmeterOutputs::SetHumidity(float percent)
 {
-  WriteDuty(VOLTMETER_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUM_MAX));
+  WriteDuty(VOLTMETER_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUMIDITY_MAX));
 }
 
 void VoltmeterOutputs::SetTotalDuration(float seconds)
 {
   float hours = seconds / 3600.0f;
-  WriteDuty(VOLTMETER_TOTAL_DURATION_PIN, ValueToDuty(hours, VOLTMETER_TOTAL_DUR_H));
+  WriteDuty(VOLTMETER_TOTAL_DURATION_PIN, ValueToDuty(hours, VOLTMETER_TOTAL_DURATION_H));
 }
 
-void VoltmeterOutputs::SetPhaseDuration(float seconds)
+void VoltmeterOutputs::SetPhaseDuration(float elapsed_seconds, float total_seconds)
 {
-  float minutes = seconds / 60.0f;
-  WriteDuty(VOLTMETER_PHASE_DURATION_PIN, ValueToDuty(minutes, VOLTMETER_PHASE_DUR_MIN));
+  float ratio = (total_seconds > 0.0f)
+      ? constrain(elapsed_seconds / total_seconds, 0.0f, 1.0f)
+      : 0.0f;
+  WriteDuty(VOLTMETER_PHASE_DURATION_PIN, ratio * kDutyMax);
 }
 
 void VoltmeterOutputs::WriteDuty(uint8_t pin, float duty)

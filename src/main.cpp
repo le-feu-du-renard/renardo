@@ -143,10 +143,10 @@ static void StartupSelfTest()
   mcp_outputs.SetOutput(MCP_BTN_STOP_LED, true);
 
   // All voltmeters at full scale
-  voltmeters.SetTemperature(VOLTMETER_TEMP_MAX);
-  voltmeters.SetHumidity(VOLTMETER_HUM_MAX);
-  voltmeters.SetTotalDuration(VOLTMETER_TOTAL_DUR_H * 3600.0f);
-  voltmeters.SetPhaseDuration(VOLTMETER_PHASE_DUR_MIN * 60.0f);
+  voltmeters.SetTemperature(VOLTMETER_TEMPERATURE_MAX);
+  voltmeters.SetHumidity(VOLTMETER_HUMIDITY_MAX);
+  voltmeters.SetTotalDuration(VOLTMETER_TOTAL_DURATION_H * 3600.0f);
+  voltmeters.SetPhaseDuration(1.0f, 1.0f); // full scale
 
   delay(2000);
 
@@ -157,7 +157,7 @@ static void StartupSelfTest()
   voltmeters.SetTemperature(0.0f);
   voltmeters.SetHumidity(0.0f);
   voltmeters.SetTotalDuration(0.0f);
-  voltmeters.SetPhaseDuration(0.0f);
+  voltmeters.SetPhaseDuration(0.0f, 1.0f);
 }
 
 static void SetupSessionMonitor()
@@ -319,12 +319,22 @@ static void UpdateVoltmeters()
   if (dryer.IsRunning())
   {
     voltmeters.SetTotalDuration(static_cast<float>(dryer.GetTotalElapsedTime()));
-    voltmeters.SetPhaseDuration(static_cast<float>(dryer.GetPhaseElapsedTime()));
+
+    uint32_t phase_max;
+    switch (dryer.GetCurrentPhase())
+    {
+      case DryerPhase::kInit:       phase_max = INIT_PHASE_DURATION;       break;
+      case DryerPhase::kBrassage:   phase_max = BRASSAGE_PHASE_DURATION;   break;
+      case DryerPhase::kExtraction: phase_max = EXTRACTION_PHASE_DURATION; break;
+      default:                      phase_max = 1;                         break;
+    }
+    voltmeters.SetPhaseDuration(static_cast<float>(dryer.GetPhaseElapsedTime()),
+                                static_cast<float>(phase_max));
   }
   else
   {
     voltmeters.SetTotalDuration(0.0f);
-    voltmeters.SetPhaseDuration(0.0f);
+    voltmeters.SetPhaseDuration(0.0f, 1.0f);
   }
 }
 
