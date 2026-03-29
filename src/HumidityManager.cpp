@@ -56,8 +56,9 @@ void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
 void HumidityManager::SetTargetHumidity(float target)
 {
   target = constrain(target, 0.0f, 100.0f);
+  if (fabsf(target - target_humidity_) < 1.0f) return;
+  Logger::Debug("HumidityManager: target %F%% -> %F%%", target_humidity_, target);
   target_humidity_ = target;
-  Logger::Info("HumidityManager: target set to %F%%", target);
 }
 
 bool HumidityManager::IsHumidityTargetReached() const

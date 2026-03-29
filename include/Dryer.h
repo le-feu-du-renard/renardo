@@ -46,6 +46,7 @@ public:
   // Target setpoints (from potentiometers, updated each loop)
   void  SetTargetTemperature(float temperature);
   float GetTargetTemperature() const;
+  void  SetTargetHumidity(float humidity);
 
   // Operating mode (from physical mode selector, updated each loop)
   void SetOperatingMode(OperatingMode mode);

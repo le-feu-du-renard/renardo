@@ -99,12 +99,19 @@ void TemperatureManager::UpdateHeating(float dt)
 void TemperatureManager::SetTargetTemperature(float temperature)
 {
   temperature = constrain(temperature, 20.0f, 45.0f);
+  if (fabsf(temperature - params_.temperature_target) < 1.0f) return;
+
   if (fabs(temperature - params_.temperature_target) > 1.0f)
   {
     Logger::Info("TemperatureManager: target %F C -> %F C, resetting PIDs",
                  params_.temperature_target, temperature);
     hydraulic_pid_.Reset();
     electric_pid_.Reset();
+  }
+  else
+  {
+    Logger::Debug("TemperatureManager: target %F C -> %F C",
+                  params_.temperature_target, temperature);
   }
   params_.temperature_target = temperature;
 }

@@ -206,6 +206,7 @@ static void UpdateInputs()
 
   // Push potentiometer readings to dryer
   dryer.SetTargetTemperature(input_handler.GetTargetTemperature());
+  dryer.SetTargetHumidity(input_handler.GetTargetHumidity());
 
   // Push mode selector to dryer
   OperatingMode mode = input_handler.IsEcoMode()

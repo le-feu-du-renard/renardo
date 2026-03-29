@@ -93,6 +93,11 @@ void Dryer::SetTargetTemperature(float temperature)
   temperature_manager_.SetTargetTemperature(temperature);
 }
 
+void Dryer::SetTargetHumidity(float humidity)
+{
+  humidity_manager_.SetTargetHumidity(humidity);
+}
+
 float Dryer::GetTargetTemperature() const
 {
   return temperature_manager_.GetTargetTemperature();

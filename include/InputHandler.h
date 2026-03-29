@@ -54,6 +54,9 @@ private:
 
   IndicatorLEDs *leds_;
 
+  // Average 8 ADC samples and map to [min, max]
+  static float ReadPot(uint8_t pin, float min_val, float max_val);
+
   // Map raw 12-bit ADC value to [min, max]
   static float MapAdc(uint16_t raw, float min_val, float max_val);
 };
