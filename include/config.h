@@ -48,14 +48,14 @@
 // ========== MCP23017 PIN MAPPING ==========
 
 // Port A – Indicator LEDs (GPA bit index 0-7)
-#define LED_PIN_ECO_MODE 0         // GPA0 - ECO mode indicator LED
-#define LED_PIN_PHASE_INIT 1       // GPA1 - init phase indicator LED
-#define LED_PIN_PHASE_BRASSAGE 2   // GPA2 - mixing phase indicator LED
-#define LED_PIN_PHASE_EXTRACTION 3 // GPA3 - extraction phase indicator LED
-#define LED_PIN_ELECTRIC_HEATER 7  // GPA7 - electric heater indicator LED
-#define LED_PIN_HYDRO_HEATER 6     // GPA6 - hydraulic heater indicator LED
-#define LED_PIN_FAN 5              // GPA5 - fan indicator LED
-#define LED_PIN_AIR_RENEWAL 4      // GPA4 - air renewal indicator LED
+#define LED_PIN_ECO_MODE 7         // GPA7 - ECO mode indicator LED
+#define LED_PIN_PHASE_INIT 6       // GPA6 - init phase indicator LED
+#define LED_PIN_PHASE_BRASSAGE 5   // GPA5 - mixing phase indicator LED
+#define LED_PIN_PHASE_EXTRACTION 4 // GPA4 - extraction phase indicator LED
+#define LED_PIN_ELECTRIC_HEATER 0  // GPA0 - electric heater indicator LED
+#define LED_PIN_HYDRO_HEATER 1     // GPA1 - hydraulic heater indicator LED
+#define LED_PIN_FAN 2              // GPA2 - fan indicator LED
+#define LED_PIN_AIR_RENEWAL 3      // GPA3 - air renewal indicator LED
 
 // Port B – Digital outputs (Adafruit library: pin = 8 + GPB bit index)
 #define MCP_BTN_START_LED_PIN 15  // GPB7 - START button indicator LED
