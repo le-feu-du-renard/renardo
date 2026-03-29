@@ -306,6 +306,8 @@ static void UpdateLEDs()
     mask |= (1 << (uint8_t)LedId::kHydroHeater);
   if (running && dryer.GetFanOutput() > 0.0f)
     mask |= (1 << (uint8_t)LedId::kFan);
+  if (running && dryer.GetDamperOutput())
+    mask |= (1 << (uint8_t)LedId::kAirRenewal);
 
   mcp_outputs.UpdateAll(mask);
 }
