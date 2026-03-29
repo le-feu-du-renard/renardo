@@ -305,8 +305,16 @@ static void UpdateVoltmeters()
 {
   voltmeters.SetTemperature(dryer.GetInletTemperature());
   voltmeters.SetHumidity(dryer.GetInletHumidity());
-  voltmeters.SetTotalDuration(static_cast<float>(dryer.GetTotalElapsedTime()));
-  voltmeters.SetPhaseDuration(static_cast<float>(dryer.GetPhaseElapsedTime()));
+  if (dryer.IsRunning())
+  {
+    voltmeters.SetTotalDuration(static_cast<float>(dryer.GetTotalElapsedTime()));
+    voltmeters.SetPhaseDuration(static_cast<float>(dryer.GetPhaseElapsedTime()));
+  }
+  else
+  {
+    voltmeters.SetTotalDuration(0.0f);
+    voltmeters.SetPhaseDuration(0.0f);
+  }
 }
 
 // ========== SESSION MONITOR UPDATE ==========
