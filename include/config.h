@@ -27,12 +27,11 @@
 #define BTN_START_PIN 16
 #define BTN_STOP_PIN 17
 
-// Voltmeter outputs (PWM, 0-3V via RC filter)
-// Channel assignment: change the pin to rewire a voltmeter to a different GPIO.
-#define VOLTMETER_CH1_TEMPERATURE_PIN 19    // CH1 - inlet temperature
-#define VOLTMETER_CH2_HUMIDITY_PIN 18       // CH2 - inlet humidity
-#define VOLTMETER_CH3_TOTAL_DURATION_PIN 21 // CH3 - total session duration
-#define VOLTMETER_CH4_PHASE_DURATION_PIN 20 // CH4 - current phase duration
+// Voltmeter outputs (PWM, 0-3V)
+#define VOLTMETER_HUMIDITY_PIN 18       //  inlet humidity
+#define VOLTMETER_TEMPERATURE_PIN 19    // inlet temperature
+#define VOLTMETER_PHASE_DURATION_PIN 20 // current phase duration
+#define VOLTMETER_TOTAL_DURATION_PIN 21 // total session duration
 
 // Mode selector (LOW = ECO, HIGH = PERFORMANCE)
 #define MODE_SELECTOR_PIN 22
@@ -138,9 +137,9 @@
 // ECO mode is selected via physical MODE_SELECTOR_PIN.
 // Target reduction and ECO LED are active only during the night window [ECO_START_HOUR, ECO_END_HOUR).
 // Both heaters remain available in all modes.
-#define ECO_START_HOUR 18                          // ECO window starts at 18:00
-#define ECO_END_HOUR   9                           // ECO window ends at 09:00
-#define ECO_NIGHT_TARGET_PERCENTAGE 85.0f  // % of target applied during ECO window
+#define ECO_START_HOUR 18                 // ECO window starts at 18:00
+#define ECO_END_HOUR 9                    // ECO window ends at 09:00
+#define ECO_NIGHT_TARGET_PERCENTAGE 85.0f // % of target applied during ECO window
 
 // ===== Phase Parameters =====
 #define INIT_PHASE_DURATION 3600       // seconds (1 hour max)

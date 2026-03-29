@@ -4,16 +4,15 @@
 #include <Arduino.h>
 #include "config.h"
 
-// Drives 4 analog panel voltmeters (0-3 V) via PWM + RC low-pass filters.
+// Drives 4 analog panel voltmeters (0-3 V) directly via PWM.
 //
-// Hardware: each GPIO drives an RC filter (10 kOhm / 100 uF 16V, fc ~0.16 Hz, tau ~1 s).
 // PWM frequency: ~50 kHz.  Duty cycle 0-91% maps to 0-3.0 V on a 3.3 V rail.
 //
 // Channel assignment and pin mapping defined in config.h:
-//   CH1 - VOLTMETER_CH1_TEMPERATURE_PIN    (0 V -> 0,  3 V -> VOLTMETER_TEMP_MAX C)
-//   CH2 - VOLTMETER_CH2_HUMIDITY_PIN       (0 V -> 0,  3 V -> VOLTMETER_HUM_MAX %RH)
-//   CH3 - VOLTMETER_CH3_TOTAL_DURATION_PIN (0 V -> 0,  3 V -> VOLTMETER_TOTAL_DUR_H hours)
-//   CH4 - VOLTMETER_CH4_PHASE_DURATION_PIN (0 V -> 0,  3 V -> VOLTMETER_PHASE_DUR_MIN minutes)
+//   VOLTMETER_TEMPERATURE_PIN    (0 V -> 0,  3 V -> VOLTMETER_TEMP_MAX C)
+//   VOLTMETER_HUMIDITY_PIN       (0 V -> 0,  3 V -> VOLTMETER_HUM_MAX %RH)
+//   VOLTMETER_TOTAL_DURATION_PIN (0 V -> 0,  3 V -> VOLTMETER_TOTAL_DUR_H hours)
+//   VOLTMETER_PHASE_DURATION_PIN (0 V -> 0,  3 V -> VOLTMETER_PHASE_DUR_MIN minutes)
 
 class VoltmeterOutputs
 {

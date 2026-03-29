@@ -3,19 +3,19 @@
 #include "Logger.h"
 
 // PWM resolution: 12 bits (0-4095) for smooth analog output
-static constexpr uint8_t  kPwmBits   = 12;
-static constexpr uint16_t kPwmMax    = (1u << kPwmBits) - 1;  // 4095
-static constexpr uint32_t kPwmFreqHz = 50000;                   // 50 kHz
+static constexpr uint8_t kPwmBits = 12;
+static constexpr uint16_t kPwmMax = (1u << kPwmBits) - 1; // 4095
+static constexpr uint32_t kPwmFreqHz = 50000;             // 50 kHz
 
 VoltmeterOutputs::VoltmeterOutputs() {}
 
 void VoltmeterOutputs::Begin()
 {
   const uint8_t pins[] = {
-    VOLTMETER_CH1_TEMPERATURE_PIN,
-    VOLTMETER_CH2_HUMIDITY_PIN,
-    VOLTMETER_CH3_TOTAL_DURATION_PIN,
-    VOLTMETER_CH4_PHASE_DURATION_PIN,
+      VOLTMETER_TEMPERATURE_PIN,
+      VOLTMETER_HUMIDITY_PIN,
+      VOLTMETER_TOTAL_DURATION_PIN,
+      VOLTMETER_PHASE_DURATION_PIN,
   };
 
   for (uint8_t pin : pins)
@@ -31,24 +31,24 @@ void VoltmeterOutputs::Begin()
 
 void VoltmeterOutputs::SetTemperature(float celsius)
 {
-  WriteDuty(VOLTMETER_CH1_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMP_MAX));
+  WriteDuty(VOLTMETER_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMP_MAX));
 }
 
 void VoltmeterOutputs::SetHumidity(float percent)
 {
-  WriteDuty(VOLTMETER_CH2_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUM_MAX));
+  WriteDuty(VOLTMETER_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUM_MAX));
 }
 
 void VoltmeterOutputs::SetTotalDuration(float seconds)
 {
   float hours = seconds / 3600.0f;
-  WriteDuty(VOLTMETER_CH3_TOTAL_DURATION_PIN, ValueToDuty(hours, VOLTMETER_TOTAL_DUR_H));
+  WriteDuty(VOLTMETER_TOTAL_DURATION_PIN, ValueToDuty(hours, VOLTMETER_TOTAL_DUR_H));
 }
 
 void VoltmeterOutputs::SetPhaseDuration(float seconds)
 {
   float minutes = seconds / 60.0f;
-  WriteDuty(VOLTMETER_CH4_PHASE_DURATION_PIN, ValueToDuty(minutes, VOLTMETER_PHASE_DUR_MIN));
+  WriteDuty(VOLTMETER_PHASE_DURATION_PIN, ValueToDuty(minutes, VOLTMETER_PHASE_DUR_MIN));
 }
 
 void VoltmeterOutputs::WriteDuty(uint8_t pin, float duty)
@@ -59,7 +59,8 @@ void VoltmeterOutputs::WriteDuty(uint8_t pin, float duty)
 
 float VoltmeterOutputs::ValueToDuty(float value, float max_value)
 {
-  if (max_value <= 0.0f) return 0.0f;
+  if (max_value <= 0.0f)
+    return 0.0f;
   float ratio = constrain(value / max_value, 0.0f, 1.0f);
   return ratio * kDutyMax;
 }
