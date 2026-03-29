@@ -51,6 +51,7 @@ public:
   void Set(LedId id, bool state);
 
   // Write all 8 Port A LEDs at once from a bitmask (bit 0 = GPA0, ...).
+  // Uses a single atomic I2C transaction; skips write if state is unchanged.
   void UpdateAll(uint8_t bitmask);
 
   // Turn all LEDs off.
