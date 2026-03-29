@@ -44,6 +44,9 @@ public:
     uint32_t GetPhaseElapsedTime() const; // seconds
     uint32_t GetTotalElapsedTime() const; // seconds
 
+    // Target humidity from user potentiometer — used for humidity-based transitions
+    void SetTargetHumidity(float humidity) { user_target_humidity_ = humidity; }
+
     // State restoration after reboot (restores running session)
     void RestoreState(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s);
 
@@ -53,6 +56,9 @@ private:
 
     SessionState state_;
     DryerPhase current_phase_;
+
+    float    user_target_humidity_;   // set from potentiometer each loop
+    uint32_t init_extraction_end_ms_; // 0 = not extracting within init phase
 
     uint32_t phase_start_ms_;   // millis() at phase entry
     uint32_t session_start_ms_; // millis() at session start (adjusted on restore)

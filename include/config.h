@@ -142,11 +142,12 @@
 #define ECO_NIGHT_TARGET_PERCENTAGE 85.0f // % of target applied during ECO window
 
 // ===== Phase Parameters =====
-#define INIT_PHASE_DURATION 3600       // seconds (1 hour max)
-#define BRASSAGE_PHASE_DURATION 120    // seconds (2 minutes)
-#define EXTRACTION_PHASE_DURATION 300  // seconds (5 minutes)
-#define EXTRACTION_HUM_THRESHOLD 70.0f // %RH - exit extraction when below
+#define INIT_PHASE_DURATION 3600      // seconds (1 hour max)
+#define BRASSAGE_PHASE_DURATION 900   // seconds (15 minutes)
+#define EXTRACTION_PHASE_DURATION 300 // seconds (5 minutes)
 
+// ===== Extraction Parameters =====
+#define EXTRACTION_DAMPER_OPEN_DURATION 120 // seconds — damper open time for in-init extraction
 // Session duration limit
 #define DRYING_SESSION_DURATION 172800 // seconds (48 hours)
 

@@ -95,6 +95,7 @@ void Dryer::SetTargetTemperature(float temperature)
 void Dryer::SetTargetHumidity(float humidity)
 {
   humidity_manager_.SetTargetHumidity(humidity);
+  session_manager_.SetTargetHumidity(humidity);
 }
 
 float Dryer::GetTargetTemperature() const

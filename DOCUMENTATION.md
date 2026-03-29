@@ -13,7 +13,7 @@
 
 ## Drying Sequence
 
-The controller runs a fixed three-phase cycle. Durations and thresholds are defined in `config.h`.
+The controller runs a fixed three-phase cycle. Durations are defined in `config.h`. The humidity target is set by the user via the humidity potentiometer.
 
 ```
 Init ──► Brassage ──► Extraction ──► Brassage ──► Extraction ──► ...
@@ -25,18 +25,19 @@ Init ──► Brassage ──► Extraction ──► Brassage ──► Extrac
 - **Purpose:** Bring the chamber up to target temperature before starting the cycle.
 - **Exit condition:** Inlet temperature ≥ target, OR `INIT_PHASE_DURATION` seconds elapsed (whichever comes first).
 - **Heaters:** Hydraulic at full power, electric follows PID.
+- **Humidity:** If inlet humidity ≥ user target during init, the damper opens for `EXTRACTION_DAMPER_OPEN_DURATION` seconds, then closes and init continues. If less than `EXTRACTION_DAMPER_OPEN_DURATION` seconds remain in init when humidity is reached, the controller transitions directly to the Extraction phase.
 
 ### Phase: Brassage
 
 - **Purpose:** Homogenise temperature and humidity throughout the chamber.
-- **Exit condition:** `BRASSAGE_PHASE_DURATION` seconds elapsed.
-- **Air damper:** Closed (recirculation).
+- **Exit condition:** Inlet humidity ≥ user target (early transition to Extraction), OR `BRASSAGE_PHASE_DURATION` seconds elapsed (timeout).
+- **Air damper:** Closed (recirculation), unless humidity triggers early extraction.
 
 ### Phase: Extraction
 
 - **Purpose:** Evacuate accumulated moisture from the chamber.
-- **Exit condition:** Inlet humidity ≤ `EXTRACTION_HUM_THRESHOLD`, OR `EXTRACTION_PHASE_DURATION` seconds elapsed.
-- **Air damper:** Opens when humidity exceeds threshold + 5 %RH deadband; closes when humidity drops to threshold.
+- **Exit condition:** `EXTRACTION_PHASE_DURATION` seconds elapsed (always runs to completion to remove maximum moisture).
+- **Air damper:** Opens when humidity exceeds user target + 5 %RH deadband; closes when humidity drops to user target.
 
 ---
 
@@ -146,7 +147,7 @@ elif inlet_humidity <= target:
 A 10-second cooldown is enforced between state changes to prevent hunting.
 
 During **Brassage** phase, the target is set to 0 (no control) — damper stays closed.
-During **Extraction** phase, the target is `EXTRACTION_HUM_THRESHOLD`.
+During **Extraction** phase, the target is the user humidity setpoint (potentiometer).
 
 ---
 
