@@ -98,17 +98,37 @@ Adjust one parameter at a time. Observe for at least 10 minutes before the next 
 
 Selected via physical switch on GPIO 22. Applies immediately each control cycle — no reboot needed.
 
+Both heaters (hydraulic and electric) are available in **all modes**.
+
 ### PERFORMANCE
 
-- Both heaters active
-- Full target temperature
+- Both heaters active at all times
+- Full target temperature at all times
 
 ### ECO
 
-- Electric heater **always OFF**
-- Effective target = `temperature_target × DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE / 100`
-- Default reduction: 85 % of target (e.g. target 40 °C → effective 34 °C)
-- Intended for low-energy overnight runs
+ECO mode is time-aware. The switch enables the intent; the RTC clock determines whether the reduction applies.
+
+| Time window | ECO switch OFF | ECO switch ON |
+|-------------|---------------|--------------|
+| Day (09h00 – 18h00) | Full target, both heaters | Full target, both heaters |
+| Night (18h00 – 09h00) | Full target, both heaters | **85 % of target**, both heaters |
+
+- **ECO LED** is lit only when the switch is ON **and** the current time is inside the night window (18h00 → 09h00)
+- Default reduction: 85 % of target — e.g. target 40 °C → effective 34 °C at night
+- The reduction percentage is set by `DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE` in `config.h`
+- The time window boundaries are `ECO_START_HOUR` (18) and `ECO_END_HOUR` (9) in `config.h`
+
+### User scenarios
+
+**1. Lower the temperature target**
+Turn the temperature potentiometer down before starting. The reduced setpoint is active immediately in both modes. Useful when the product being dried requires a gentler temperature.
+
+**2. Daytime "flambée" — add calories before a low-energy night**
+Keep the switch on PERFORMANCE during the day to run both heaters at full target and build up heat in the thermal store. Switch to ECO in the evening. The controller will then coast through the night at the reduced target, drawing on the stored calories.
+
+**3. Anticipate an ECO night**
+Activate the ECO switch before 18h00. During the day nothing changes (full target, both heaters). At 18h00 the controller automatically switches to the reduced target — no manual action needed overnight. Flip the switch back to PERFORMANCE the next morning if needed.
 
 ---
 

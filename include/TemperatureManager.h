@@ -9,8 +9,8 @@
 
 enum class OperatingMode : uint8_t
 {
-  ECO         = 0,  // Hydraulic only, reduced target (physical selector)
-  PERFORMANCE = 1,  // All heaters, full target
+  ECO         = 0,  // Both heaters available; target reduced to 85% during night window (18h–9h)
+  PERFORMANCE = 1,  // Both heaters, full target at all times
 };
 
 // Temperature control parameters (all initialised from config.h defaults).
@@ -42,9 +42,10 @@ struct TemperatureParams
 };
 
 // Manages temperature via independent PID controllers for hydraulic and electric heaters.
-// Operating mode is set from the physical mode selector (no time-based scheduling).
-//   ECO mode:         hydraulic only, target reduced by DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE
-//   PERFORMANCE mode: both heaters, full target
+// Operating mode is set from the physical mode selector.
+//   ECO mode:         both heaters active; target × DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE during night window (18h–9h)
+//   PERFORMANCE mode: both heaters active, full target at all times
+// SetCurrentHour() must be called each loop (from RTC) for time-based ECO logic.
 class TemperatureManager
 {
 public:
@@ -85,6 +86,12 @@ public:
   OperatingMode GetOperatingMode() const { return operating_mode_; }
   bool          IsEcoActive() const { return operating_mode_ == OperatingMode::ECO; }
 
+  // Current hour from RTC — must be updated each loop for time-based ECO logic
+  void SetCurrentHour(uint8_t hour) { current_hour_ = hour; }
+
+  // Returns true when ECO switch is ON and current time is inside the night window
+  bool IsEcoWindowActive() const;
+
 private:
   ElectricHeater   *electric_heater_;
   HydraulicHeater  *hydraulic_heater_;
@@ -100,6 +107,7 @@ private:
   bool electric_enabled_;
 
   OperatingMode operating_mode_;
+  uint8_t       current_hour_;
 
   void UpdateHeating(float dt);
 };

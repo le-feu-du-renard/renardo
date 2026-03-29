@@ -50,6 +50,12 @@ public:
   // Operating mode (from physical mode selector, updated each loop)
   void SetOperatingMode(OperatingMode mode);
 
+  // Current hour from RTC — forwarded to TemperatureManager each loop
+  void SetCurrentHour(uint8_t hour) { temperature_manager_.SetCurrentHour(hour); }
+
+  // True when ECO switch is ON and current time is inside the ECO night window
+  bool IsEcoWindowActive() const { return temperature_manager_.IsEcoWindowActive(); }
+
   // Outputs
   float GetHeaterOutput()     const;  // electric 0.0/1.0
   float GetCirculatorOutput() const;  // hydraulic 0-100%

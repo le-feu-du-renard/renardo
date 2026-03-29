@@ -214,6 +214,9 @@ static void UpdateInputs()
                            : OperatingMode::PERFORMANCE;
   dryer.SetOperatingMode(mode);
 
+  // Push current hour to dryer for time-based ECO logic
+  dryer.SetCurrentHour(time_manager.GetNow().hour());
+
   // Handle START button
   if (input_handler.IsStartPressed() && !dryer.IsRunning())
   {
@@ -286,11 +289,10 @@ static void UpdateOutputs()
 static void UpdateLEDs()
 {
   bool running = dryer.IsRunning();
-  bool eco = input_handler.IsEcoMode();
   DryerPhase phase = dryer.GetCurrentPhase();
 
   uint8_t mask = 0;
-  if (eco)
+  if (dryer.IsEcoWindowActive())
     mask |= (1 << (uint8_t)LedId::kEcoMode);
   if (running && phase == DryerPhase::kInit)
     mask |= (1 << (uint8_t)LedId::kPhaseInit);

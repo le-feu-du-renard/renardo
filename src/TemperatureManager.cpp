@@ -14,7 +14,8 @@ TemperatureManager::TemperatureManager(ElectricHeater  *electric_heater,
       last_update_ms_(0),
       hydraulic_enabled_(DEFAULT_HYDRAULIC_ENABLED),
       electric_enabled_(DEFAULT_ELECTRIC_ENABLED),
-      operating_mode_(OperatingMode::PERFORMANCE) {}
+      operating_mode_(OperatingMode::PERFORMANCE),
+      current_hour_(0) {}
 
 void TemperatureManager::Begin()
 {
@@ -78,8 +79,8 @@ void TemperatureManager::UpdateHeating(float dt)
     hydraulic_pid_.Reset();
   }
 
-  // === Electric heater (disabled in ECO mode) ===
-  bool electric_active = electric_enabled_ && (operating_mode_ == OperatingMode::PERFORMANCE);
+  // === Electric heater (available in all modes) ===
+  bool electric_active = electric_enabled_;
   if (electric_active)
   {
     float output = electric_pid_.Compute(effective_target, current_temperature_, dt);
@@ -118,11 +119,15 @@ void TemperatureManager::SetTargetTemperature(float temperature)
 
 float TemperatureManager::GetEffectiveTargetTemperature() const
 {
-  if (operating_mode_ == OperatingMode::ECO)
-  {
+  if (IsEcoWindowActive())
     return params_.temperature_target * (DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE / 100.0f);
-  }
   return params_.temperature_target;
+}
+
+bool TemperatureManager::IsEcoWindowActive() const
+{
+  if (operating_mode_ != OperatingMode::ECO) return false;
+  return (current_hour_ >= ECO_START_HOUR) || (current_hour_ < ECO_END_HOUR);
 }
 
 bool TemperatureManager::IsTemperatureInRange() const

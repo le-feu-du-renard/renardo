@@ -135,9 +135,12 @@
 #define DEFAULT_PID_DERIVATIVE_FILTER 0.1
 
 // ===== ECO Mode Parameters =====
-// ECO mode is selected via physical MODE_SELECTOR_PIN (no time-based scheduling)
-// In ECO mode: electric heater disabled, target reduced by this percentage
-#define DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE 85.0f
+// ECO mode is selected via physical MODE_SELECTOR_PIN.
+// Target reduction and ECO LED are active only during the night window [ECO_START_HOUR, ECO_END_HOUR).
+// Both heaters remain available in all modes.
+#define ECO_START_HOUR 18                          // ECO window starts at 18:00
+#define ECO_END_HOUR   9                           // ECO window ends at 09:00
+#define DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE 85.0f  // % of target applied during ECO window
 
 // ===== Phase Parameters =====
 #define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (1 hour max)
