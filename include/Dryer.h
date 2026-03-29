@@ -7,7 +7,6 @@
 #include "TemperatureManager.h"
 #include "HumidityManager.h"
 #include "AirDamper.h"
-#include "IndicatorLEDs.h"
 #include "SessionManager.h"
 #include "PersistentStateManager.h"
 
@@ -18,7 +17,7 @@ class Dryer
 public:
   Dryer();
 
-  void Begin(IndicatorLEDs &leds);
+  void Begin();
   void Update();
 
   // Session control
@@ -55,6 +54,7 @@ public:
   float GetHeaterOutput()     const;  // electric 0.0/1.0
   float GetCirculatorOutput() const;  // hydraulic 0-100%
   float GetFanOutput()        const { return fan_output_; }
+  bool  GetDamperOutput()     const { return air_damper_.IsOpen(); }
 
   // Manager access
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }

@@ -16,10 +16,9 @@ Dryer::Dryer()
       fan_output_(0.0f),
       last_control_update_ms_(0) {}
 
-void Dryer::Begin(IndicatorLEDs &leds)
+void Dryer::Begin()
 {
   temperature_manager_.Begin();
-  air_damper_.Begin(leds);
   humidity_manager_.Begin();
   session_manager_.Begin();
   state_manager_.Begin();

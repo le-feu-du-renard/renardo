@@ -2,7 +2,7 @@
 #define INPUT_HANDLER_H
 
 #include <Arduino.h>
-#include "IndicatorLEDs.h"
+#include "McpOutputs.h"
 
 // Reads all physical inputs: potentiometers, mode selector, and START/STOP buttons.
 // Call Update() regularly (every INPUT_UPDATE_INTERVAL ms) from the main loop.
@@ -12,7 +12,7 @@ class InputHandler
 public:
   InputHandler();
 
-  void Begin(IndicatorLEDs &leds);
+  void Begin(McpOutputs &leds);
 
   // Must be called periodically to debounce buttons and sample ADC.
   void Update();
@@ -52,7 +52,7 @@ private:
 
   static constexpr uint32_t kDebounceMs = 50;
 
-  IndicatorLEDs *leds_;
+  McpOutputs *leds_;
 
   // Average 8 ADC samples and map to [min, max]
   static float ReadPot(uint8_t pin, float min_val, float max_val);

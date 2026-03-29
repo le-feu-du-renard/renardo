@@ -5,7 +5,7 @@
 #include "config.h"
 #include "Dryer.h"
 #include "ModbusSensors.h"
-#include "IndicatorLEDs.h"
+#include "McpOutputs.h"
 #include "VoltmeterOutputs.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
@@ -21,7 +21,7 @@ TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 ModbusSensors modbus_sensors;
 
 // Physical I/O
-IndicatorLEDs indicator_leds;
+McpOutputs mcp_outputs;
 VoltmeterOutputs voltmeters;
 InputHandler input_handler;
 
@@ -109,9 +109,9 @@ static void SetupPins()
 
 static void SetupLEDs()
 {
-  if (!indicator_leds.Begin(LED_EXPANDER_ADDRESS, i2c_bus_1))
+  if (!mcp_outputs.Begin(MCP_EXPANDER_ADDRESS, i2c_bus_1))
   {
-    Logger::Error("Indicator LEDs: MCP23017 not found — continuing without LEDs");
+    Logger::Error("McpOutputs: MCP23017 not found — continuing without outputs");
   }
 }
 
@@ -136,11 +136,11 @@ static void StartupSelfTest()
   Logger::Info("Startup self-test: all outputs ON for 2 s");
 
   // All Port A indicator LEDs on
-  indicator_leds.UpdateAll(0xFF);
+  mcp_outputs.UpdateAll(0xFF);
 
   // Button LEDs on Port B
-  indicator_leds.SetOutput(MCP_BTN_START_LED_PIN, true);
-  indicator_leds.SetOutput(MCP_BTN_STOP_LED_PIN, true);
+  mcp_outputs.SetOutput(MCP_BTN_START_LED, true);
+  mcp_outputs.SetOutput(MCP_BTN_STOP_LED, true);
 
   // All voltmeters at full scale
   voltmeters.SetTemperature(VOLTMETER_TEMP_MAX);
@@ -151,9 +151,9 @@ static void StartupSelfTest()
   delay(2000);
 
   // Reset all outputs
-  indicator_leds.Clear();
-  indicator_leds.SetOutput(MCP_BTN_START_LED_PIN, false);
-  indicator_leds.SetOutput(MCP_BTN_STOP_LED_PIN, false);
+  mcp_outputs.Clear();
+  mcp_outputs.SetOutput(MCP_BTN_START_LED, false);
+  mcp_outputs.SetOutput(MCP_BTN_STOP_LED, false);
   voltmeters.SetTemperature(0.0f);
   voltmeters.SetHumidity(0.0f);
   voltmeters.SetTotalDuration(0.0f);
@@ -239,26 +239,35 @@ static void UpdateOutputs()
 {
   static bool last_heater = false;
   static bool last_fan = false;
+  static bool last_damper = false;
   static uint8_t last_pwm = 0;
   static bool first_run = true;
 
   bool heater_state = dryer.GetHeaterOutput() > 0.5f;
   bool fan_state = dryer.GetFanOutput() > 0.0f;
+  bool damper_state = dryer.GetDamperOutput();
   // GetCirculatorOutput() returns a mapped duty (0.0-1.0); invert for PNP transistor
   uint8_t pwm_val = static_cast<uint8_t>((1.0f - dryer.GetCirculatorOutput()) * 255.0f);
 
   if (first_run || heater_state != last_heater)
   {
-    indicator_leds.SetOutput(MCP_ELECTRIC_HEATER_PIN, heater_state);
+    mcp_outputs.SetOutput(MCP_HEATER_RELAY, heater_state);
     last_heater = heater_state;
     Logger::Info("Electric heater: %s", heater_state ? "ON" : "OFF");
   }
 
   if (first_run || fan_state != last_fan)
   {
-    indicator_leds.SetOutput(MCP_FAN_PIN, fan_state);
+    mcp_outputs.SetOutput(MCP_FAN_RELAY, fan_state);
     last_fan = fan_state;
     Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
+  }
+
+  if (first_run || damper_state != last_damper)
+  {
+    mcp_outputs.SetOutput(MCP_AIR_DAMPER, damper_state);
+    last_damper = damper_state;
+    Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
 
   if (first_run || abs((int)pwm_val - (int)last_pwm) > 1)
@@ -296,7 +305,7 @@ static void UpdateLEDs()
   if (running && dryer.GetFanOutput() > 0.0f)
     mask |= (1 << (uint8_t)LedId::kFan);
 
-  indicator_leds.UpdateAll(mask);
+  mcp_outputs.UpdateAll(mask);
 }
 
 // ========== VOLTMETER UPDATE ==========
@@ -422,13 +431,13 @@ void setup()
   delay(50);
 
   voltmeters.Begin();
-  input_handler.Begin(indicator_leds);
+  input_handler.Begin(mcp_outputs);
 
   StartupSelfTest();
 
   SetupSessionMonitor();
 
-  dryer.Begin(indicator_leds);
+  dryer.Begin();
 
   was_running = dryer.IsRunning();
   if (was_running && session_monitor.IsReady())

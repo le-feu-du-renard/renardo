@@ -5,7 +5,7 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// I2C Bus 1 (MCP23017 LED expander + RTC DS1307)
+// I2C Bus 1 (MCP23017 GPIO expander + RTC DS1307)
 #define I2C_BUS_1_SDA_PIN 10
 #define I2C_BUS_1_SCL_PIN 11
 
@@ -42,27 +42,27 @@
 #define POT_HUMIDITY_PIN 27    // ADC1
 
 // ========== I2C ADDRESSES ==========
-#define LED_EXPANDER_ADDRESS 0x20 // MCP23017 (on I2C Bus 1)
+#define MCP_EXPANDER_ADDRESS 0x20 // MCP23017 (on I2C Bus 1)
 #define RTC_DS1307_ADDR 0x68      // DS1307 (on I2C Bus 1)
 
 // ========== MCP23017 PIN MAPPING ==========
 
 // Port A – Indicator LEDs (GPA bit index 0-7)
-#define LED_PIN_ECO_MODE 7         // GPA7 - ECO mode indicator LED
-#define LED_PIN_PHASE_INIT 6       // GPA6 - init phase indicator LED
-#define LED_PIN_PHASE_BRASSAGE 5   // GPA5 - mixing phase indicator LED
-#define LED_PIN_PHASE_EXTRACTION 4 // GPA4 - extraction phase indicator LED
-#define LED_PIN_ELECTRIC_HEATER 0  // GPA0 - electric heater indicator LED
-#define LED_PIN_HYDRO_HEATER 1     // GPA1 - hydraulic heater indicator LED
-#define LED_PIN_FAN 2              // GPA2 - fan indicator LED
-#define LED_PIN_AIR_RENEWAL 3      // GPA3 - air renewal indicator LED
+#define MCP_LED_ECO_MODE         7 // GPA7 - ECO mode indicator LED
+#define MCP_LED_PHASE_INIT       6 // GPA6 - init phase indicator LED
+#define MCP_LED_PHASE_BRASSAGE   5 // GPA5 - mixing phase indicator LED
+#define MCP_LED_PHASE_EXTRACTION 4 // GPA4 - extraction phase indicator LED
+#define MCP_LED_HEATER           0 // GPA0 - electric heater indicator LED
+#define MCP_LED_HYDRO_HEATER     1 // GPA1 - hydraulic heater indicator LED
+#define MCP_LED_FAN              2 // GPA2 - fan indicator LED
+#define MCP_LED_AIR_RENEWAL      3 // GPA3 - air renewal indicator LED
 
 // Port B – Digital outputs (Adafruit library: pin = 8 + GPB bit index)
-#define MCP_BTN_START_LED_PIN 15  // GPB7 - START button indicator LED
-#define MCP_BTN_STOP_LED_PIN 14   // GPB6 - STOP button indicator LED
-#define MCP_ELECTRIC_HEATER_PIN 8 // GPB0 - electric heater relay
-#define MCP_FAN_PIN 9             // GPB1 - fan relay
-#define MCP_AIR_DAMPER_PIN 10     // GPB2 - air damper
+#define MCP_BTN_START_LED  15 // GPB7 - START button indicator LED
+#define MCP_BTN_STOP_LED   14 // GPB6 - STOP button indicator LED
+#define MCP_HEATER_RELAY    8 // GPB0 - electric heater relay
+#define MCP_FAN_RELAY       9 // GPB1 - fan relay
+#define MCP_AIR_DAMPER     10 // GPB2 - air damper
 
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600

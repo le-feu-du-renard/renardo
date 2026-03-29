@@ -16,7 +16,7 @@ InputHandler::InputHandler()
       stop_debounce_ms_(0),
       leds_(nullptr) {}
 
-void InputHandler::Begin(IndicatorLEDs &leds)
+void InputHandler::Begin(McpOutputs &leds)
 {
   leds_ = &leds;
 
@@ -33,8 +33,8 @@ void InputHandler::Begin(IndicatorLEDs &leds)
   pinMode(BTN_STOP_PIN,  INPUT_PULLUP);
 
   // Button LEDs – via MCP23017 Port B, start off
-  leds_->SetOutput(MCP_BTN_START_LED_PIN, LOW);
-  leds_->SetOutput(MCP_BTN_STOP_LED_PIN,  LOW);
+  leds_->SetOutput(MCP_BTN_START_LED, LOW);
+  leds_->SetOutput(MCP_BTN_STOP_LED,  LOW);
 
   Logger::Info("InputHandler: initialized");
 }
@@ -107,12 +107,12 @@ bool InputHandler::IsStopPressed()
 
 void InputHandler::SetStartLed(bool state)
 {
-  leds_->SetOutput(MCP_BTN_START_LED_PIN, state);
+  leds_->SetOutput(MCP_BTN_START_LED, state);
 }
 
 void InputHandler::SetStopLed(bool state)
 {
-  leds_->SetOutput(MCP_BTN_STOP_LED_PIN, state);
+  leds_->SetOutput(MCP_BTN_STOP_LED, state);
 }
 
 float InputHandler::ReadPot(uint8_t pin, float min_val, float max_val)
