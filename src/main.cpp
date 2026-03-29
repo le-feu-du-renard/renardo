@@ -288,11 +288,11 @@ static void UpdateLEDs()
     mask |= (1 << (uint8_t)LedId::kPhaseBrassage);
   if (running && phase == DryerPhase::kExtraction)
     mask |= (1 << (uint8_t)LedId::kPhaseExtraction);
-  if (dryer.GetHeaterOutput() > 0.5f)
+  if (running && dryer.GetHeaterOutput() > 0.5f)
     mask |= (1 << (uint8_t)LedId::kElectricHeater);
-  if (dryer.GetCirculatorOutput() > 0.05f)
+  if (running && dryer.GetCirculatorOutput() > 0.05f)
     mask |= (1 << (uint8_t)LedId::kHydroHeater);
-  if (dryer.GetFanOutput() > 0.0f)
+  if (running && dryer.GetFanOutput() > 0.0f)
     mask |= (1 << (uint8_t)LedId::kFan);
 
   indicator_leds.UpdateAll(mask);
