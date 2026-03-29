@@ -6,10 +6,12 @@ InputHandler::InputHandler()
     : target_temperature_(DEFAULT_TEMPERATURE_TARGET),
       target_humidity_(50.0f),
       eco_mode_(false),
-      start_raw_prev_(true),
-      stop_raw_prev_(true),
+      start_raw_prev_(false),
+      stop_raw_prev_(false),
       start_pending_(false),
       stop_pending_(false),
+      start_consumed_(false),
+      stop_consumed_(false),
       start_debounce_ms_(0),
       stop_debounce_ms_(0),
       leds_(nullptr) {}
@@ -47,27 +49,37 @@ void InputHandler::Update()
   // Read mode selector (LOW = ECO because of internal pullup when switch open)
   eco_mode_ = (digitalRead(MODE_SELECTOR_PIN) == LOW);
 
-  // --- START button debounce (active LOW) ---
+  // --- START button debounce (active LOW, fires once per press) ---
   bool start_raw = (digitalRead(BTN_START_PIN) == LOW);
-  if (start_raw && !start_raw_prev_)
+  if (!start_raw)
   {
-    start_debounce_ms_ = now;
+    start_consumed_ = false;  // Button released: allow next press
   }
-  if (start_raw && !start_pending_ && (now - start_debounce_ms_) >= kDebounceMs)
+  else if (!start_raw_prev_)
   {
-    start_pending_ = true;
+    start_debounce_ms_ = now;  // Rising edge: start debounce timer
+  }
+  else if (!start_consumed_ && (now - start_debounce_ms_) >= kDebounceMs)
+  {
+    start_pending_  = true;
+    start_consumed_ = true;  // Block re-fire while button remains held
   }
   start_raw_prev_ = start_raw;
 
-  // --- STOP button debounce (active LOW) ---
+  // --- STOP button debounce (active LOW, fires once per press) ---
   bool stop_raw = (digitalRead(BTN_STOP_PIN) == LOW);
-  if (stop_raw && !stop_raw_prev_)
+  if (!stop_raw)
+  {
+    stop_consumed_ = false;
+  }
+  else if (!stop_raw_prev_)
   {
     stop_debounce_ms_ = now;
   }
-  if (stop_raw && !stop_pending_ && (now - stop_debounce_ms_) >= kDebounceMs)
+  else if (!stop_consumed_ && (now - stop_debounce_ms_) >= kDebounceMs)
   {
-    stop_pending_ = true;
+    stop_pending_  = true;
+    stop_consumed_ = true;
   }
   stop_raw_prev_ = stop_raw;
 }

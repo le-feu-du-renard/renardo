@@ -32,7 +32,6 @@ void Dryer::Start()
 {
   if (session_manager_.IsRunning()) return;
   session_manager_.Start();
-  state_manager_.Save(true, session_manager_.GetCurrentPhase(), 0, 0);
   Logger::Info("Dryer: session started");
 }
 

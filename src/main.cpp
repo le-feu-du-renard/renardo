@@ -21,9 +21,9 @@ TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 ModbusSensors modbus_sensors;
 
 // Physical I/O
-IndicatorLEDs  indicator_leds;
+IndicatorLEDs indicator_leds;
 VoltmeterOutputs voltmeters;
-InputHandler   input_handler;
+InputHandler input_handler;
 
 // RTC
 TimeManager time_manager(&i2c_bus_1);
@@ -36,16 +36,16 @@ SessionMonitor session_monitor(&dryer, &time_manager);
 
 // ========== TIMING STATE ==========
 
-static uint32_t last_sensor_update  = 0;
-static uint32_t last_input_update   = 0;
-static uint32_t last_settings_save  = 0;
-static bool     was_running         = false;
+static uint32_t last_sensor_update = 0;
+static uint32_t last_input_update = 0;
+static uint32_t last_settings_save = 0;
+static bool was_running = false;
 
-static constexpr uint32_t kMemoryCheckInterval = 30000;  // 30 s
-static constexpr uint32_t kHeartbeatInterval   = 10000;  // 10 s
+static constexpr uint32_t kMemoryCheckInterval = 30000; // 30 s
+static constexpr uint32_t kHeartbeatInterval = 10000;   // 10 s
 static uint32_t last_memory_check = 0;
-static uint32_t last_heartbeat    = 0;
-static uint32_t loop_count        = 0;
+static uint32_t last_heartbeat = 0;
+static uint32_t loop_count = 0;
 
 // ========== SETUP HELPERS ==========
 
@@ -137,11 +137,12 @@ static void SetupSessionMonitor()
 static void UpdateSensors()
 {
   uint32_t now = millis();
-  if (now - last_sensor_update < SENSOR_UPDATE_INTERVAL) return;
+  if (now - last_sensor_update < SENSOR_UPDATE_INTERVAL)
+    return;
   last_sensor_update = now;
 
   float inlet_temp = dryer.GetInletTemperature();
-  float inlet_hum  = dryer.GetInletHumidity();
+  float inlet_hum = dryer.GetInletHumidity();
 
   if (modbus_sensors.ReadSensor(MODBUS_INLET_ADDRESS, inlet_temp, inlet_hum))
   {
@@ -154,10 +155,10 @@ static void UpdateSensors()
     Logger::Warning("Inlet sensor read failed (errors=%d)", modbus_sensors.GetErrorCount());
   }
 
-  delay(50);  // Allow RS485 bus to settle between back-to-back requests
+  delay(50); // Allow RS485 bus to settle between back-to-back requests
 
   float outlet_temp = dryer.GetOutletTemperature();
-  float outlet_hum  = dryer.GetOutletHumidity();
+  float outlet_hum = dryer.GetOutletHumidity();
 
   if (modbus_sensors.ReadSensor(MODBUS_OUTLET_ADDRESS, outlet_temp, outlet_hum))
   {
@@ -176,7 +177,8 @@ static void UpdateSensors()
 static void UpdateInputs()
 {
   uint32_t now = millis();
-  if (now - last_input_update < INPUT_UPDATE_INTERVAL) return;
+  if (now - last_input_update < INPUT_UPDATE_INTERVAL)
+    return;
   last_input_update = now;
 
   input_handler.Update();
@@ -186,8 +188,8 @@ static void UpdateInputs()
 
   // Push mode selector to dryer
   OperatingMode mode = input_handler.IsEcoMode()
-                       ? OperatingMode::ECO
-                       : OperatingMode::PERFORMANCE;
+                           ? OperatingMode::ECO
+                           : OperatingMode::PERFORMANCE;
   dryer.SetOperatingMode(mode);
 
   // Handle START button
@@ -213,15 +215,15 @@ static void UpdateInputs()
 
 static void UpdateOutputs()
 {
-  static bool    last_heater  = false;
-  static bool    last_fan     = false;
-  static uint8_t last_pwm     = 0;
-  static bool    first_run    = true;
+  static bool last_heater = false;
+  static bool last_fan = false;
+  static uint8_t last_pwm = 0;
+  static bool first_run = true;
 
-  bool    heater_state = dryer.GetHeaterOutput() > 0.5f;
-  bool    fan_state    = dryer.GetFanOutput() > 0.0f;
+  bool heater_state = dryer.GetHeaterOutput() > 0.5f;
+  bool fan_state = dryer.GetFanOutput() > 0.0f;
   // GetCirculatorOutput() returns a mapped duty (0.0-1.0); invert for PNP transistor
-  uint8_t pwm_val      = static_cast<uint8_t>((1.0f - dryer.GetCirculatorOutput()) * 255.0f);
+  uint8_t pwm_val = static_cast<uint8_t>((1.0f - dryer.GetCirculatorOutput()) * 255.0f);
 
   if (first_run || heater_state != last_heater)
   {
@@ -252,18 +254,25 @@ static void UpdateOutputs()
 
 static void UpdateLEDs()
 {
-  bool       running = dryer.IsRunning();
-  bool       eco     = input_handler.IsEcoMode();
-  DryerPhase phase   = dryer.GetCurrentPhase();
+  bool running = dryer.IsRunning();
+  bool eco = input_handler.IsEcoMode();
+  DryerPhase phase = dryer.GetCurrentPhase();
 
   uint8_t mask = 0;
-  if (eco)                                         mask |= (1 << (uint8_t)LedId::kEcoMode);
-  if (running && phase == DryerPhase::kInit)       mask |= (1 << (uint8_t)LedId::kPhaseInit);
-  if (running && phase == DryerPhase::kBrassage)   mask |= (1 << (uint8_t)LedId::kPhaseBrassage);
-  if (running && phase == DryerPhase::kExtraction) mask |= (1 << (uint8_t)LedId::kPhaseExtraction);
-  if (dryer.GetHeaterOutput() > 0.5f)              mask |= (1 << (uint8_t)LedId::kElectricHeater);
-  if (dryer.GetCirculatorOutput() > 0.05f)         mask |= (1 << (uint8_t)LedId::kHydroHeater);
-  if (dryer.GetFanOutput() > 0.0f)                 mask |= (1 << (uint8_t)LedId::kFan);
+  if (eco)
+    mask |= (1 << (uint8_t)LedId::kEcoMode);
+  if (running && phase == DryerPhase::kInit)
+    mask |= (1 << (uint8_t)LedId::kPhaseInit);
+  if (running && phase == DryerPhase::kBrassage)
+    mask |= (1 << (uint8_t)LedId::kPhaseBrassage);
+  if (running && phase == DryerPhase::kExtraction)
+    mask |= (1 << (uint8_t)LedId::kPhaseExtraction);
+  if (dryer.GetHeaterOutput() > 0.5f)
+    mask |= (1 << (uint8_t)LedId::kElectricHeater);
+  if (dryer.GetCirculatorOutput() > 0.05f)
+    mask |= (1 << (uint8_t)LedId::kHydroHeater);
+  if (dryer.GetFanOutput() > 0.0f)
+    mask |= (1 << (uint8_t)LedId::kFan);
 
   indicator_leds.UpdateAll(mask);
 }
@@ -310,8 +319,10 @@ static void UpdateSessionMonitor()
 static void UpdateSettings()
 {
   uint32_t now = millis();
-  if (!dryer.IsRunning()) return;
-  if (now - last_settings_save < SETTINGS_SAVE_INTERVAL) return;
+  if (!dryer.IsRunning())
+    return;
+  if (now - last_settings_save < SETTINGS_SAVE_INTERVAL)
+    return;
   last_settings_save = now;
   dryer.SaveSettings();
   Logger::Debug("Settings auto-saved");
@@ -328,14 +339,14 @@ static void UpdateDiagnostics()
     last_heartbeat = now;
     Logger::Info("Heartbeat — loops=%lu uptime=%us SD=%s logging=%s",
                  loop_count, now / 1000,
-                 session_monitor.IsReady()  ? "OK"  : "NOK",
+                 session_monitor.IsReady() ? "OK" : "NOK",
                  session_monitor.IsLogging() ? "YES" : "NO");
   }
 
   if (now - last_memory_check >= kMemoryCheckInterval)
   {
     last_memory_check = now;
-    uint32_t free_heap  = rp2040.getFreeHeap();
+    uint32_t free_heap = rp2040.getFreeHeap();
     uint32_t total_heap = rp2040.getTotalHeap();
     Logger::Info("Memory: free=%u/%u bytes (%u%%)",
                  free_heap, total_heap, (free_heap * 100) / total_heap);

@@ -50,12 +50,9 @@ void IndicatorLEDs::Set(LedId id, bool state)
 void IndicatorLEDs::UpdateAll(uint8_t bitmask)
 {
   if (!initialized_) return;
+  if (bitmask == state_) return;  // No change, skip I2C write
   state_ = bitmask;
-  // Write each bit individually (MCP23X17 Arduino lib does not expose writeGPIOA directly)
-  for (uint8_t pin = 0; pin < 8; pin++)
-  {
-    mcp_.digitalWrite(pin, (bitmask >> pin) & 1u ? HIGH : LOW);
-  }
+  mcp_.writeGPIOA(bitmask);  // Single atomic I2C transaction for all 8 Port A pins
 }
 
 void IndicatorLEDs::Clear()
