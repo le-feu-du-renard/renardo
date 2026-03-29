@@ -23,19 +23,19 @@ Init ──► Brassage ──► Extraction ──► Brassage ──► Extrac
 ### Phase: Init
 
 - **Purpose:** Bring the chamber up to target temperature before starting the cycle.
-- **Exit condition:** Inlet temperature ≥ target, OR `DEFAULT_INIT_PHASE_DURATION` seconds elapsed (whichever comes first).
+- **Exit condition:** Inlet temperature ≥ target, OR `INIT_PHASE_DURATION` seconds elapsed (whichever comes first).
 - **Heaters:** Hydraulic at full power, electric follows PID.
 
 ### Phase: Brassage
 
 - **Purpose:** Homogenise temperature and humidity throughout the chamber.
-- **Exit condition:** `DEFAULT_BRASSAGE_PHASE_DURATION` seconds elapsed.
+- **Exit condition:** `BRASSAGE_PHASE_DURATION` seconds elapsed.
 - **Air damper:** Closed (recirculation).
 
 ### Phase: Extraction
 
 - **Purpose:** Evacuate accumulated moisture from the chamber.
-- **Exit condition:** Inlet humidity ≤ `DEFAULT_EXTRACTION_HUM_THRESHOLD`, OR `DEFAULT_EXTRACTION_PHASE_DURATION` seconds elapsed.
+- **Exit condition:** Inlet humidity ≤ `EXTRACTION_HUM_THRESHOLD`, OR `EXTRACTION_PHASE_DURATION` seconds elapsed.
 - **Air damper:** Opens when humidity exceeds threshold + 5 %RH deadband; closes when humidity drops to threshold.
 
 ---
@@ -116,7 +116,7 @@ ECO mode is time-aware. The switch enables the intent; the RTC clock determines 
 
 - **ECO LED** is lit only when the switch is ON **and** the current time is inside the night window (18h00 → 09h00)
 - Default reduction: 85 % of target — e.g. target 40 °C → effective 34 °C at night
-- The reduction percentage is set by `DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE` in `config.h`
+- The reduction percentage is set by `ECO_NIGHT_TARGET_PERCENTAGE` in `config.h`
 - The time window boundaries are `ECO_START_HOUR` (18) and `ECO_END_HOUR` (9) in `config.h`
 
 ### User scenarios
@@ -146,7 +146,7 @@ elif inlet_humidity <= target:
 A 10-second cooldown is enforced between state changes to prevent hunting.
 
 During **Brassage** phase, the target is set to 0 (no control) — damper stays closed.
-During **Extraction** phase, the target is `DEFAULT_EXTRACTION_HUM_THRESHOLD`.
+During **Extraction** phase, the target is `EXTRACTION_HUM_THRESHOLD`.
 
 ---
 

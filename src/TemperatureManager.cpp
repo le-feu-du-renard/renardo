@@ -6,14 +6,14 @@ TemperatureManager::TemperatureManager(ElectricHeater  *electric_heater,
     : electric_heater_(electric_heater),
       hydraulic_heater_(hydraulic_heater),
       params_(),
-      hydraulic_pid_(DEFAULT_HYDRAULIC_KP, DEFAULT_HYDRAULIC_KI, DEFAULT_HYDRAULIC_KD,
-                     0.0f, 100.0f, DEFAULT_PID_INTEGRAL_MAX, DEFAULT_PID_DERIVATIVE_FILTER),
-      electric_pid_(DEFAULT_ELECTRIC_KP, DEFAULT_ELECTRIC_KI, DEFAULT_ELECTRIC_KD,
-                    0.0f, 1.0f, DEFAULT_PID_INTEGRAL_MAX, DEFAULT_PID_DERIVATIVE_FILTER),
+      hydraulic_pid_(HYDRAULIC_KP, HYDRAULIC_KI, HYDRAULIC_KD,
+                     0.0f, 100.0f, PID_INTEGRAL_MAX, PID_DERIVATIVE_FILTER),
+      electric_pid_(ELECTRIC_KP, ELECTRIC_KI, ELECTRIC_KD,
+                    0.0f, 1.0f, PID_INTEGRAL_MAX, PID_DERIVATIVE_FILTER),
       current_temperature_(0.0f),
       last_update_ms_(0),
-      hydraulic_enabled_(DEFAULT_HYDRAULIC_ENABLED),
-      electric_enabled_(DEFAULT_ELECTRIC_ENABLED),
+      hydraulic_enabled_(HYDRAULIC_ENABLED),
+      electric_enabled_(ELECTRIC_ENABLED),
       operating_mode_(OperatingMode::PERFORMANCE),
       current_hour_(0) {}
 
@@ -120,7 +120,7 @@ void TemperatureManager::SetTargetTemperature(float temperature)
 float TemperatureManager::GetEffectiveTargetTemperature() const
 {
   if (IsEcoWindowActive())
-    return params_.temperature_target * (DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE / 100.0f);
+    return params_.temperature_target * (ECO_NIGHT_TARGET_PERCENTAGE / 100.0f);
   return params_.temperature_target;
 }
 

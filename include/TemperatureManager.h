@@ -30,20 +30,20 @@ struct TemperatureParams
   float pid_derivative_filter;
 
   TemperatureParams()
-      : temperature_target(DEFAULT_TEMPERATURE_TARGET),
-        hydraulic_kp(DEFAULT_HYDRAULIC_KP),
-        hydraulic_ki(DEFAULT_HYDRAULIC_KI),
-        hydraulic_kd(DEFAULT_HYDRAULIC_KD),
-        electric_kp(DEFAULT_ELECTRIC_KP),
-        electric_ki(DEFAULT_ELECTRIC_KI),
-        electric_kd(DEFAULT_ELECTRIC_KD),
-        pid_integral_max(DEFAULT_PID_INTEGRAL_MAX),
-        pid_derivative_filter(DEFAULT_PID_DERIVATIVE_FILTER) {}
+      : temperature_target(TEMPERATURE_TARGET),
+        hydraulic_kp(HYDRAULIC_KP),
+        hydraulic_ki(HYDRAULIC_KI),
+        hydraulic_kd(HYDRAULIC_KD),
+        electric_kp(ELECTRIC_KP),
+        electric_ki(ELECTRIC_KI),
+        electric_kd(ELECTRIC_KD),
+        pid_integral_max(PID_INTEGRAL_MAX),
+        pid_derivative_filter(PID_DERIVATIVE_FILTER) {}
 };
 
 // Manages temperature via independent PID controllers for hydraulic and electric heaters.
 // Operating mode is set from the physical mode selector.
-//   ECO mode:         both heaters active; target × DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE during night window (18h–9h)
+//   ECO mode:         both heaters active; target × ECO_NIGHT_TARGET_PERCENTAGE during night window (18h–9h)
 //   PERFORMANCE mode: both heaters active, full target at all times
 // SetCurrentHour() must be called each loop (from RTC) for time-based ECO logic.
 class TemperatureManager

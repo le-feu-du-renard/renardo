@@ -112,7 +112,7 @@ void SessionManager::EnterPhase(DryerPhase phase)
 
     case DryerPhase::kExtraction:
       // Open damper to evacuate moisture; target humidity from config
-      humidity_manager_->SetTargetHumidity(DEFAULT_EXTRACTION_HUM_THRESHOLD);
+      humidity_manager_->SetTargetHumidity(EXTRACTION_HUM_THRESHOLD);
       humidity_manager_->ResetCooldown();
       Logger::Info("SessionManager: entering Extraction phase");
       break;
@@ -132,7 +132,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
     {
       // Transition when temperature target is reached OR max duration elapsed
       bool temp_reached = (current_temperature >= temperature_manager_->GetTargetTemperature());
-      bool timed_out    = (elapsed >= DEFAULT_INIT_PHASE_DURATION);
+      bool timed_out    = (elapsed >= INIT_PHASE_DURATION);
       if (temp_reached || timed_out)
       {
         Logger::Info("SessionManager: Init -> Brassage (%s)",
@@ -143,7 +143,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
     }
 
     case DryerPhase::kBrassage:
-      if (elapsed >= DEFAULT_BRASSAGE_PHASE_DURATION)
+      if (elapsed >= BRASSAGE_PHASE_DURATION)
       {
         Logger::Info("SessionManager: Brassage -> Extraction");
         EnterPhase(DryerPhase::kExtraction);
@@ -153,8 +153,8 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
     case DryerPhase::kExtraction:
     {
       // Transition when humidity drops below threshold OR duration elapsed
-      bool hum_ok    = (current_humidity <= DEFAULT_EXTRACTION_HUM_THRESHOLD);
-      bool timed_out = (elapsed >= DEFAULT_EXTRACTION_PHASE_DURATION);
+      bool hum_ok    = (current_humidity <= EXTRACTION_HUM_THRESHOLD);
+      bool timed_out = (elapsed >= EXTRACTION_PHASE_DURATION);
       if (hum_ok || timed_out)
       {
         Logger::Info("SessionManager: Extraction -> Brassage (%s)",

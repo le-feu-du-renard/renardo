@@ -3,7 +3,7 @@
 #include "Logger.h"
 
 InputHandler::InputHandler()
-    : target_temperature_(DEFAULT_TEMPERATURE_TARGET),
+    : target_temperature_(TEMPERATURE_TARGET),
       target_humidity_(50.0f),
       eco_mode_(false),
       start_raw_prev_(false),

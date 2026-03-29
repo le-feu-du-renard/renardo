@@ -84,7 +84,7 @@
 // ========== DRYER DEFAULT PARAMETERS ==========
 
 // Temperature target (potentiometer overrides at runtime)
-#define DEFAULT_TEMPERATURE_TARGET 40.0f // °C
+#define TEMPERATURE_TARGET 40.0f // °C
 
 // Potentiometer ADC mapping ranges
 #define POT_TEMP_MIN 20.0f // °C - potentiometer minimum
@@ -99,40 +99,40 @@
 #define VOLTMETER_PHASE_DUR_MIN 60.0f // minutes
 
 // Heater enable defaults
-#define DEFAULT_HYDRAULIC_ENABLED true
-#define DEFAULT_ELECTRIC_ENABLED true
+#define HYDRAULIC_ENABLED true
+#define ELECTRIC_ENABLED true
 
 // ===== PID Hydraulic Heater Parameters =====
 // The hydraulic heater uses proportional control (0-100% power)
 // It has high thermal inertia (slow response)
 
 // Kp: Proportional gain - higher = stronger immediate reaction
-#define DEFAULT_HYDRAULIC_KP 5.0
+#define HYDRAULIC_KP 5.0
 
 // Ki: Integral gain - eliminates steady-state offset
-#define DEFAULT_HYDRAULIC_KI 0.1
+#define HYDRAULIC_KI 0.1
 
 // Kd: Derivative gain - damps oscillations
-#define DEFAULT_HYDRAULIC_KD 2.0
+#define HYDRAULIC_KD 2.0
 
 // ===== PID Electric Heater Parameters =====
 // The electric heater uses binary control (ON/OFF, threshold 0.5)
 
 // Kp: High value needed to trigger binary control quickly
-#define DEFAULT_ELECTRIC_KP 10.0
+#define ELECTRIC_KP 10.0
 
 // Ki: Accumulates error for persistent heating needs
-#define DEFAULT_ELECTRIC_KI 0.2
+#define ELECTRIC_KI 0.2
 
 // Kd: Reduces overshoot from binary switching
-#define DEFAULT_ELECTRIC_KD 1.0
+#define ELECTRIC_KD 1.0
 
 // ===== PID Advanced Parameters =====
 // Anti-windup integral clamp
-#define DEFAULT_PID_INTEGRAL_MAX 50.0
+#define PID_INTEGRAL_MAX 50.0
 
 // Derivative low-pass filter (0.0 = heavy filtering, 1.0 = none)
-#define DEFAULT_PID_DERIVATIVE_FILTER 0.1
+#define PID_DERIVATIVE_FILTER 0.1
 
 // ===== ECO Mode Parameters =====
 // ECO mode is selected via physical MODE_SELECTOR_PIN.
@@ -140,15 +140,15 @@
 // Both heaters remain available in all modes.
 #define ECO_START_HOUR 18                          // ECO window starts at 18:00
 #define ECO_END_HOUR   9                           // ECO window ends at 09:00
-#define DEFAULT_ECO_NIGHT_TARGET_PERCENTAGE 85.0f  // % of target applied during ECO window
+#define ECO_NIGHT_TARGET_PERCENTAGE 85.0f  // % of target applied during ECO window
 
 // ===== Phase Parameters =====
-#define DEFAULT_INIT_PHASE_DURATION 3600       // seconds (1 hour max)
-#define DEFAULT_BRASSAGE_PHASE_DURATION 120    // seconds (2 minutes)
-#define DEFAULT_EXTRACTION_PHASE_DURATION 300  // seconds (5 minutes)
-#define DEFAULT_EXTRACTION_HUM_THRESHOLD 70.0f // %RH - exit extraction when below
+#define INIT_PHASE_DURATION 3600       // seconds (1 hour max)
+#define BRASSAGE_PHASE_DURATION 120    // seconds (2 minutes)
+#define EXTRACTION_PHASE_DURATION 300  // seconds (5 minutes)
+#define EXTRACTION_HUM_THRESHOLD 70.0f // %RH - exit extraction when below
 
 // Session duration limit
-#define DEFAULT_DRYING_SESSION_DURATION 172800 // seconds (48 hours)
+#define DRYING_SESSION_DURATION 172800 // seconds (48 hours)
 
 #endif // CONFIG_H
