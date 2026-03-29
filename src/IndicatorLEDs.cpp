@@ -21,8 +21,8 @@ bool IndicatorLEDs::Begin(uint8_t i2c_address, TwoWire &wire)
   }
   state_ = 0;
 
-  // Port B – outputs (GPB0-GPB4), all off
-  for (uint8_t pin = 8; pin <= 12; pin++)
+  // Port B – all 8 pins as outputs, all off
+  for (uint8_t pin = 8; pin <= 15; pin++)
   {
     mcp_.pinMode(pin, OUTPUT);
     mcp_.digitalWrite(pin, LOW);
