@@ -34,9 +34,49 @@ Dryer dryer;
 // Session data logger
 SessionMonitor session_monitor(&dryer, &time_manager);
 
+// ========== CORE 1: RS485 MODBUS READS ==========
+// Core 1 owns the RS485/Modbus peripheral exclusively.
+// Core 0 reads these volatile variables without blocking.
+
+static volatile float g_inlet_temp  = 0.0f;
+static volatile float g_inlet_hum   = 0.0f;
+static volatile float g_outlet_temp = 0.0f;
+static volatile float g_outlet_hum  = 0.0f;
+static volatile bool  g_core0_ready = false;
+
+void setup1()
+{
+  while (!g_core0_ready) {}  // Wait for Core 0 to finish setup
+  modbus_sensors.Begin(MODBUS_BAUDRATE);
+}
+
+void loop1()
+{
+  float temp, hum;
+
+  temp = g_inlet_temp;
+  hum  = g_inlet_hum;
+  if (modbus_sensors.ReadSensor(MODBUS_INLET_ADDRESS, temp, hum))
+  {
+    g_inlet_temp = temp;
+    g_inlet_hum  = hum;
+  }
+
+  delay(50);  // RS485 bus settle between requests
+
+  temp = g_outlet_temp;
+  hum  = g_outlet_hum;
+  if (modbus_sensors.ReadSensor(MODBUS_OUTLET_ADDRESS, temp, hum))
+  {
+    g_outlet_temp = temp;
+    g_outlet_hum  = hum;
+  }
+
+  delay(SENSOR_UPDATE_INTERVAL);
+}
+
 // ========== TIMING STATE ==========
 
-static uint32_t last_sensor_update = 0;
 static uint32_t last_input_update = 0;
 static uint32_t last_settings_save = 0;
 static bool was_running = false;
@@ -133,42 +173,23 @@ static void SetupSessionMonitor()
 }
 
 // ========== SENSOR UPDATE ==========
+// Non-blocking: Core 1 handles Modbus reads; Core 0 just copies the latest values.
+
+static uint32_t last_sensor_log = 0;
 
 static void UpdateSensors()
 {
+  dryer.SetInletTemperature(g_inlet_temp);
+  dryer.SetInletHumidity(g_inlet_hum);
+  dryer.SetOutletTemperature(g_outlet_temp);
+  dryer.SetOutletHumidity(g_outlet_hum);
+
   uint32_t now = millis();
-  if (now - last_sensor_update < SENSOR_UPDATE_INTERVAL)
-    return;
-  last_sensor_update = now;
-
-  float inlet_temp = dryer.GetInletTemperature();
-  float inlet_hum = dryer.GetInletHumidity();
-
-  if (modbus_sensors.ReadSensor(MODBUS_INLET_ADDRESS, inlet_temp, inlet_hum))
+  if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
-    dryer.SetInletTemperature(inlet_temp);
-    dryer.SetInletHumidity(inlet_hum);
-    Logger::Debug("Inlet: %F C %F%%RH", inlet_temp, inlet_hum);
-  }
-  else
-  {
-    Logger::Warning("Inlet sensor read failed (errors=%d)", modbus_sensors.GetErrorCount());
-  }
-
-  delay(50); // Allow RS485 bus to settle between back-to-back requests
-
-  float outlet_temp = dryer.GetOutletTemperature();
-  float outlet_hum = dryer.GetOutletHumidity();
-
-  if (modbus_sensors.ReadSensor(MODBUS_OUTLET_ADDRESS, outlet_temp, outlet_hum))
-  {
-    dryer.SetOutletTemperature(outlet_temp);
-    dryer.SetOutletHumidity(outlet_hum);
-    Logger::Debug("Outlet: %F C %F%%RH", outlet_temp, outlet_hum);
-  }
-  else
-  {
-    Logger::Warning("Outlet sensor read failed (errors=%d)", modbus_sensors.GetErrorCount());
+    last_sensor_log = now;
+    Logger::Debug("Inlet:  %F C  %F%%RH", (float)g_inlet_temp,  (float)g_inlet_hum);
+    Logger::Debug("Outlet: %F C  %F%%RH", (float)g_outlet_temp, (float)g_outlet_hum);
   }
 }
 
@@ -396,9 +417,6 @@ void setup()
 
   StartupSelfTest();
 
-  modbus_sensors.Begin(MODBUS_BAUDRATE);
-  delay(50);
-
   SetupSessionMonitor();
 
   dryer.Begin(indicator_leds);
@@ -410,6 +428,7 @@ void setup()
   }
 
   Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
+  g_core0_ready = true;  // Signal Core 1 to start Modbus initialization
 }
 
 // ========== LOOP ==========
