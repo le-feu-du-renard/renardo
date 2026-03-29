@@ -29,8 +29,8 @@
 
 // Voltmeter outputs (PWM, 0-3V via RC filter)
 // Channel assignment: change the pin to rewire a voltmeter to a different GPIO.
-#define VOLTMETER_CH1_TEMPERATURE_PIN 18    // CH1 - inlet temperature
-#define VOLTMETER_CH2_HUMIDITY_PIN 19       // CH2 - inlet humidity
+#define VOLTMETER_CH1_TEMPERATURE_PIN 19    // CH1 - inlet temperature
+#define VOLTMETER_CH2_HUMIDITY_PIN 18       // CH2 - inlet humidity
 #define VOLTMETER_CH3_TOTAL_DURATION_PIN 20 // CH3 - total session duration
 #define VOLTMETER_CH4_PHASE_DURATION_PIN 21 // CH4 - current phase duration
 
@@ -58,11 +58,11 @@
 #define LED_PIN_AIR_RENEWAL 4      // GPA4 - air renewal indicator LED
 
 // Port B – Digital outputs (Adafruit library: pin = 8 + GPB bit index)
-#define MCP_BTN_START_LED_PIN 8    // GPB0 - START button indicator LED
-#define MCP_BTN_STOP_LED_PIN 9     // GPB1 - STOP button indicator LED
-#define MCP_ELECTRIC_HEATER_PIN 14 // GPB6 - electric heater relay
-#define MCP_FAN_PIN 13             // GPB5 - fan relay
-#define MCP_AIR_DAMPER_PIN 12      // GPB4 - air damper
+#define MCP_BTN_START_LED_PIN 15  // GPB7 - START button indicator LED
+#define MCP_BTN_STOP_LED_PIN 14   // GPB6 - STOP button indicator LED
+#define MCP_ELECTRIC_HEATER_PIN 8 // GPB0 - electric heater relay
+#define MCP_FAN_PIN 9             // GPB1 - fan relay
+#define MCP_AIR_DAMPER_PIN 10     // GPB2 - air damper
 
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600
