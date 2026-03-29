@@ -73,10 +73,6 @@ static void SetupLEDs()
   {
     Logger::Error("Indicator LEDs: MCP23017 not found — continuing without LEDs");
   }
-  // Startup sequence: flash all LEDs once for hardware validation
-  indicator_leds.UpdateAll(0xFF);
-  delay(500);
-  indicator_leds.Clear();
 }
 
 static void SetupRTC()
@@ -93,6 +89,35 @@ static void SetupRTC()
     }
     Logger::Info("RTC ready: %s", time_manager.GetDateTimeString());
   }
+}
+
+static void StartupSelfTest()
+{
+  Logger::Info("Startup self-test: all outputs ON for 2 s");
+
+  // All Port A indicator LEDs on
+  indicator_leds.UpdateAll(0xFF);
+
+  // Button LEDs on Port B
+  indicator_leds.SetOutput(MCP_BTN_START_LED_PIN, true);
+  indicator_leds.SetOutput(MCP_BTN_STOP_LED_PIN, true);
+
+  // All voltmeters at full scale
+  voltmeters.SetTemperature(VOLTMETER_TEMP_MAX);
+  voltmeters.SetHumidity(VOLTMETER_HUM_MAX);
+  voltmeters.SetTotalDuration(VOLTMETER_TOTAL_DUR_H * 3600.0f);
+  voltmeters.SetPhaseDuration(VOLTMETER_PHASE_DUR_MIN * 60.0f);
+
+  delay(2000);
+
+  // Reset all outputs
+  indicator_leds.Clear();
+  indicator_leds.SetOutput(MCP_BTN_START_LED_PIN, false);
+  indicator_leds.SetOutput(MCP_BTN_STOP_LED_PIN, false);
+  voltmeters.SetTemperature(0.0f);
+  voltmeters.SetHumidity(0.0f);
+  voltmeters.SetTotalDuration(0.0f);
+  voltmeters.SetPhaseDuration(0.0f);
 }
 
 static void SetupSessionMonitor()
@@ -357,6 +382,8 @@ void setup()
 
   voltmeters.Begin();
   input_handler.Begin(indicator_leds);
+
+  StartupSelfTest();
 
   modbus_sensors.Begin(MODBUS_BAUDRATE);
   delay(50);
