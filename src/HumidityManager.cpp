@@ -3,12 +3,14 @@
 
 HumidityManager::HumidityManager(AirDamper *air_damper)
     : air_damper_(air_damper),
+      mode_(Mode::kDisabled),
       target_humidity_(0.0f),
       current_inlet_humidity_(0.0f),
       action_next_allowed_ms_(0) {}
 
 void HumidityManager::Begin()
 {
+  mode_                   = Mode::kDisabled;
   target_humidity_        = 0.0f;
   current_inlet_humidity_ = 0.0f;
   action_next_allowed_ms_ = 0;
@@ -20,16 +22,21 @@ void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
 {
   current_inlet_humidity_ = inlet_humidity;
 
-  // No control: keep damper closed
-  if (target_humidity_ <= 0.0f)
+  if (mode_ == Mode::kDisabled)
   {
     air_damper_->Close();
     return;
   }
 
+  if (mode_ == Mode::kForceOpen)
+  {
+    air_damper_->Open();
+    return;
+  }
+
+  // kThreshold: open when humidity exceeds target + deadband, close when at or below target
   if (!IsActionAllowed()) return;
 
-  // Open damper when humidity exceeds target + deadband (evacuate moisture)
   if (inlet_humidity > target_humidity_ + kDeadband)
   {
     if (!air_damper_->IsOpen())
@@ -40,7 +47,6 @@ void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
                    inlet_humidity, target_humidity_);
     }
   }
-  // Close damper when humidity drops at or below target
   else if (inlet_humidity <= target_humidity_)
   {
     if (air_damper_->IsOpen())
@@ -51,6 +57,16 @@ void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
                    inlet_humidity, target_humidity_);
     }
   }
+}
+
+void HumidityManager::SetMode(Mode mode)
+{
+  if (mode == mode_) return;
+  const char *name = (mode == Mode::kDisabled)  ? "kDisabled"
+                   : (mode == Mode::kForceOpen)  ? "kForceOpen"
+                                                 : "kThreshold";
+  Logger::Info("HumidityManager: mode -> %s", name);
+  mode_ = mode;
 }
 
 void HumidityManager::SetTargetHumidity(float target)

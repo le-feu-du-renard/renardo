@@ -7,14 +7,17 @@
 
 // Controls the binary air damper to manage inlet humidity.
 //
-// Behaviour:
-//   target = 0   -> damper closed (no humidity control / recirculation)
-//   target > 0   -> open damper when humidity > target, close when humidity <= target
+// Mode:
+//   kDisabled  -> damper always closed (Init, Brassage)
+//   kForceOpen -> damper always open   (Extraction, Init sub-extraction)
+//   kThreshold -> open when humidity > target + deadband, close when <= target
 //
-// A cooldown of 10 s is enforced between state changes to avoid hunting.
+// A cooldown of 10 s is enforced between state changes in kThreshold mode.
 class HumidityManager
 {
 public:
+  enum class Mode { kDisabled, kForceOpen, kThreshold };
+
   explicit HumidityManager(AirDamper *air_damper);
 
   void Begin();
@@ -22,12 +25,16 @@ public:
   // Call each control cycle with fresh sensor readings.
   void Update(float inlet_humidity, float outlet_humidity);
 
-  // Set humidity threshold (%RH).  0 = no control (damper closed).
+  // Set operating mode (called by SessionManager on phase transitions).
+  void SetMode(Mode mode);
+  Mode GetMode() const { return mode_; }
+
+  // Set humidity threshold (%RH) — used for kThreshold mode and transition logic.
   void  SetTargetHumidity(float target);
   float GetTargetHumidity()   const { return target_humidity_; }
   float GetCurrentHumidity()  const { return current_inlet_humidity_; }
 
-  // Returns true when the damper is in the correct state for the current target.
+  // Returns true when inlet humidity is at or below the target.
   bool IsHumidityTargetReached() const;
 
   // Reset the cooldown timer (call when entering a new phase).
@@ -36,6 +43,7 @@ public:
 private:
   AirDamper *air_damper_;
 
+  Mode     mode_;
   float    target_humidity_;
   float    current_inlet_humidity_;
   uint32_t action_next_allowed_ms_;

@@ -46,8 +46,9 @@ void SessionManager::Stop()
   temperature_manager_->GetElectricHeater()->SetPower(0.0f);
   temperature_manager_->GetHydraulicHeater()->SetPower(0.0f);
 
-  // Disable humidity control
+  // Disable humidity control and close damper
   humidity_manager_->SetTargetHumidity(0.0f);
+  humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
   humidity_manager_->ResetCooldown();
 
   Logger::Info("SessionManager: session stopped");
@@ -100,7 +101,7 @@ void SessionManager::EnterPhase(DryerPhase phase)
     case DryerPhase::kInit:
       temperature_manager_->SetTargetTemperature(
           temperature_manager_->GetTargetTemperature());
-      humidity_manager_->SetTargetHumidity(0.0f);
+      humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
       humidity_manager_->ResetCooldown();
       init_extraction_end_ms_ = 0;
       // Start hydraulic at full power for initial ramp-up
@@ -110,13 +111,14 @@ void SessionManager::EnterPhase(DryerPhase phase)
       break;
 
     case DryerPhase::kBrassage:
-      humidity_manager_->SetTargetHumidity(0.0f);
+      humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
       humidity_manager_->ResetCooldown();
       Logger::Info("SessionManager: entering Brassage phase");
       break;
 
     case DryerPhase::kExtraction:
-      // Open damper to evacuate moisture; target humidity set by user potentiometer
+      // Force damper open for the full extraction phase duration
+      humidity_manager_->SetMode(HumidityManager::Mode::kForceOpen);
       humidity_manager_->ResetCooldown();
       Logger::Info("SessionManager: entering Extraction phase");
       break;
@@ -143,6 +145,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
           if (millis() >= init_extraction_end_ms_)
           {
             init_extraction_end_ms_ = 0;
+            humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
             Logger::Info("SessionManager: Init extraction done");
           }
         }
@@ -152,6 +155,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
           if (remaining > EXTRACTION_DAMPER_OPEN_DURATION)
           {
             init_extraction_end_ms_ = millis() + (uint32_t)EXTRACTION_DAMPER_OPEN_DURATION * 1000UL;
+            humidity_manager_->SetMode(HumidityManager::Mode::kForceOpen);
             Logger::Info("SessionManager: Init humidity reached, extracting for %us",
                          EXTRACTION_DAMPER_OPEN_DURATION);
           }
