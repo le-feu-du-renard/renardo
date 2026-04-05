@@ -35,7 +35,7 @@ static constexpr uint8_t kExpanderAddress = 0x20;
 // #define MCP_BTN_START_LED_PIN 15  // GPB7 - START button indicator LED
 // #define MCP_BTN_STOP_LED_PIN 14   // GPB6 - STOP button indicator LED
 
-static constexpr uint8_t kLed1Pin = 15; // GPA0
+static constexpr uint8_t kLed1Pin = 3; // GPA0
 // 12  // GPB4
 // 13 // GPB5
 // 14 // GPB6
