@@ -9,6 +9,9 @@
 #define I2C_BUS_1_SDA_PIN 10
 #define I2C_BUS_1_SCL_PIN 11
 
+// Air damper (direct GPIO)
+#define AIR_DAMPER_PIN 9
+
 // RS485 Modbus RTU (UART1 → MAX3485)
 #define RS485_TX_PIN 12 // UART1 TX → MAX3485 DI
 #define RS485_RX_PIN 13 // UART1 RX ← MAX3485 RO
@@ -57,7 +60,6 @@
 #define MCP_LED_AIR_RENEWAL 3      // GPA3 - air renewal indicator LED
 
 // Port B – Digital outputs (Adafruit library: pin = 8 + GPB bit index)
-#define MCP_AIR_DAMPER 8     // GPB0 - air damper
 #define MCP_HEATER_RELAY 9   // GPB1 - electric heater relay
 #define MCP_FAN_RELAY 10     // GPB2 - fan relay
 #define MCP_BTN_START_LED 15 // GPB7 - START button indicator LED

@@ -102,6 +102,10 @@ static void SetupI2C()
 
 static void SetupPins()
 {
+  // Air damper
+  pinMode(AIR_DAMPER_PIN, OUTPUT);
+  digitalWrite(AIR_DAMPER_PIN, LOW);
+
   // Hydraulic circulator PWM
   pinMode(WATER_CIRCULATOR_PWM_PIN, OUTPUT);
   analogWrite(WATER_CIRCULATOR_PWM_PIN, 0);
@@ -261,14 +265,14 @@ static void UpdateOutputs()
 
   if (first_run || fan_state != last_fan)
   {
-    mcp_outputs.SetOutput(MCP_FAN_RELAY, fan_state);
+    mcp_outputs.SetOutput(MCP_FAN_RELAY, !fan_state);
     last_fan = fan_state;
     Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
   }
 
   if (first_run || damper_state != last_damper)
   {
-    mcp_outputs.SetOutput(MCP_AIR_DAMPER, damper_state);
+    digitalWrite(AIR_DAMPER_PIN, damper_state ? HIGH : LOW);
     last_damper = damper_state;
     Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
