@@ -31,10 +31,14 @@
 #define BTN_STOP_PIN 17
 
 // Voltmeter outputs (PWM, 0-3V)
-#define VOLTMETER_HUMIDITY_PIN 18       //  inlet humidity
-#define VOLTMETER_TEMPERATURE_PIN 19    // inlet temperature
-#define VOLTMETER_PHASE_DURATION_PIN 20 // current phase duration
-#define VOLTMETER_TOTAL_DURATION_PIN 21 // total session duration
+#define VOLTMETER_INLET_HUMIDITY_PIN 18     // inlet humidity
+#define VOLTMETER_INLET_TEMPERATURE_PIN 19  // inlet temperature
+#define VOLTMETER_OUTLET_TEMPERATURE_PIN 20 // outlet temperature
+#define VOLTMETER_OUTLET_HUMIDITY_PIN 21    // outlet humidity
+
+// TM1637 4-digit LED display (total session duration)
+#define TM1637_CLK_PIN 4 // GPIO 4 — TM1637 clock
+#define TM1637_DIO_PIN 5 // GPIO 5 — TM1637 data
 
 // Mode selector (LOW = ECO, HIGH = PERFORMANCE)
 #define MODE_SELECTOR_PIN 22
@@ -94,9 +98,8 @@
 #define POT_HUM_MAX 100.0f // %RH - potentiometer maximum
 
 // Voltmeter display ranges
-#define VOLTMETER_TEMPERATURE_MAX 50.0f  // °C
-#define VOLTMETER_HUMIDITY_MAX 100.0f    // %RH
-#define VOLTMETER_TOTAL_DURATION_H 48.0f // hours
+#define VOLTMETER_TEMPERATURE_MAX 50.0f // °C (inlet and outlet)
+#define VOLTMETER_HUMIDITY_MAX 100.0f   // %RH (inlet and outlet)
 
 // Heater enable defaults
 #define HYDRAULIC_ENABLED true

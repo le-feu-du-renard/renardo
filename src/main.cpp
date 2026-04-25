@@ -7,6 +7,7 @@
 #include "ModbusSensors.h"
 #include "McpOutputs.h"
 #include "VoltmeterOutputs.h"
+#include "DurationDisplay.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "SessionMonitor.h"
@@ -23,6 +24,7 @@ ModbusSensors modbus_sensors;
 // Physical I/O
 McpOutputs mcp_outputs;
 VoltmeterOutputs voltmeters;
+DurationDisplay duration_display;
 InputHandler input_handler;
 
 // RTC
@@ -146,11 +148,12 @@ static void StartupSelfTest()
   mcp_outputs.SetOutput(MCP_BTN_START_LED, true);
   mcp_outputs.SetOutput(MCP_BTN_STOP_LED, true);
 
-  // All voltmeters at full scale
-  voltmeters.SetTemperature(VOLTMETER_TEMPERATURE_MAX);
-  voltmeters.SetHumidity(VOLTMETER_HUMIDITY_MAX);
-  voltmeters.SetTotalDuration(VOLTMETER_TOTAL_DURATION_H * 3600.0f);
-  voltmeters.SetPhaseDuration(1.0f, 1.0f); // full scale
+  // All voltmeters at full scale, TM1637 shows 88:88
+  voltmeters.SetInletTemperature(VOLTMETER_TEMPERATURE_MAX);
+  voltmeters.SetInletHumidity(VOLTMETER_HUMIDITY_MAX);
+  voltmeters.SetOutletTemperature(VOLTMETER_TEMPERATURE_MAX);
+  voltmeters.SetOutletHumidity(VOLTMETER_HUMIDITY_MAX);
+  duration_display.SetDuration(5999); // 59:59 — all segments lit
 
   delay(2000);
 
@@ -158,10 +161,11 @@ static void StartupSelfTest()
   mcp_outputs.Clear();
   mcp_outputs.SetOutput(MCP_BTN_START_LED, false);
   mcp_outputs.SetOutput(MCP_BTN_STOP_LED, false);
-  voltmeters.SetTemperature(0.0f);
-  voltmeters.SetHumidity(0.0f);
-  voltmeters.SetTotalDuration(0.0f);
-  voltmeters.SetPhaseDuration(0.0f, 1.0f);
+  voltmeters.SetInletTemperature(0.0f);
+  voltmeters.SetInletHumidity(0.0f);
+  voltmeters.SetOutletTemperature(0.0f);
+  voltmeters.SetOutletHumidity(0.0f);
+  duration_display.SetDuration(0);
 }
 
 static void SetupSessionMonitor()
@@ -316,32 +320,17 @@ static void UpdateLEDs()
   mcp_outputs.UpdateAll(mask);
 }
 
-// ========== VOLTMETER UPDATE ==========
+// ========== DISPLAY UPDATE ==========
 
-static void UpdateVoltmeters()
+static void UpdateDisplays()
 {
-  voltmeters.SetTemperature(dryer.GetInletTemperature());
-  voltmeters.SetHumidity(dryer.GetInletHumidity());
-  if (dryer.IsRunning())
-  {
-    voltmeters.SetTotalDuration(static_cast<float>(dryer.GetTotalElapsedTime()));
+  voltmeters.SetInletTemperature(dryer.GetInletTemperature());
+  voltmeters.SetInletHumidity(dryer.GetInletHumidity());
+  voltmeters.SetOutletTemperature(dryer.GetOutletTemperature());
+  voltmeters.SetOutletHumidity(dryer.GetOutletHumidity());
 
-    uint32_t phase_max;
-    switch (dryer.GetCurrentPhase())
-    {
-      case DryerPhase::kInit:       phase_max = INIT_PHASE_DURATION;       break;
-      case DryerPhase::kBrassage:   phase_max = BRASSAGE_PHASE_DURATION;   break;
-      case DryerPhase::kExtraction: phase_max = EXTRACTION_PHASE_DURATION; break;
-      default:                      phase_max = 1;                         break;
-    }
-    voltmeters.SetPhaseDuration(static_cast<float>(dryer.GetPhaseElapsedTime()),
-                                static_cast<float>(phase_max));
-  }
-  else
-  {
-    voltmeters.SetTotalDuration(0.0f);
-    voltmeters.SetPhaseDuration(0.0f, 1.0f);
-  }
+  uint32_t elapsed = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
+  duration_display.SetDuration(elapsed);
 }
 
 // ========== SESSION MONITOR UPDATE ==========
@@ -449,6 +438,7 @@ void setup()
   delay(50);
 
   voltmeters.Begin();
+  duration_display.Begin();
   input_handler.Begin(mcp_outputs);
 
   StartupSelfTest();
@@ -480,7 +470,7 @@ void loop()
   dryer.Update();
   UpdateOutputs();
   UpdateLEDs();
-  UpdateVoltmeters();
+  UpdateDisplays();
   UpdateSessionMonitor();
   UpdateSettings();
   UpdateDiagnostics();

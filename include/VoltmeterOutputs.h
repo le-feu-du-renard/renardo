@@ -9,10 +9,10 @@
 // PWM frequency: ~50 kHz.  Duty cycle 0-91% maps to 0-3.0 V on a 3.3 V rail.
 //
 // Channel assignment and pin mapping defined in config.h:
-//   VOLTMETER_TEMPERATURE_PIN    (0 V -> 0,  3 V -> VOLTMETER_TEMPERATURE_MAX C)
-//   VOLTMETER_HUMIDITY_PIN       (0 V -> 0,  3 V -> VOLTMETER_HUMIDITY_MAX %RH)
-//   VOLTMETER_TOTAL_DURATION_PIN (0 V -> 0,  3 V -> VOLTMETER_TOTAL_DURATION_H hours)
-//   VOLTMETER_PHASE_DURATION_PIN (0 V -> 0%,  3 V -> 100% of current phase)
+//   VOLTMETER_INLET_TEMPERATURE_PIN  (0 V -> 0,  3 V -> VOLTMETER_TEMPERATURE_MAX C)
+//   VOLTMETER_INLET_HUMIDITY_PIN     (0 V -> 0,  3 V -> VOLTMETER_HUMIDITY_MAX %RH)
+//   VOLTMETER_OUTLET_TEMPERATURE_PIN (0 V -> 0,  3 V -> VOLTMETER_TEMPERATURE_MAX C)
+//   VOLTMETER_OUTLET_HUMIDITY_PIN    (0 V -> 0,  3 V -> VOLTMETER_HUMIDITY_MAX %RH)
 
 class VoltmeterOutputs
 {
@@ -23,10 +23,10 @@ public:
   void Begin();
 
   // Set individual channels (values are clamped to their configured range).
-  void SetTemperature(float celsius);
-  void SetHumidity(float percent);
-  void SetTotalDuration(float seconds);
-  void SetPhaseDuration(float elapsed_seconds, float total_seconds);
+  void SetInletTemperature(float celsius);
+  void SetInletHumidity(float percent);
+  void SetOutletTemperature(float celsius);
+  void SetOutletHumidity(float percent);
 
 private:
   // Write a duty cycle in the range [0.0, 1.0] to the given pin.

@@ -12,10 +12,10 @@ VoltmeterOutputs::VoltmeterOutputs() {}
 void VoltmeterOutputs::Begin()
 {
   const uint8_t pins[] = {
-      VOLTMETER_TEMPERATURE_PIN,
-      VOLTMETER_HUMIDITY_PIN,
-      VOLTMETER_TOTAL_DURATION_PIN,
-      VOLTMETER_PHASE_DURATION_PIN,
+      VOLTMETER_INLET_TEMPERATURE_PIN,
+      VOLTMETER_INLET_HUMIDITY_PIN,
+      VOLTMETER_OUTLET_TEMPERATURE_PIN,
+      VOLTMETER_OUTLET_HUMIDITY_PIN,
   };
 
   for (uint8_t pin : pins)
@@ -29,28 +29,24 @@ void VoltmeterOutputs::Begin()
   Logger::Info("VoltmeterOutputs: PWM ready at %lu Hz, %d-bit resolution", kPwmFreqHz, kPwmBits);
 }
 
-void VoltmeterOutputs::SetTemperature(float celsius)
+void VoltmeterOutputs::SetInletTemperature(float celsius)
 {
-  WriteDuty(VOLTMETER_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMPERATURE_MAX));
+  WriteDuty(VOLTMETER_INLET_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMPERATURE_MAX));
 }
 
-void VoltmeterOutputs::SetHumidity(float percent)
+void VoltmeterOutputs::SetInletHumidity(float percent)
 {
-  WriteDuty(VOLTMETER_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUMIDITY_MAX));
+  WriteDuty(VOLTMETER_INLET_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUMIDITY_MAX));
 }
 
-void VoltmeterOutputs::SetTotalDuration(float seconds)
+void VoltmeterOutputs::SetOutletTemperature(float celsius)
 {
-  float hours = seconds / 3600.0f;
-  WriteDuty(VOLTMETER_TOTAL_DURATION_PIN, ValueToDuty(hours, VOLTMETER_TOTAL_DURATION_H));
+  WriteDuty(VOLTMETER_OUTLET_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMPERATURE_MAX));
 }
 
-void VoltmeterOutputs::SetPhaseDuration(float elapsed_seconds, float total_seconds)
+void VoltmeterOutputs::SetOutletHumidity(float percent)
 {
-  float ratio = (total_seconds > 0.0f)
-      ? constrain(elapsed_seconds / total_seconds, 0.0f, 1.0f)
-      : 0.0f;
-  WriteDuty(VOLTMETER_PHASE_DURATION_PIN, ratio * kDutyMax);
+  WriteDuty(VOLTMETER_OUTLET_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUMIDITY_MAX));
 }
 
 void VoltmeterOutputs::WriteDuty(uint8_t pin, float duty)
