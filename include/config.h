@@ -26,9 +26,6 @@
 #define I2C_SENSOR_ADDRESS 0x40
 #endif // SENSOR_I2C
 
-// Air damper (direct GPIO)
-#define AIR_DAMPER_PIN 9
-
 #ifndef SENSOR_I2C
 // RS485 Modbus RTU (UART1 → MAX3485)
 #define RS485_TX_PIN 4 // UART1 TX → MAX3485 DI
@@ -80,7 +77,7 @@
 #define MCP_BTN_STOP_LED 9  // GPB1 - STOP button indicator LED
 #define MCP_HEATER_RELAY 10 // GPB2 - electric heater relay
 #define MCP_FAN_RELAY 11    // GPB3 - fan relay
-#define MCP_BELIMO_RELAY 14 // GPB6 - belimo damper actuator relay
+#define MCP_BELIMO_RELAY 12 // GPB4 - belimo damper actuator relay
 
 #ifndef SENSOR_I2C
 // ========== RS485 / MODBUS ==========

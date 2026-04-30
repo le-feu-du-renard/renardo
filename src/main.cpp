@@ -140,10 +140,6 @@ static void SetupI2C()
 
 static void SetupPins()
 {
-  // Air damper
-  pinMode(AIR_DAMPER_PIN, OUTPUT);
-  digitalWrite(AIR_DAMPER_PIN, HIGH); // HIGH = relay energized = NC contact open = 0V = closed
-
   // Hydraulic circulator PWM
   pinMode(WATER_CIRCULATOR_PWM_PIN, OUTPUT);
   analogWrite(WATER_CIRCULATOR_PWM_PIN, 0);
@@ -339,7 +335,7 @@ static void UpdateOutputs()
 
   if (first_run || damper_state != last_damper)
   {
-    mcp_outputs.SetOutput(MCP_BELIMO_RELAY, damper_state);
+    mcp_outputs.SetOutput(MCP_BELIMO_RELAY, !damper_state);
     last_damper = damper_state;
     Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
