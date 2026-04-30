@@ -142,8 +142,8 @@
 
 // ===== Phase Parameters =====
 #define INIT_PHASE_DURATION 3600      // seconds
-#define BRASSAGE_PHASE_DURATION 300   // seconds
-#define EXTRACTION_PHASE_DURATION 300 // seconds
+#define BRASSAGE_PHASE_DURATION 600   // seconds
+#define EXTRACTION_PHASE_DURATION 210 // seconds
 
 // ===== Extraction Parameters =====
 #define EXTRACTION_DAMPER_OPEN_DURATION 120 // seconds
