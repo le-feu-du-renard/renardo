@@ -24,6 +24,11 @@ public:
   // --- Mode selector (true = ECO, false = PERFORMANCE) ---
   bool IsEcoMode() const { return eco_mode_; }
 
+  // --- Potentiometer adjustment detection ---
+  // Returns true for kAdjustDisplayMs after the last potentiometer change.
+  bool IsTemperatureBeingAdjusted() const;
+  bool IsHumidityBeingAdjusted()    const;
+
   // --- Buttons (return true once per press, edge-triggered) ---
   bool IsStartPressed();
   bool IsStopPressed();
@@ -38,7 +43,9 @@ private:
   float target_humidity_;
 
   // Mode selector
-  bool eco_mode_;
+  bool     eco_mode_;
+  bool     selector_raw_prev_;
+  uint32_t selector_debounce_ms_;
 
   // Button debounce state
   bool     start_raw_prev_;
@@ -50,9 +57,15 @@ private:
   uint32_t start_debounce_ms_;
   uint32_t stop_debounce_ms_;
 
-  static constexpr uint32_t kDebounceMs = 50;
+  static constexpr uint32_t kDebounceMs      = 50;
+  static constexpr uint32_t kAdjustDisplayMs = 3000;
 
   McpOutputs *leds_;
+
+  float    prev_target_temperature_;
+  float    prev_target_humidity_;
+  uint32_t temp_adjust_until_ms_;
+  uint32_t hum_adjust_until_ms_;
 
   // Average 8 ADC samples and map to [min, max]
   static float ReadPot(uint8_t pin, float min_val, float max_val);

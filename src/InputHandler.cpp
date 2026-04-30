@@ -6,6 +6,8 @@ InputHandler::InputHandler()
     : target_temperature_(TEMPERATURE_TARGET),
       target_humidity_(50.0f),
       eco_mode_(false),
+      selector_raw_prev_(true),
+      selector_debounce_ms_(0),
       start_raw_prev_(false),
       stop_raw_prev_(false),
       start_pending_(false),
@@ -14,7 +16,11 @@ InputHandler::InputHandler()
       stop_consumed_(false),
       start_debounce_ms_(0),
       stop_debounce_ms_(0),
-      leds_(nullptr) {}
+      leds_(nullptr),
+      prev_target_temperature_(TEMPERATURE_TARGET),
+      prev_target_humidity_(50.0f),
+      temp_adjust_until_ms_(0),
+      hum_adjust_until_ms_(0) {}
 
 void InputHandler::Begin(McpOutputs &leds)
 {
@@ -23,18 +29,18 @@ void InputHandler::Begin(McpOutputs &leds)
   // Potentiometer pins – 12-bit ADC resolution (0-4095), analog input
   analogReadResolution(12);
   pinMode(POT_TEMPERATURE_PIN, INPUT);
-  pinMode(POT_HUMIDITY_PIN,    INPUT);
+  pinMode(POT_HUMIDITY_PIN, INPUT);
 
   // Mode selector – digital input, internal pullup
   pinMode(MODE_SELECTOR_PIN, INPUT_PULLUP);
 
   // Buttons – active LOW with internal pullup
   pinMode(BTN_START_PIN, INPUT_PULLUP);
-  pinMode(BTN_STOP_PIN,  INPUT_PULLUP);
+  pinMode(BTN_STOP_PIN, INPUT_PULLUP);
 
   // Button LEDs – via MCP23017 Port B, start off
   leds_->SetOutput(MCP_BTN_START_LED, LOW);
-  leds_->SetOutput(MCP_BTN_STOP_LED,  LOW);
+  leds_->SetOutput(MCP_BTN_STOP_LED, LOW);
 
   Logger::Info("InputHandler: initialized");
 }
@@ -45,25 +51,51 @@ void InputHandler::Update()
 
   // Read potentiometers: averaged + mapped to physical range
   target_temperature_ = ReadPot(POT_TEMPERATURE_PIN, POT_TEMP_MIN, POT_TEMP_MAX);
-  target_humidity_    = ReadPot(POT_HUMIDITY_PIN,    POT_HUM_MIN,  POT_HUM_MAX);
+  target_humidity_ = ReadPot(POT_HUMIDITY_PIN, POT_HUM_MIN, POT_HUM_MAX);
 
-  // Read mode selector (LOW = ECO because of internal pullup when switch open)
-  eco_mode_ = (digitalRead(MODE_SELECTOR_PIN) == LOW);
+  // Detect potentiometer movement and extend the voltmeter display window
+  constexpr float kTempThreshold = 0.3f;
+  constexpr float kHumThreshold = 1.0f;
+
+  if (fabsf(target_temperature_ - prev_target_temperature_) >= kTempThreshold)
+  {
+    prev_target_temperature_ = target_temperature_;
+    temp_adjust_until_ms_ = now + kAdjustDisplayMs;
+  }
+
+  if (fabsf(target_humidity_ - prev_target_humidity_) >= kHumThreshold)
+  {
+    prev_target_humidity_ = target_humidity_;
+    hum_adjust_until_ms_ = now + kAdjustDisplayMs;
+  }
+
+  // Read mode selector with debounce
+  // Contact NO + pull-up: open (ECO) = HIGH, closed (PERFORMANCE) = LOW
+  bool selector_raw = (digitalRead(MODE_SELECTOR_PIN) == HIGH);
+  if (selector_raw != selector_raw_prev_)
+  {
+    selector_debounce_ms_ = now;
+    selector_raw_prev_ = selector_raw;
+  }
+  else if ((now - selector_debounce_ms_) >= kDebounceMs)
+  {
+    eco_mode_ = selector_raw;
+  }
 
   // --- START button debounce (active LOW, fires once per press) ---
   bool start_raw = (digitalRead(BTN_START_PIN) == LOW);
   if (!start_raw)
   {
-    start_consumed_ = false;  // Button released: allow next press
+    start_consumed_ = false; // Button released: allow next press
   }
   else if (!start_raw_prev_)
   {
-    start_debounce_ms_ = now;  // Rising edge: start debounce timer
+    start_debounce_ms_ = now; // Rising edge: start debounce timer
   }
   else if (!start_consumed_ && (now - start_debounce_ms_) >= kDebounceMs)
   {
-    start_pending_  = true;
-    start_consumed_ = true;  // Block re-fire while button remains held
+    start_pending_ = true;
+    start_consumed_ = true; // Block re-fire while button remains held
   }
   start_raw_prev_ = start_raw;
 
@@ -79,7 +111,7 @@ void InputHandler::Update()
   }
   else if (!stop_consumed_ && (now - stop_debounce_ms_) >= kDebounceMs)
   {
-    stop_pending_  = true;
+    stop_pending_ = true;
     stop_consumed_ = true;
   }
   stop_raw_prev_ = stop_raw;
@@ -117,8 +149,8 @@ void InputHandler::SetStopLed(bool state)
 
 float InputHandler::ReadPot(uint8_t pin, float min_val, float max_val)
 {
-  // Average 8 samples to suppress RP2040 ADC noise
-  constexpr uint8_t kSamples = 8;
+  // Average samples to suppress RP2040 ADC noise
+  constexpr uint8_t kSamples = 20;
   uint32_t sum = 0;
   for (uint8_t i = 0; i < kSamples; i++)
   {
@@ -133,4 +165,14 @@ float InputHandler::MapAdc(uint16_t raw, float min_val, float max_val)
   constexpr float kAdcMax = 4095.0f;
   float ratio = static_cast<float>(raw) / kAdcMax;
   return min_val + ratio * (max_val - min_val);
+}
+
+bool InputHandler::IsTemperatureBeingAdjusted() const
+{
+  return millis() < temp_adjust_until_ms_;
+}
+
+bool InputHandler::IsHumidityBeingAdjusted() const
+{
+  return millis() < hum_adjust_until_ms_;
 }

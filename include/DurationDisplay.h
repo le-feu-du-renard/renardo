@@ -1,6 +1,8 @@
 #ifndef DURATION_DISPLAY_H
 #define DURATION_DISPLAY_H
 
+#ifdef DURATION_DISPLAY
+
 #include <Arduino.h>
 #include <TM1637Display.h>
 #include "config.h"
@@ -31,5 +33,7 @@ private:
   static constexpr uint8_t kBrightness = 7;
   static constexpr uint32_t kMaxSeconds = 99 * 3600 + 59 * 60; // 99h59m
 };
+
+#endif // DURATION_DISPLAY
 
 #endif // DURATION_DISPLAY_H

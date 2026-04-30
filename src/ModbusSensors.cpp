@@ -1,5 +1,7 @@
-#include "ModbusSensors.h"
 #include "config.h"
+#ifndef SENSOR_I2C
+
+#include "ModbusSensors.h"
 #include "Logger.h"
 
 static constexpr uint8_t kMaxErrors = 10;
@@ -27,6 +29,8 @@ void ModbusSensors::Begin(uint32_t baudrate)
 bool ModbusSensors::ReadSensor(uint8_t address, float &temperature, float &humidity)
 {
   node_.begin(address, Serial1);
+  node_.preTransmission(PreTransmission);
+  node_.postTransmission(PostTransmission);
 
   // Read 2 holding registers starting at MODBUS_REG_HUMIDITY (FC03)
   // Register layout: 0x0000 = humidity, 0x0001 = temperature
@@ -60,3 +64,5 @@ void ModbusSensors::PostTransmission()
   Serial1.flush();                   // Wait for last byte to fully leave the UART
   digitalWrite(RS485_DE_PIN, LOW);   // Return to receive
 }
+
+#endif // SENSOR_I2C

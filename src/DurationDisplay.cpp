@@ -1,4 +1,7 @@
 #include "DurationDisplay.h"
+
+#ifdef DURATION_DISPLAY
+
 #include "Logger.h"
 
 DurationDisplay::DurationDisplay()
@@ -42,3 +45,5 @@ void DurationDisplay::Clear()
 {
   display_.clear();
 }
+
+#endif // DURATION_DISPLAY

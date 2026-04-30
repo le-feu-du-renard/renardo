@@ -4,10 +4,16 @@
 
 #include "config.h"
 #include "Dryer.h"
+#ifdef SENSOR_I2C
+#include "I2CSensor.h"
+#else
 #include "ModbusSensors.h"
+#endif
 #include "McpOutputs.h"
 #include "VoltmeterOutputs.h"
+#ifdef DURATION_DISPLAY
 #include "DurationDisplay.h"
+#endif
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "SessionMonitor.h"
@@ -18,13 +24,23 @@
 // I2C bus (shared by MCP23017 and RTC DS1307)
 TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 
-// RS485 Modbus sensors
+#ifdef SENSOR_I2C
+// Dedicated i2c0 bus for inlet probe (GP0/GP1)
+TwoWire i2c_sensor_bus_0(i2c0, I2C_SENSOR_1_SDA_PIN, I2C_SENSOR_1_SCL_PIN);
+// Inlet probe on i2c0, outlet probe shares i2c1 with MCP23017 + RTC
+I2CSensor sensor_inlet(i2c_sensor_bus_0, I2C_SENSOR_ADDRESS);
+I2CSensor sensor_outlet(i2c_bus_1,       I2C_SENSOR_ADDRESS);
+#else
+// RS485 Modbus sensors (Core 1)
 ModbusSensors modbus_sensors;
+#endif
 
 // Physical I/O
 McpOutputs mcp_outputs;
 VoltmeterOutputs voltmeters;
+#ifdef DURATION_DISPLAY
 DurationDisplay duration_display;
+#endif
 InputHandler input_handler;
 
 // RTC
@@ -36,7 +52,14 @@ Dryer dryer;
 // Session data logger
 SessionMonitor session_monitor(&dryer, &time_manager);
 
-// ========== CORE 1: RS485 MODBUS READS ==========
+// ========== CORE 1 ==========
+
+#ifdef SENSOR_I2C
+// In I2C mode, sensors are read on Core 0 alongside other i2c1 peripherals.
+// Core 1 is idle.
+void setup1() {}
+void loop1()  {}
+#else
 // Core 1 owns the RS485/Modbus peripheral exclusively.
 // Core 0 reads these volatile variables without blocking.
 
@@ -76,6 +99,7 @@ void loop1()
 
   delay(SENSOR_UPDATE_INTERVAL);
 }
+#endif
 
 // ========== TIMING STATE ==========
 
@@ -93,13 +117,23 @@ static uint32_t loop_count = 0;
 
 static void SetupI2C()
 {
-  // Single I2C bus – MCP23017 LED expander + RTC DS1307
+  // i2c1: MCP23017 + RTC (+ outlet probe in I2C mode)
   pinMode(I2C_BUS_1_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_BUS_1_SCL_PIN, INPUT_PULLUP);
   i2c_bus_1.begin();
   i2c_bus_1.setClock(100000);
   i2c_bus_1.setTimeout(1000);
-  Logger::Info("I2C bus ready (MCP23017 + RTC, 100kHz)");
+  Logger::Info("I2C bus 1 ready (MCP23017 + RTC, 100kHz)");
+
+#ifdef SENSOR_I2C
+  // i2c0: inlet probe (GP0/GP1), dedicated bus
+  pinMode(I2C_SENSOR_1_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_SENSOR_1_SCL_PIN, INPUT_PULLUP);
+  i2c_sensor_bus_0.begin();
+  i2c_sensor_bus_0.setClock(100000);
+  i2c_sensor_bus_0.setTimeout(1000);
+  Logger::Info("I2C sensor bus 0 ready (inlet probe, 100kHz)");
+#endif
 }
 
 static void SetupPins()
@@ -153,7 +187,9 @@ static void StartupSelfTest()
   voltmeters.SetInletHumidity(VOLTMETER_HUMIDITY_MAX);
   voltmeters.SetOutletTemperature(VOLTMETER_TEMPERATURE_MAX);
   voltmeters.SetOutletHumidity(VOLTMETER_HUMIDITY_MAX);
+#ifdef DURATION_DISPLAY
   duration_display.SetDuration(5999); // 59:59 — all segments lit
+#endif
 
   delay(2000);
 
@@ -165,7 +201,9 @@ static void StartupSelfTest()
   voltmeters.SetInletHumidity(0.0f);
   voltmeters.SetOutletTemperature(0.0f);
   voltmeters.SetOutletHumidity(0.0f);
+#ifdef DURATION_DISPLAY
   duration_display.SetDuration(0);
+#endif
 }
 
 static void SetupSessionMonitor()
@@ -187,18 +225,41 @@ static uint32_t last_sensor_log = 0;
 
 static void UpdateSensors()
 {
+  uint32_t now = millis();
+
+#ifdef SENSOR_I2C
+  if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
+  {
+    last_sensor_log = now;
+    float temp, hum;
+    if (sensor_inlet.Read(temp, hum))
+    {
+      dryer.SetInletTemperature(temp);
+      dryer.SetInletHumidity(hum);
+    }
+    if (sensor_outlet.Read(temp, hum))
+    {
+      dryer.SetOutletTemperature(temp);
+      dryer.SetOutletHumidity(hum);
+    }
+    Logger::Debug("Inlet:  %F C  %F%%RH",
+                  dryer.GetInletTemperature(), dryer.GetInletHumidity());
+    Logger::Debug("Outlet: %F C  %F%%RH",
+                  dryer.GetOutletTemperature(), dryer.GetOutletHumidity());
+  }
+#else
   dryer.SetInletTemperature(g_inlet_temp);
   dryer.SetInletHumidity(g_inlet_hum);
   dryer.SetOutletTemperature(g_outlet_temp);
   dryer.SetOutletHumidity(g_outlet_hum);
 
-  uint32_t now = millis();
   if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
     last_sensor_log = now;
     Logger::Debug("Inlet:  %F C  %F%%RH", (float)g_inlet_temp,  (float)g_inlet_hum);
     Logger::Debug("Outlet: %F C  %F%%RH", (float)g_outlet_temp, (float)g_outlet_hum);
   }
+#endif
 }
 
 // ========== INPUT UPDATE ==========
@@ -276,7 +337,7 @@ static void UpdateOutputs()
 
   if (first_run || damper_state != last_damper)
   {
-    digitalWrite(AIR_DAMPER_PIN, damper_state ? LOW : HIGH);  // LOW = relay NC contact = 10V = open
+    mcp_outputs.SetOutput(MCP_BELIMO_RELAY, !damper_state);
     last_damper = damper_state;
     Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
@@ -324,13 +385,23 @@ static void UpdateLEDs()
 
 static void UpdateDisplays()
 {
-  voltmeters.SetInletTemperature(dryer.GetInletTemperature());
-  voltmeters.SetInletHumidity(dryer.GetInletHumidity());
+  float inlet_temp = input_handler.IsTemperatureBeingAdjusted()
+      ? input_handler.GetTargetTemperature()
+      : dryer.GetInletTemperature();
+
+  float inlet_hum = input_handler.IsHumidityBeingAdjusted()
+      ? input_handler.GetTargetHumidity()
+      : dryer.GetInletHumidity();
+
+  voltmeters.SetInletTemperature(inlet_temp);
+  voltmeters.SetInletHumidity(inlet_hum);
   voltmeters.SetOutletTemperature(dryer.GetOutletTemperature());
   voltmeters.SetOutletHumidity(dryer.GetOutletHumidity());
 
   uint32_t elapsed = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
+#ifdef DURATION_DISPLAY
   duration_display.SetDuration(elapsed);
+#endif
 }
 
 // ========== SESSION MONITOR UPDATE ==========
@@ -438,7 +509,9 @@ void setup()
   delay(50);
 
   voltmeters.Begin();
+#ifdef DURATION_DISPLAY
   duration_display.Begin();
+#endif
   input_handler.Begin(mcp_outputs);
 
   StartupSelfTest();
@@ -454,7 +527,15 @@ void setup()
   }
 
   Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
+#ifndef SENSOR_I2C
   g_core0_ready = true;  // Signal Core 1 to start Modbus initialization
+#endif
+
+  // In I2C mode, initialize sensors here (after i2c buses are ready)
+#ifdef SENSOR_I2C
+  sensor_inlet.Begin();
+  sensor_outlet.Begin();
+#endif
 }
 
 // ========== LOOP ==========
