@@ -82,11 +82,12 @@ void SessionManager::RestoreState(DryerPhase phase, uint32_t phase_elapsed_s,
 {
   state_            = SessionState::kRunning;
   current_phase_    = phase;
-  phase_start_ms_   = millis() - phase_elapsed_s * 1000UL;
   session_start_ms_ = millis() - total_elapsed_s * 1000UL;
   EnterPhase(phase);
-  Logger::Info("SessionManager: state restored (phase=%s, elapsed=%us)",
-               GetCurrentPhaseName(), total_elapsed_s);
+  // Override phase_start_ms_ after EnterPhase() which resets it to millis()
+  phase_start_ms_   = millis() - phase_elapsed_s * 1000UL;
+  Logger::Info("SessionManager: state restored (phase=%s, phase_elapsed=%us, total=%us)",
+               GetCurrentPhaseName(), phase_elapsed_s, total_elapsed_s);
 }
 
 // --- Private ---

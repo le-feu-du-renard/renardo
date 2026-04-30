@@ -29,7 +29,7 @@ TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 TwoWire i2c_sensor_bus_0(i2c0, I2C_SENSOR_1_SDA_PIN, I2C_SENSOR_1_SCL_PIN);
 // Inlet probe on i2c0, outlet probe shares i2c1 with MCP23017 + RTC
 I2CSensor sensor_inlet(i2c_sensor_bus_0, I2C_SENSOR_ADDRESS);
-I2CSensor sensor_outlet(i2c_bus_1,       I2C_SENSOR_ADDRESS);
+I2CSensor sensor_outlet(i2c_bus_1, I2C_SENSOR_ADDRESS);
 #else
 // RS485 Modbus sensors (Core 1)
 ModbusSensors modbus_sensors;
@@ -58,20 +58,22 @@ SessionMonitor session_monitor(&dryer, &time_manager);
 // In I2C mode, sensors are read on Core 0 alongside other i2c1 peripherals.
 // Core 1 is idle.
 void setup1() {}
-void loop1()  {}
+void loop1() {}
 #else
 // Core 1 owns the RS485/Modbus peripheral exclusively.
 // Core 0 reads these volatile variables without blocking.
 
-static volatile float g_inlet_temp  = 0.0f;
-static volatile float g_inlet_hum   = 0.0f;
+static volatile float g_inlet_temp = 0.0f;
+static volatile float g_inlet_hum = 0.0f;
 static volatile float g_outlet_temp = 0.0f;
-static volatile float g_outlet_hum  = 0.0f;
-static volatile bool  g_core0_ready = false;
+static volatile float g_outlet_hum = 0.0f;
+static volatile bool g_core0_ready = false;
 
 void setup1()
 {
-  while (!g_core0_ready) {}  // Wait for Core 0 to finish setup
+  while (!g_core0_ready)
+  {
+  } // Wait for Core 0 to finish setup
   modbus_sensors.Begin(MODBUS_BAUDRATE);
 }
 
@@ -80,21 +82,21 @@ void loop1()
   float temp, hum;
 
   temp = g_inlet_temp;
-  hum  = g_inlet_hum;
+  hum = g_inlet_hum;
   if (modbus_sensors.ReadSensor(MODBUS_INLET_ADDRESS, temp, hum))
   {
     g_inlet_temp = temp;
-    g_inlet_hum  = hum;
+    g_inlet_hum = hum;
   }
 
-  delay(50);  // RS485 bus settle between requests
+  delay(50); // RS485 bus settle between requests
 
   temp = g_outlet_temp;
-  hum  = g_outlet_hum;
+  hum = g_outlet_hum;
   if (modbus_sensors.ReadSensor(MODBUS_OUTLET_ADDRESS, temp, hum))
   {
     g_outlet_temp = temp;
-    g_outlet_hum  = hum;
+    g_outlet_hum = hum;
   }
 
   delay(SENSOR_UPDATE_INTERVAL);
@@ -140,7 +142,7 @@ static void SetupPins()
 {
   // Air damper
   pinMode(AIR_DAMPER_PIN, OUTPUT);
-  digitalWrite(AIR_DAMPER_PIN, HIGH);  // HIGH = relay energized = NC contact open = 0V = closed
+  digitalWrite(AIR_DAMPER_PIN, HIGH); // HIGH = relay energized = NC contact open = 0V = closed
 
   // Hydraulic circulator PWM
   pinMode(WATER_CIRCULATOR_PWM_PIN, OUTPUT);
@@ -256,7 +258,7 @@ static void UpdateSensors()
   if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
     last_sensor_log = now;
-    Logger::Debug("Inlet:  %F C  %F%%RH", (float)g_inlet_temp,  (float)g_inlet_hum);
+    Logger::Debug("Inlet:  %F C  %F%%RH", (float)g_inlet_temp, (float)g_inlet_hum);
     Logger::Debug("Outlet: %F C  %F%%RH", (float)g_outlet_temp, (float)g_outlet_hum);
   }
 #endif
@@ -337,7 +339,7 @@ static void UpdateOutputs()
 
   if (first_run || damper_state != last_damper)
   {
-    mcp_outputs.SetOutput(MCP_BELIMO_RELAY, !damper_state);
+    mcp_outputs.SetOutput(MCP_BELIMO_RELAY, damper_state);
     last_damper = damper_state;
     Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
@@ -386,12 +388,12 @@ static void UpdateLEDs()
 static void UpdateDisplays()
 {
   float inlet_temp = input_handler.IsTemperatureBeingAdjusted()
-      ? input_handler.GetTargetTemperature()
-      : dryer.GetInletTemperature();
+                         ? input_handler.GetTargetTemperature()
+                         : dryer.GetInletTemperature();
 
   float inlet_hum = input_handler.IsHumidityBeingAdjusted()
-      ? input_handler.GetTargetHumidity()
-      : dryer.GetInletHumidity();
+                        ? input_handler.GetTargetHumidity()
+                        : dryer.GetInletHumidity();
 
   voltmeters.SetInletTemperature(inlet_temp);
   voltmeters.SetInletHumidity(inlet_hum);
@@ -528,7 +530,7 @@ void setup()
 
   Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
 #ifndef SENSOR_I2C
-  g_core0_ready = true;  // Signal Core 1 to start Modbus initialization
+  g_core0_ready = true; // Signal Core 1 to start Modbus initialization
 #endif
 
   // In I2C mode, initialize sensors here (after i2c buses are ready)
