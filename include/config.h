@@ -118,7 +118,11 @@
 
 // Heater enable defaults
 #define HYDRAULIC_ENABLED true
+#ifdef ELECTRIC_HEATING
 #define ELECTRIC_ENABLED true
+#else
+#define ELECTRIC_ENABLED false
+#endif
 
 // ===== PID Hydraulic Heater Parameters =====
 #define HYDRAULIC_KP 5.0
