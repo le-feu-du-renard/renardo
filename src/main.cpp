@@ -330,7 +330,7 @@ static void UpdateOutputs()
 
   if (first_run || fan_state != last_fan)
   {
-    mcp_outputs.SetOutput(MCP_FAN_RELAY, !fan_state);
+    mcp_outputs.SetOutput(MCP_FAN_RELAY, fan_state);
     last_fan = fan_state;
     Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
   }
