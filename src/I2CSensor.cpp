@@ -28,7 +28,7 @@ bool I2CSensor::Read(float &temperature, float &humidity)
   bus_.write(kRegMeasure);
   if (bus_.endTransmission() != 0)
   {
-    error_count_++;
+    if (++error_count_ >= kMaxErrors) RecoverBus();
     return false;
   }
 
@@ -36,7 +36,7 @@ bool I2CSensor::Read(float &temperature, float &humidity)
 
   if (bus_.requestFrom(address_, (uint8_t)4) != 4)
   {
-    error_count_++;
+    if (++error_count_ >= kMaxErrors) RecoverBus();
     return false;
   }
 
@@ -52,4 +52,15 @@ bool I2CSensor::Read(float &temperature, float &humidity)
 
   error_count_ = 0;
   return true;
+}
+
+void I2CSensor::RecoverBus()
+{
+  Logger::Warning("I2CSensor 0x%02X: %d errors — resetting bus", address_, error_count_);
+  bus_.end();
+  delay(10);
+  bus_.begin();
+  bus_.setClock(kBusClock);
+  bus_.setTimeout(kBusTimeout);
+  error_count_ = 0;
 }

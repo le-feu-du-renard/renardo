@@ -123,18 +123,18 @@ static void SetupI2C()
   pinMode(I2C_BUS_1_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_BUS_1_SCL_PIN, INPUT_PULLUP);
   i2c_bus_1.begin();
-  i2c_bus_1.setClock(100000);
+  i2c_bus_1.setClock(10000);
   i2c_bus_1.setTimeout(1000);
-  Logger::Info("I2C bus 1 ready (MCP23017 + RTC, 100kHz)");
+  Logger::Info("I2C bus 1 ready (MCP23017 + RTC, 10kHz)");
 
 #ifdef SENSOR_I2C
   // i2c0: inlet probe (GP0/GP1), dedicated bus
   pinMode(I2C_SENSOR_1_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_SENSOR_1_SCL_PIN, INPUT_PULLUP);
   i2c_sensor_bus_0.begin();
-  i2c_sensor_bus_0.setClock(100000);
+  i2c_sensor_bus_0.setClock(10000);
   i2c_sensor_bus_0.setTimeout(1000);
-  Logger::Info("I2C sensor bus 0 ready (inlet probe, 100kHz)");
+  Logger::Info("I2C sensor bus 0 ready (inlet probe, 10kHz)");
 #endif
 }
 
@@ -226,6 +226,11 @@ static void UpdateSensors()
   uint32_t now = millis();
 
 #ifdef SENSOR_I2C
+  static uint32_t last_inlet_ok_ms      = 0;
+  static bool     inlet_heating_disabled = false;
+
+  if (last_inlet_ok_ms == 0) last_inlet_ok_ms = now;
+
   if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
     last_sensor_log = now;
@@ -234,7 +239,23 @@ static void UpdateSensors()
     {
       dryer.SetInletTemperature(temp);
       dryer.SetInletHumidity(hum);
+      last_inlet_ok_ms = now;
+      if (inlet_heating_disabled)
+      {
+        inlet_heating_disabled = false;
+        dryer.GetTemperatureManager()->SetHydraulicEnabled(HYDRAULIC_ENABLED);
+        dryer.GetTemperatureManager()->SetElectricEnabled(ELECTRIC_ENABLED);
+        Logger::Warning("Inlet sensor recovered — heating re-enabled");
+      }
     }
+    else if (!inlet_heating_disabled && (now - last_inlet_ok_ms) > SENSOR_TIMEOUT_MS)
+    {
+      inlet_heating_disabled = true;
+      dryer.GetTemperatureManager()->SetHydraulicEnabled(false);
+      dryer.GetTemperatureManager()->SetElectricEnabled(false);
+      Logger::Error("Inlet sensor timeout (%ums) — heating disabled", now - last_inlet_ok_ms);
+    }
+
     if (sensor_outlet.Read(temp, hum))
     {
       dryer.SetOutletTemperature(temp);

@@ -92,11 +92,12 @@
 #endif                                // SENSOR_I2C
 
 // ========== TIMING CONSTANTS ==========
-#define SENSOR_UPDATE_INTERVAL 2000   // ms
-#define CONTROL_LOOP_INTERVAL 1000    // ms
-#define SETTINGS_SAVE_INTERVAL 60000  // ms (1 minute)
-#define DATA_LOG_INTERVAL 60000       // ms (1 minute)
-#define INPUT_UPDATE_INTERVAL 50      // ms (button debounce)
+#define SENSOR_UPDATE_INTERVAL 2000  // ms
+#define SENSOR_TIMEOUT_MS 10000      // ms — heating disabled if inlet sensor silent for this long
+#define CONTROL_LOOP_INTERVAL 1000   // ms
+#define SETTINGS_SAVE_INTERVAL 60000 // ms (1 minute)
+#define DATA_LOG_INTERVAL 60000      // ms (1 minute)
+#define INPUT_UPDATE_INTERVAL 50     // ms (button debounce)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 
