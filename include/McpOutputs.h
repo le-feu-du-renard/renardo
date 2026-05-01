@@ -26,9 +26,10 @@ class McpOutputs
 public:
   McpOutputs();
 
-  // Initialise the MCP23017 at the given I2C address on the given I2C bus.
-  // Returns false if the device is not found.
-  bool Begin(uint8_t i2c_address, TwoWire &wire);
+  // Initialise the MCP23017. initial_portb sets the Port B output latch (OLAT)
+  // before switching pins to OUTPUT mode, so relay pins never glitch LOW.
+  // Pass the desired relay state computed from restored dryer state.
+  bool Begin(uint8_t i2c_address, TwoWire &wire, uint8_t initial_portb = 0);
 
   // Write all 8 Port A LEDs at once from a bitmask (bit 0 = GPA0, ...).
   // Uses a single atomic I2C transaction; skips write if state is unchanged.

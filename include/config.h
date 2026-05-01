@@ -142,8 +142,11 @@
 #define ECO_NIGHT_TARGET_PERCENTAGE 85.0f
 
 // ===== Phase Parameters =====
-#define INIT_PHASE_DURATION 3600      // seconds
-#define BRASSAGE_PHASE_DURATION 600   // seconds
+#define INIT_PHASE_DURATION 3600    // seconds
+#define BRASSAGE_PHASE_DURATION 600 // seconds
+// 150s to open the air dumper (2.5min)
+// 60s to extract the air (1min)
+// note: it takes 150s to close also (in brassage phase)
 #define EXTRACTION_PHASE_DURATION 210 // seconds
 
 // ===== Extraction Parameters =====

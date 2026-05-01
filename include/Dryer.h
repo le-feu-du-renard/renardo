@@ -59,7 +59,7 @@ public:
   // Outputs
   float GetHeaterOutput()     const;  // electric 0.0/1.0
   float GetCirculatorOutput() const;  // hydraulic 0-100%
-  float GetFanOutput()        const { return fan_output_; }
+  float GetFanOutput()        const { return session_manager_.IsRunning() ? 1.0f : 0.0f; }
   bool  GetDamperOutput()     const { return air_damper_.IsOpen(); }
 
   // Manager access
@@ -85,7 +85,6 @@ private:
   float outlet_temperature_;
   float inlet_humidity_;
   float outlet_humidity_;
-  float fan_output_;
 
   uint32_t last_control_update_ms_;
   static constexpr uint32_t kControlIntervalMs = 1000;

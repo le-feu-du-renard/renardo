@@ -3,7 +3,7 @@
 
 McpOutputs::McpOutputs() : state_(0), initialized_(false) {}
 
-bool McpOutputs::Begin(uint8_t i2c_address, TwoWire &wire)
+bool McpOutputs::Begin(uint8_t i2c_address, TwoWire &wire, uint8_t initial_portb)
 {
   if (!mcp_.begin_I2C(i2c_address, &wire))
   {
@@ -13,7 +13,7 @@ bool McpOutputs::Begin(uint8_t i2c_address, TwoWire &wire)
   }
   initialized_ = true;
 
-  // Port A – all 8 indicator LEDs as outputs, off
+  // Port A – indicator LEDs: output, all off
   for (uint8_t pin = 0; pin < 8; pin++)
   {
     mcp_.pinMode(pin, OUTPUT);
@@ -21,14 +21,18 @@ bool McpOutputs::Begin(uint8_t i2c_address, TwoWire &wire)
   }
   state_ = 0;
 
-  // Port B – all 8 pins as outputs, all off
+  // Port B – relay + button outputs.
+  // Write initial_portb into OLAT_B while pins are still in INPUT mode.
+  // On MCP23017, writing to GPIO while IODIR=INPUT updates OLAT without
+  // affecting physical pins. When we then switch to OUTPUT, each pin
+  // immediately drives the correct level — no LOW glitch on relay pins.
+  mcp_.writeGPIOB(initial_portb);
   for (uint8_t pin = 8; pin <= 15; pin++)
   {
     mcp_.pinMode(pin, OUTPUT);
-    mcp_.digitalWrite(pin, LOW);
   }
 
-  Logger::Info("McpOutputs: MCP23017 ready at 0x%02X", i2c_address);
+  Logger::Info("McpOutputs: MCP23017 ready at 0x%02X (portb=0x%02X)", i2c_address, initial_portb);
   return true;
 }
 

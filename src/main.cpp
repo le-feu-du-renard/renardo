@@ -145,9 +145,9 @@ static void SetupPins()
   analogWrite(WATER_CIRCULATOR_PWM_PIN, 0);
 }
 
-static void SetupLEDs()
+static void SetupLEDs(uint8_t initial_portb)
 {
-  if (!mcp_outputs.Begin(MCP_EXPANDER_ADDRESS, i2c_bus_1))
+  if (!mcp_outputs.Begin(MCP_EXPANDER_ADDRESS, i2c_bus_1, initial_portb))
   {
     Logger::Error("McpOutputs: MCP23017 not found — continuing without outputs");
   }
@@ -332,7 +332,6 @@ static void UpdateOutputs()
   static bool last_fan = false;
   static bool last_damper = false;
   static uint8_t last_pwm = 0;
-  static bool first_run = true;
 
   bool heater_state = dryer.GetHeaterOutput() > 0.5f;
   bool fan_state = dryer.GetFanOutput() > 0.0f;
@@ -340,36 +339,34 @@ static void UpdateOutputs()
   // GetCirculatorOutput() returns a mapped duty (0.0-1.0); invert for PNP transistor
   uint8_t pwm_val = static_cast<uint8_t>((1.0f - dryer.GetCirculatorOutput()) * 255.0f);
 
-  if (first_run || heater_state != last_heater)
+  if (heater_state != last_heater)
   {
     mcp_outputs.SetOutput(MCP_HEATER_RELAY, heater_state);
     last_heater = heater_state;
     Logger::Info("Electric heater: %s", heater_state ? "ON" : "OFF");
   }
 
-  if (first_run || fan_state != last_fan)
+  if (fan_state != last_fan)
   {
     mcp_outputs.SetOutput(MCP_FAN_RELAY, fan_state);
     last_fan = fan_state;
     Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
   }
 
-  if (first_run || damper_state != last_damper)
+  if (damper_state != last_damper)
   {
     mcp_outputs.SetOutput(MCP_BELIMO_RELAY, !damper_state);
     last_damper = damper_state;
     Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
 
-  if (first_run || abs((int)pwm_val - (int)last_pwm) > 1)
+  if (abs((int)pwm_val - (int)last_pwm) > 1)
   {
     analogWrite(WATER_CIRCULATOR_PWM_PIN, pwm_val);
     last_pwm = pwm_val;
     Logger::Debug("Circulator PWM: %d/255 (%F%%)",
                   pwm_val, dryer.GetCirculatorOutput() * 100.0f);
   }
-
-  first_run = false;
 }
 
 // ========== INDICATOR LED UPDATE ==========
@@ -518,7 +515,19 @@ void setup()
   SetupI2C();
   delay(100);
 
-  SetupLEDs();
+  // Load EEPROM state before touching the MCP so we can pre-load relay outputs.
+  // dryer.Begin() only accesses internal EEPROM — no I2C hardware needed.
+  dryer.Begin();
+
+  // Compute the correct initial state for Port B relay outputs from restored state.
+  // Passed to McpOutputs::Begin() so OLAT_B is pre-loaded before pins switch to OUTPUT.
+  // Relay pins then drive the correct level from the first clock edge — no glitch.
+  uint8_t initial_portb = 0;
+  if (dryer.GetHeaterOutput() > 0.5f) initial_portb |= (1 << (MCP_HEATER_RELAY  - 8));
+  if (dryer.GetFanOutput()    > 0.0f) initial_portb |= (1 << (MCP_FAN_RELAY     - 8));
+  if (!dryer.GetDamperOutput())       initial_portb |= (1 << (MCP_BELIMO_RELAY  - 8));
+
+  SetupLEDs(initial_portb);
   delay(50);
 
   SetupRTC();
@@ -537,13 +546,16 @@ void setup()
 
   SetupSessionMonitor();
 
-  dryer.Begin();
-
   was_running = dryer.IsRunning();
   if (was_running && session_monitor.IsReady())
   {
     session_monitor.StartSession();
   }
+
+  // Sync last_* tracking variables in UpdateOutputs() with the hardware state
+  // that was established via initial_portb. Without this, the first loop iteration
+  // would see spurious changes (last_* defaults differ from actual relay state).
+  UpdateOutputs();
 
   Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
 #ifndef SENSOR_I2C

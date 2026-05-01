@@ -13,7 +13,6 @@ Dryer::Dryer()
       outlet_temperature_(0.0f),
       inlet_humidity_(0.0f),
       outlet_humidity_(0.0f),
-      fan_output_(0.0f),
       last_control_update_ms_(0) {}
 
 void Dryer::Begin()
@@ -31,6 +30,7 @@ void Dryer::Start()
 {
   if (session_manager_.IsRunning()) return;
   session_manager_.Start();
+  SaveSettings();
   Logger::Info("Dryer: session started");
 }
 
@@ -45,12 +45,7 @@ void Dryer::Stop()
 void Dryer::Update()
 {
   if (!session_manager_.IsRunning())
-  {
-    fan_output_ = 0.0f;
     return;
-  }
-
-  fan_output_ = 1.0f;  // Fan always on during session
 
   uint32_t now = millis();
   if (now - last_control_update_ms_ >= kControlIntervalMs)
