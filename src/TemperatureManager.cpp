@@ -156,7 +156,7 @@ void TemperatureManager::UpdateHeating(float dt)
       electric_settle_timer_s_ = ELECTRIC_SETTLE_S;
     }
 
-    if (u < SPLIT_ELECTRIC_OFF_DEG)
+    if (u < SPLIT_ELECTRIC_OFF_DEG || current_temperature_ >= effective_target)
     {
       electric_on_             = false;
       electric_settle_timer_s_ = 0.0f;
