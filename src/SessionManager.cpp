@@ -112,20 +112,17 @@ void SessionManager::EnterPhase(DryerPhase phase)
   switch (phase)
   {
     case DryerPhase::kInit:
-      temperature_manager_->SetTargetTemperature(
-          temperature_manager_->GetTargetTemperature());
       humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
       humidity_manager_->ResetCooldown();
       init_extraction_end_ms_ = 0;
-      // Start hydraulic at full power for initial ramp-up
-      temperature_manager_->GetHydraulicHeater()->SetPower(100.0f);
-      temperature_manager_->GetElectricHeater()->SetPower(0.0f);
+      temperature_manager_->ResetControl();
       Logger::Info("SessionManager: entering Init phase");
       break;
 
     case DryerPhase::kBrassage:
       humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
       humidity_manager_->ResetCooldown();
+      temperature_manager_->ResetControl();
       Logger::Info("SessionManager: entering Brassage phase");
       break;
 
@@ -133,6 +130,7 @@ void SessionManager::EnterPhase(DryerPhase phase)
       // Force damper open for the full extraction phase duration
       humidity_manager_->SetMode(HumidityManager::Mode::kForceOpen);
       humidity_manager_->ResetCooldown();
+      temperature_manager_->ResetControl();
       Logger::Info("SessionManager: entering Extraction phase");
       break;
 

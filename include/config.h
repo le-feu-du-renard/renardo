@@ -115,7 +115,9 @@
 #define VOLTMETER_HUMIDITY_MAX 100.0f   // %RH (inlet and outlet)
 
 // Heater enable defaults
-#define HYDRAULIC_AVAILABLE true  // Set to false if hydraulic circuit is not connected
+#ifndef HYDRAULIC_AVAILABLE
+#define HYDRAULIC_AVAILABLE true  // overridable via build flag: -D HYDRAULIC_AVAILABLE=false
+#endif
 #ifdef ELECTRIC_HEATING
 #define ELECTRIC_ENABLED true
 #else
@@ -164,10 +166,11 @@
 // PID_INTEGRAL_MAX — Anti-windup clamp on the integral accumulator (°C·s)
 //   Limits how much the integral can build up regardless of how long the error persists.
 //   The effective output contribution is Ki × integral, so max integral output = Ki × MAX.
-//   With Ki=0.1 and MAX=50 → max integral contribution = 5% of u.
-//   If you increase Ki, lower this value proportionally to keep the same ceiling.
-//   If the system massively overshoots after a long cold start, reduce this value.
-#define PID_INTEGRAL_MAX 50.0
+//   With Ki=0.1 and MAX=200 → max integral contribution = 20% of u.
+//   This allows the integral to compensate a small persistent error (e.g. 0.84°C) in
+//   PRIMARY_ELEC mode, where u_max = Kp×0.84 + 20% = 24.2% > 8% threshold.
+//   If the system overshoots after a long cold start, reduce this value toward 100.
+#define PID_INTEGRAL_MAX 200.0
 
 // PID_DERIVATIVE_FILTER — Low-pass filter coefficient for the derivative term (0–1)
 //   filtered_d = α × raw_d + (1−α) × previous_filtered_d
@@ -207,11 +210,14 @@
 //   Recommended gap: at least 10%.
 #define SPLIT_ELECTRIC_OFF     55.0f
 
-// SPLIT_ELECTRIC_ON_DEG / SPLIT_ELECTRIC_OFF_DEG — same thresholds for degraded mode
-//   Lower values because the electric heater is the only source.
-//   Gap between ON and OFF should also be at least 10–15% to limit relay cycling.
-#define SPLIT_ELECTRIC_ON_DEG  30.0f
-#define SPLIT_ELECTRIC_OFF_DEG 10.0f
+// SPLIT_ELECTRIC_ON_DEG / SPLIT_ELECTRIC_OFF_DEG — thresholds for PRIMARY_ELEC mode
+//   Electric is the primary (and only) source — it must activate even with small errors.
+//   With Kp=5, Ki=0.1, PID_INTEGRAL_MAX=200:
+//     u_max with 0.84 error = 5x0.84 + 0.1x200 = 24.2% -> above 8% threshold.
+//   Gap between ON and OFF: at least 5% to avoid relay chattering.
+//   Increase ON toward 15-20% if the relay cycles too rapidly.
+#define SPLIT_ELECTRIC_ON_DEG   4.0f
+#define SPLIT_ELECTRIC_OFF_DEG  2.0f
 
 // ===== Electric Heater Timing =====
 

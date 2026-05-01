@@ -34,7 +34,7 @@ void TemperatureManager::Begin()
   last_update_ms_ = millis();
 
   Logger::Info("TemperatureManager: initialized (split-range, %s)",
-               hydraulic_available_ ? "hydraulic+electric" : "electric only");
+               hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC");
   Logger::Info("PID: Kp=%F Ki=%F Kd=%F",
                params_.hydraulic_kp, params_.hydraulic_ki, params_.hydraulic_kd);
 }
@@ -69,7 +69,7 @@ void TemperatureManager::UpdateHeating(float dt)
     electric_on_timer_s_    = 0.0f;
     electric_settle_timer_s_ = 0.0f;
     pid_.Reset();
-    Logger::Warning("TempMgr: SAFETY CUTOFF T=%.1f > %.1f°C — electric OFF",
+    Logger::Warning("TempMgr: SAFETY CUTOFF T=%F > %FC — electric OFF",
                     current_temperature_, TEMPERATURE_SAFETY_MAX);
     return;
   }
@@ -171,29 +171,38 @@ void TemperatureManager::UpdateHeating(float dt)
   if (debug_log_timer_s_ >= 2.0f)
   {
     debug_log_timer_s_ = 0.0f;
-    Logger::Info("TempMgr: target=%.1f°C  T=%.1f°C  u=%.1f%%  elec=%s%s",
+    Logger::Info("TempMgr: target=%FC  T=%FC  u=%F%%  elec=%s%s",
                  effective_target, current_temperature_, u,
                  electric_on_ ? "ON" : "OFF",
                  electric_settle_timer_s_ > 0.0f ? " (settling)" : "");
   }
 
-  Logger::Debug("TempMgr: sp=%.1f T=%.1f u=%.1f%% freeze=%d | %s | elec=%s timer=%.1fs settle=%.1fs",
+  Logger::Debug("TempMgr: sp=%F T=%F u=%F%% freeze=%d | %s | elec=%s timer=%Fs settle=%Fs",
                 effective_target, current_temperature_, u, (int)freeze_int,
-                hydraulic_available_ ? "NORMAL" : "DEGRADED",
+                hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC",
                 electric_on_ ? "ON" : "OFF",
                 electric_on_timer_s_, electric_settle_timer_s_);
 }
 
+void TemperatureManager::ResetControl()
+{
+  pid_.Reset();
+  electric_on_             = false;
+  electric_on_timer_s_     = 0.0f;
+  electric_settle_timer_s_ = 0.0f;
+  electric_heater_->SetPower(0.0f);
+  Logger::Info("TemperatureManager: control reset (phase transition)");
+}
+
 void TemperatureManager::PrintDebug() const
 {
-  Logger::Info("[TempMgr] err=%.2f P=%.2f I=%.2f D=%.2f u=%.1f%% | "
-               "mode=%s | elec=%s | timer=%.1fs",
+  Logger::Info("[TempMgr] err=%F P=%F I=%F D=%F u=%F%% | mode=%s | elec=%s | timer=%Fs",
                pid_.GetLastError(),
                pid_.GetProportionalTerm(),
                pid_.GetIntegralTerm(),
                pid_.GetDerivativeTerm(),
                pid_.GetLastOutput(),
-               hydraulic_available_ ? "NORMAL" : "DEGRADED",
+               hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC",
                electric_on_ ? "ON" : "OFF",
                electric_on_timer_s_);
 }
@@ -203,7 +212,7 @@ void TemperatureManager::SetTargetTemperature(float temperature)
   temperature = constrain(temperature, 20.0f, 45.0f);
   if (fabsf(temperature - params_.temperature_target) < 1.0f) return;
 
-  Logger::Info("TemperatureManager: target %.1f°C -> %.1f°C, resetting PID",
+  Logger::Info("TemperatureManager: target %FC -> %FC, resetting PID",
                params_.temperature_target, temperature);
   pid_.Reset();
   electric_on_             = false;
@@ -240,7 +249,7 @@ void TemperatureManager::SetHydraulicAvailable(bool available)
   electric_settle_timer_s_ = 0.0f;
   Logger::Info("TemperatureManager: hydraulic %s — switching to %s mode",
                available ? "available" : "unavailable",
-               available ? "NORMAL" : "DEGRADED");
+               available ? "PRIMARY_HYDRO" : "PRIMARY_ELEC");
 }
 
 void TemperatureManager::SetElectricEnabled(bool enabled)

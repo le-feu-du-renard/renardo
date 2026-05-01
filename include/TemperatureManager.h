@@ -37,9 +37,9 @@ struct TemperatureParams
 // Manages temperature via a single split-range PID controller.
 //
 // The hydraulic source is manual (not software-controlled). hydraulic_available_
-// is an input flag that selects the split-range branch:
-//   - Normal mode  (hydraulic_available = true):  electric activates only above 80% demand
-//   - Degraded mode (hydraulic_available = false): electric is the sole source, activates at 30%
+// selects the active heat source strategy — call SetHydraulicAvailable() at runtime:
+//   - PRIMARY_HYDRO (hydraulic_available = true):  hydraulic is primary, electric supplements above demand threshold
+//   - PRIMARY_ELEC  (hydraulic_available = false): electric is primary, activates as soon as there is demand
 //
 // Operating mode controls the effective setpoint:
 //   ECO mode:         target × ECO_NIGHT_TARGET_PERCENTAGE during night window (18h–9h)
@@ -100,6 +100,9 @@ public:
 
   // Returns true when ECO switch is ON and current time is inside the night window
   bool IsEcoWindowActive() const;
+
+  // Reset PID and all electric heater timers — call on phase transitions
+  void ResetControl();
 
   // Print current PID state and heater status to logger (for tuning / debug)
   void PrintDebug() const;
