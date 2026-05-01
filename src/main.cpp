@@ -243,7 +243,6 @@ static void UpdateSensors()
       if (inlet_heating_disabled)
       {
         inlet_heating_disabled = false;
-        dryer.GetTemperatureManager()->SetHydraulicEnabled(HYDRAULIC_ENABLED);
         dryer.GetTemperatureManager()->SetElectricEnabled(ELECTRIC_ENABLED);
         Logger::Warning("Inlet sensor recovered — heating re-enabled");
       }
@@ -251,7 +250,6 @@ static void UpdateSensors()
     else if (!inlet_heating_disabled && (now - last_inlet_ok_ms) > SENSOR_TIMEOUT_MS)
     {
       inlet_heating_disabled = true;
-      dryer.GetTemperatureManager()->SetHydraulicEnabled(false);
       dryer.GetTemperatureManager()->SetElectricEnabled(false);
       Logger::Error("Inlet sensor timeout (%ums) — heating disabled", now - last_inlet_ok_ms);
     }

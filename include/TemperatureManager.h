@@ -9,8 +9,8 @@
 
 enum class OperatingMode : uint8_t
 {
-  ECO         = 0,  // Both heaters available; target reduced to 85% during night window (18h–9h)
-  PERFORMANCE = 1,  // Both heaters, full target at all times
+  ECO         = 0,  // Target reduced to 85% during night window (18h–9h)
+  PERFORMANCE = 1,  // Full target at all times
 };
 
 // Temperature control parameters (all initialised from config.h defaults).
@@ -22,10 +22,6 @@ struct TemperatureParams
   float hydraulic_ki;
   float hydraulic_kd;
 
-  float electric_kp;
-  float electric_ki;
-  float electric_kd;
-
   float pid_integral_max;
   float pid_derivative_filter;
 
@@ -34,17 +30,21 @@ struct TemperatureParams
         hydraulic_kp(HYDRAULIC_KP),
         hydraulic_ki(HYDRAULIC_KI),
         hydraulic_kd(HYDRAULIC_KD),
-        electric_kp(ELECTRIC_KP),
-        electric_ki(ELECTRIC_KI),
-        electric_kd(ELECTRIC_KD),
         pid_integral_max(PID_INTEGRAL_MAX),
         pid_derivative_filter(PID_DERIVATIVE_FILTER) {}
 };
 
-// Manages temperature via independent PID controllers for hydraulic and electric heaters.
-// Operating mode is set from the physical mode selector.
-//   ECO mode:         both heaters active; target × ECO_NIGHT_TARGET_PERCENTAGE during night window (18h–9h)
-//   PERFORMANCE mode: both heaters active, full target at all times
+// Manages temperature via a single split-range PID controller.
+//
+// The hydraulic source is manual (not software-controlled). hydraulic_available_
+// is an input flag that selects the split-range branch:
+//   - Normal mode  (hydraulic_available = true):  electric activates only above 80% demand
+//   - Degraded mode (hydraulic_available = false): electric is the sole source, activates at 30%
+//
+// Operating mode controls the effective setpoint:
+//   ECO mode:         target × ECO_NIGHT_TARGET_PERCENTAGE during night window (18h–9h)
+//   PERFORMANCE mode: full target at all times
+//
 // SetCurrentHour() must be called each loop (from RTC) for time-based ECO logic.
 class TemperatureManager
 {
@@ -67,19 +67,24 @@ public:
   TemperatureParams       &GetParams()       { return params_; }
   const TemperatureParams &GetParams() const { return params_; }
 
-  // Heater access
+  // Heater access (for LEDs / monitoring — hydraulic is not driven by this manager)
   ElectricHeater  *GetElectricHeater()  { return electric_heater_; }
   HydraulicHeater *GetHydraulicHeater() { return hydraulic_heater_; }
 
   // PID access (for logging/monitoring)
-  PIDController *GetHydraulicPID() { return &hydraulic_pid_; }
-  PIDController *GetElectricPID()  { return &electric_pid_; }
+  PIDController *GetPID() { return &pid_; }
 
-  // Heater enable/disable
-  void SetHydraulicEnabled(bool enabled);
-  bool GetHydraulicEnabled() const { return hydraulic_enabled_; }
+  // Hydraulic availability — compile-time default, overridable at runtime (future UI switch)
+  void SetHydraulicAvailable(bool available);
+  bool GetHydraulicAvailable() const { return hydraulic_available_; }
+
+  // Electric heater enable/disable (used by sensor-timeout safety in main.cpp)
   void SetElectricEnabled(bool enabled);
   bool GetElectricEnabled() const { return electric_enabled_; }
+
+  // Electric heater current state (for LEDs / monitoring)
+  bool  GetElectricOn()      const { return electric_on_; }
+  float GetElectricOnTimer() const { return electric_on_timer_s_; }
 
   // Operating mode (set from physical MODE_SELECTOR_PIN each cycle)
   void          SetOperatingMode(OperatingMode mode);
@@ -92,19 +97,25 @@ public:
   // Returns true when ECO switch is ON and current time is inside the night window
   bool IsEcoWindowActive() const;
 
+  // Print current PID state and heater status to logger (for tuning / debug)
+  void PrintDebug() const;
+
 private:
   ElectricHeater   *electric_heater_;
   HydraulicHeater  *hydraulic_heater_;
   TemperatureParams params_;
 
-  PIDController hydraulic_pid_;
-  PIDController electric_pid_;
+  PIDController pid_;  // Single split-range PID, output 0–100%
 
   float    current_temperature_;
   uint32_t last_update_ms_;
 
-  bool hydraulic_enabled_;
-  bool electric_enabled_;
+  bool  hydraulic_available_;     // Is the hydraulic source providing heat?
+  bool  electric_enabled_;        // Is electric heating authorised? (sensor-timeout guard)
+  bool  electric_on_;             // Current state of the electric heater relay
+  float electric_on_timer_s_;     // Accumulated time with active electric demand (normal mode)
+  float electric_settle_timer_s_; // Counts down after heater ON — integral frozen during lag
+  float debug_log_timer_s_;       // Accumulates dt to trigger a periodic debug log
 
   OperatingMode operating_mode_;
   uint8_t       current_hour_;

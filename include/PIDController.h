@@ -39,7 +39,7 @@ public:
    * @param dt Time delta since last computation (seconds)
    * @return PID output (clamped to output_min/output_max)
    */
-  float Compute(float setpoint, float measured_value, float dt);
+  float Compute(float setpoint, float measured_value, float dt, bool freeze_integral = false);
 
   /**
    * Reset internal state (integral, derivative)

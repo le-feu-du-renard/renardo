@@ -39,7 +39,7 @@ PIDController::PIDController(float kp, float ki, float kd,
     d_term_(0.0f) {
 }
 
-float PIDController::Compute(float setpoint, float measured_value, float dt) {
+float PIDController::Compute(float setpoint, float measured_value, float dt, bool freeze_integral) {
   // Avoid division by zero
   if (dt <= 0.0f) {
     Log.warning("PID: Invalid dt (%F), skipping computation", dt);
@@ -52,9 +52,12 @@ float PIDController::Compute(float setpoint, float measured_value, float dt) {
   // Proportional term
   p_term_ = kp_ * error;
 
-  // Integral term with anti-windup
-  integral_ += error * dt;
-  integral_ = Clamp(integral_, -integral_max_, integral_max_);
+  // Integral term with conditional anti-windup
+  // Freeze accumulation when saturated or when caller signals external windup condition
+  if (!freeze_integral) {
+    integral_ += error * dt;
+    integral_ = Clamp(integral_, -integral_max_, integral_max_);
+  }
   i_term_ = ki_ * integral_;
 
   // Derivative term with filtering
