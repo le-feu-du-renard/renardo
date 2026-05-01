@@ -263,6 +263,7 @@
 #define ECO_NIGHT_TARGET_PERCENTAGE 85.0f
 
 // ===== Phase Parameters =====
+#define FAN_COOLDOWN_DURATION_S 60  // seconds — fan runs after stop to cool electric heater
 #define INIT_PHASE_DURATION 3600    // seconds
 #define BRASSAGE_PHASE_DURATION 600 // seconds
 // 150s to open the air dumper (2.5min)

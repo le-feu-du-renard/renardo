@@ -10,7 +10,8 @@ SessionManager::SessionManager(TemperatureManager *temperature_manager,
       user_target_humidity_(0.0f),
       init_extraction_end_ms_(0),
       phase_start_ms_(0),
-      session_start_ms_(0) {}
+      session_start_ms_(0),
+      cooldown_end_ms_(0) {}
 
 void SessionManager::Begin()
 {
@@ -20,6 +21,7 @@ void SessionManager::Begin()
   init_extraction_end_ms_  = 0;
   phase_start_ms_          = 0;
   session_start_ms_        = 0;
+  cooldown_end_ms_         = 0;
   Logger::Info("SessionManager: initialized");
 }
 
@@ -39,10 +41,11 @@ void SessionManager::Start()
 
 void SessionManager::Stop()
 {
-  state_         = SessionState::kStopped;
-  current_phase_ = DryerPhase::kStop;
+  state_           = SessionState::kCooling;
+  current_phase_   = DryerPhase::kStop;
+  cooldown_end_ms_ = millis() + (uint32_t)FAN_COOLDOWN_DURATION_S * 1000UL;
 
-  // Turn off heaters
+  // Turn off heaters immediately
   temperature_manager_->GetElectricHeater()->SetPower(0.0f);
   temperature_manager_->GetHydraulicHeater()->SetPower(0.0f);
 
@@ -51,7 +54,16 @@ void SessionManager::Stop()
   humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
   humidity_manager_->ResetCooldown();
 
-  Logger::Info("SessionManager: session stopped");
+  Logger::Info("SessionManager: session stopped — cooling fan for %us", FAN_COOLDOWN_DURATION_S);
+}
+
+void SessionManager::UpdateCooldown()
+{
+  if (state_ == SessionState::kCooling && millis() >= cooldown_end_ms_)
+  {
+    state_ = SessionState::kStopped;
+    Logger::Info("SessionManager: fan cooldown complete");
+  }
 }
 
 const char *SessionManager::GetCurrentPhaseName() const

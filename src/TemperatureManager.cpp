@@ -12,6 +12,7 @@ TemperatureManager::TemperatureManager(ElectricHeater  *electric_heater,
       last_update_ms_(0),
       hydraulic_available_(HYDRAULIC_AVAILABLE),
       electric_enabled_(ELECTRIC_ENABLED),
+      fan_active_(false),
       electric_on_(false),
       electric_on_timer_s_(0.0f),
       electric_settle_timer_s_(0.0f),
@@ -70,6 +71,18 @@ void TemperatureManager::UpdateHeating(float dt)
     pid_.Reset();
     Logger::Warning("TempMgr: SAFETY CUTOFF T=%.1f > %.1f°C — electric OFF",
                     current_temperature_, TEMPERATURE_SAFETY_MAX);
+    return;
+  }
+
+  // === BLOCK A+: Ventilation interlock ===
+  // Block the electric heater if the fan is not confirmed active.
+  if (!fan_active_)
+  {
+    electric_heater_->SetPower(0.0f);
+    electric_on_             = false;
+    electric_on_timer_s_     = 0.0f;
+    electric_settle_timer_s_ = 0.0f;
+    Logger::Warning("TempMgr: fan not active — electric heater blocked");
     return;
   }
 
@@ -243,6 +256,20 @@ void TemperatureManager::SetElectricEnabled(bool enabled)
     pid_.Reset();
   }
   Logger::Info("TemperatureManager: electric heating %s", enabled ? "enabled" : "disabled");
+}
+
+void TemperatureManager::SetFanActive(bool active)
+{
+  if (fan_active_ == active) return;
+  fan_active_ = active;
+  if (!active)
+  {
+    electric_heater_->SetPower(0.0f);
+    electric_on_             = false;
+    electric_on_timer_s_     = 0.0f;
+    electric_settle_timer_s_ = 0.0f;
+  }
+  Logger::Info("TemperatureManager: fan %s", active ? "active" : "inactive — electric blocked");
 }
 
 void TemperatureManager::SetOperatingMode(OperatingMode mode)

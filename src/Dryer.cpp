@@ -29,6 +29,7 @@ void Dryer::Begin()
 void Dryer::Start()
 {
   if (session_manager_.IsRunning()) return;
+  temperature_manager_.SetFanActive(true);
   session_manager_.Start();
   SaveSettings();
   Logger::Info("Dryer: session started");
@@ -37,6 +38,7 @@ void Dryer::Start()
 void Dryer::Stop()
 {
   if (!session_manager_.IsRunning()) return;
+  temperature_manager_.SetFanActive(false);
   session_manager_.Stop();
   state_manager_.Save(false, DryerPhase::kStop, 0, 0);
   Logger::Info("Dryer: session stopped");
@@ -44,6 +46,8 @@ void Dryer::Stop()
 
 void Dryer::Update()
 {
+  session_manager_.UpdateCooldown();
+
   if (!session_manager_.IsRunning())
     return;
 

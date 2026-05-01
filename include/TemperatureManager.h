@@ -82,6 +82,10 @@ public:
   void SetElectricEnabled(bool enabled);
   bool GetElectricEnabled() const { return electric_enabled_; }
 
+  // Fan active flag — electric heater is blocked when fan is not running
+  void SetFanActive(bool active);
+  bool GetFanActive() const { return fan_active_; }
+
   // Electric heater current state (for LEDs / monitoring)
   bool  GetElectricOn()      const { return electric_on_; }
   float GetElectricOnTimer() const { return electric_on_timer_s_; }
@@ -112,6 +116,7 @@ private:
 
   bool  hydraulic_available_;     // Is the hydraulic source providing heat?
   bool  electric_enabled_;        // Is electric heating authorised? (sensor-timeout guard)
+  bool  fan_active_;              // Is the fan running? Electric heater blocked if false
   bool  electric_on_;             // Current state of the electric heater relay
   float electric_on_timer_s_;     // Accumulated time with active electric demand (normal mode)
   float electric_settle_timer_s_; // Counts down after heater ON — integral frozen during lag

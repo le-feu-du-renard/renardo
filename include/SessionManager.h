@@ -10,6 +10,7 @@ enum class SessionState : uint8_t
 {
     kStopped = 0,
     kRunning = 1,
+    kCooling = 2,  // heaters off, fan still running to cool electric heater
 };
 
 // Three-phase drying sequence:
@@ -36,7 +37,12 @@ public:
 
     void Start();
     void Stop();
-    bool IsRunning() const { return state_ == SessionState::kRunning; }
+    bool IsRunning()   const { return state_ == SessionState::kRunning; }
+    bool IsFanActive() const { return state_ == SessionState::kRunning ||
+                                      state_ == SessionState::kCooling; }
+
+    // Must be called every loop to detect end of post-stop fan cooldown.
+    void UpdateCooldown();
 
     // State accessors
     DryerPhase GetCurrentPhase() const { return current_phase_; }
@@ -60,8 +66,9 @@ private:
     float    user_target_humidity_;   // set from potentiometer each loop
     uint32_t init_extraction_end_ms_; // 0 = not extracting within init phase
 
-    uint32_t phase_start_ms_;   // millis() at phase entry
-    uint32_t session_start_ms_; // millis() at session start (adjusted on restore)
+    uint32_t phase_start_ms_;    // millis() at phase entry
+    uint32_t session_start_ms_;  // millis() at session start (adjusted on restore)
+    uint32_t cooldown_end_ms_;   // millis() target for end of post-stop fan cooldown
 
     void EnterPhase(DryerPhase phase);
     void CheckPhaseTransition(float current_temperature, float current_humidity);

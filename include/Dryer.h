@@ -59,7 +59,7 @@ public:
   // Outputs
   float GetHeaterOutput()     const;  // electric 0.0/1.0
   float GetCirculatorOutput() const;  // hydraulic 0-100%
-  float GetFanOutput()        const { return session_manager_.IsRunning() ? 1.0f : 0.0f; }
+  float GetFanOutput()        const { return session_manager_.IsFanActive() ? 1.0f : 0.0f; }
   bool  GetDamperOutput()     const { return air_damper_.IsOpen(); }
 
   // Manager access
