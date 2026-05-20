@@ -1,6 +1,4 @@
 #include "config.h"
-#ifndef SENSOR_I2C
-
 #include "ModbusSensors.h"
 #include "Logger.h"
 
@@ -64,5 +62,3 @@ void ModbusSensors::PostTransmission()
   Serial1.flush();                   // Wait for last byte to fully leave the UART
   digitalWrite(RS485_DE_PIN, LOW);   // Return to receive
 }
-
-#endif // SENSOR_I2C

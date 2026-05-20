@@ -18,20 +18,10 @@
 // Hydraulic circulator PWM (0-10V)
 #define WATER_CIRCULATOR_PWM_PIN 13
 
-#ifdef SENSOR_I2C
-// Dedicated i2c0 bus for inlet probe
-#define I2C_SENSOR_1_SDA_PIN 0
-#define I2C_SENSOR_1_SCL_PIN 1
-// I2C address for SEN0546 (ADDR pin to GND)
-#define I2C_SENSOR_ADDRESS 0x40
-#endif // SENSOR_I2C
-
-#ifndef SENSOR_I2C
 // RS485 Modbus RTU (UART1 → MAX3485)
 #define RS485_TX_PIN 4 // UART1 TX → MAX3485 DI
 #define RS485_RX_PIN 5 // UART1 RX ← MAX3485 RO
 #define RS485_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
-#endif                 // SENSOR_I2C
 
 // Physical buttons (active LOW, internal pullup)
 #define BTN_START_PIN 20
@@ -79,7 +69,6 @@
 #define MCP_FAN_RELAY 11    // GPB3 - fan relay
 #define MCP_BELIMO_RELAY 12 // GPB4 - belimo damper actuator relay
 
-#ifndef SENSOR_I2C
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600
 #define MODBUS_INLET_ADDRESS 1
@@ -89,7 +78,6 @@
 #define MODBUS_REG_HUMIDITY 0x0000    // raw / MODBUS_RAW_SCALE = %RH
 #define MODBUS_REG_TEMPERATURE 0x0001 // raw / MODBUS_RAW_SCALE = C
 #define MODBUS_RAW_SCALE 10.0f        // sensor raw value divisor
-#endif                                // SENSOR_I2C
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms
@@ -116,7 +104,7 @@
 
 // Heater enable defaults
 #ifndef HYDRAULIC_AVAILABLE
-#define HYDRAULIC_AVAILABLE true  // overridable via build flag: -D HYDRAULIC_AVAILABLE=false
+#define HYDRAULIC_AVAILABLE true // overridable via build flag: -D HYDRAULIC_AVAILABLE=false
 #endif
 #ifdef ELECTRIC_HEATING
 #define ELECTRIC_ENABLED true
@@ -202,13 +190,13 @@
 //   Lower toward 60% if the temperature consistently dips too far below setpoint.
 //   Raise toward 90% if the hydraulic alone can sustain the setpoint and the electric
 //   is triggering unnecessarily.
-#define SPLIT_ELECTRIC_ON      70.0f
+#define SPLIT_ELECTRIC_ON 70.0f
 
 // SPLIT_ELECTRIC_OFF — demand below which the electric heater is forced OFF (normal mode)
 //   Must be strictly lower than SPLIT_ELECTRIC_ON to create a hysteresis dead-band.
 //   This prevents the contactor from cycling rapidly around the threshold.
 //   Recommended gap: at least 10%.
-#define SPLIT_ELECTRIC_OFF     55.0f
+#define SPLIT_ELECTRIC_OFF 55.0f
 
 // SPLIT_ELECTRIC_ON_DEG / SPLIT_ELECTRIC_OFF_DEG — thresholds for PRIMARY_ELEC mode
 //   Electric is the primary (and only) source — it must activate even with small errors.
@@ -216,8 +204,8 @@
 //     u_max with 0.84 error = 5x0.84 + 0.1x200 = 24.2% -> above 8% threshold.
 //   Gap between ON and OFF: at least 5% to avoid relay chattering.
 //   Increase ON toward 15-20% if the relay cycles too rapidly.
-#define SPLIT_ELECTRIC_ON_DEG   4.0f
-#define SPLIT_ELECTRIC_OFF_DEG  2.0f
+#define SPLIT_ELECTRIC_ON_DEG 4.0f
+#define SPLIT_ELECTRIC_OFF_DEG 2.0f
 
 // ===== Electric Heater Timing =====
 
@@ -236,7 +224,20 @@
 //   → To reduce undershoot: lower SPLIT_ELECTRIC_ON so the heater triggers earlier.
 //   Increase only if you observe the relay cycling ON/OFF rapidly (chattering).
 //   Starting point: 10s  →  try range [5 – 20s]
-#define ELECTRIC_ON_DELAY_S    10.0f
+#define ELECTRIC_ON_DELAY_S 10.0f
+
+// ELECTRIC_OFF_ANTICIPATION_S — look-ahead window (seconds) for predictive shutoff.
+//   When the electric heater is ON and temperature is rising, the controller estimates
+//   the temperature at (now + ELECTRIC_OFF_ANTICIPATION_S) using the current slope.
+//   If that predicted value already exceeds the setpoint, the heater is cut off now
+//   so thermal inertia doesn't push T above setpoint.
+//   Set this to the approximate time the temperature keeps rising after the heater
+//   is switched off (residual heat in the heating element and air volume).
+//   Increase if temperature still overshoots after the fix.
+//   Decrease if the heater turns off too early and temperature never reaches setpoint.
+//   A slope deadband of 0.02°C/s is applied to avoid noise-driven false shutoffs.
+//   Starting point: 10s  →  try range [5 – 20s]
+#define ELECTRIC_OFF_ANTICIPATION_S 20.0f
 
 // ELECTRIC_SETTLE_S — how long (seconds) after the heater turns ON to keep the integral
 //   frozen before the PID resumes normal integration.
@@ -247,7 +248,7 @@
 //   Increase if temperature still overshoots after the heater activates.
 //   Decrease if the system is slow to react once the heater is running.
 //   Starting point: 30s  →  try range [20 – 60s]
-#define ELECTRIC_SETTLE_S      30.0f
+#define ELECTRIC_SETTLE_S 30.0f
 
 // ELECTRIC_DT_ON — temperature must be at least this far below setpoint (°C) for
 //   the electric timer to increment. Prevents activating the heater when temperature
@@ -255,13 +256,13 @@
 //   Increase if the electric heater tends to push temperature above the setpoint.
 //   Decrease toward 0.5 if the system consistently stabilises just below the setpoint.
 //   Starting point: 2.0°C  →  try range [0.5 – 5.0°C]
-#define ELECTRIC_DT_ON          2.0f
+#define ELECTRIC_DT_ON 2.0f
 
 // ===== Safety =====
 // Hard cutoff: if the measured temperature exceeds this value, the electric heater is
 // forced OFF immediately and the PID is reset. The hydraulic is manual and unaffected.
 // Set this to ~5–10°C above the maximum expected operating setpoint.
-#define TEMPERATURE_SAFETY_MAX 50.0f  // °C
+#define TEMPERATURE_SAFETY_MAX 50.0f // °C
 
 // ===== ECO Mode Parameters =====
 #define ECO_START_HOUR 18
@@ -271,7 +272,7 @@
 // ===== Phase Parameters =====
 #define FAN_COOLDOWN_DURATION_S 60  // seconds — fan runs after stop to cool electric heater
 #define INIT_PHASE_DURATION 3600    // seconds
-#define BRASSAGE_PHASE_DURATION 600 // seconds
+#define BRASSAGE_PHASE_DURATION 900 // seconds
 // 150s to open the air dumper (2.5min)
 // 60s to extract the air (1min)
 // note: it takes 150s to close also (in brassage phase)
