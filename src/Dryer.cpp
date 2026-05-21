@@ -134,6 +134,7 @@ void Dryer::LoadSettings()
 
   if (state_manager_.Load(phase, phase_elapsed, total_elapsed))
   {
+    temperature_manager_.SetFanActive(true);
     session_manager_.RestoreState(phase, phase_elapsed, total_elapsed);
     Logger::Info("Dryer: session restored from SD card");
   }
