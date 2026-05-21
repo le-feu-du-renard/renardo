@@ -65,24 +65,26 @@ void TemperatureManager::UpdateHeating(float dt)
   if (current_temperature_ > TEMPERATURE_SAFETY_MAX)
   {
     electric_heater_->SetPower(0.0f);
+    hydraulic_heater_->SetPower(0);
     electric_on_ = false;
     electric_on_timer_s_ = 0.0f;
     electric_settle_timer_s_ = 0.0f;
     pid_.Reset();
-    Logger::Warning("TempMgr: SAFETY CUTOFF T=%F > %FC — electric OFF",
+    Logger::Warning("TempMgr: SAFETY CUTOFF T=%F > %FC — all heaters OFF",
                     current_temperature_, TEMPERATURE_SAFETY_MAX);
     return;
   }
 
   // === BLOCK A+: Ventilation interlock ===
-  // Block the electric heater if the fan is not confirmed active.
+  // Block both heaters if the fan is not confirmed active.
   if (!fan_active_)
   {
     electric_heater_->SetPower(0.0f);
+    hydraulic_heater_->SetPower(0);
     electric_on_ = false;
     electric_on_timer_s_ = 0.0f;
     electric_settle_timer_s_ = 0.0f;
-    Logger::Warning("TempMgr: fan not active — electric heater blocked");
+    Logger::Warning("TempMgr: fan not active — heaters blocked");
     return;
   }
 
@@ -106,6 +108,7 @@ void TemperatureManager::UpdateHeating(float dt)
   if (!electric_enabled_)
   {
     electric_heater_->SetPower(0.0f);
+    hydraulic_heater_->SetPower(0);
     electric_on_ = false;
     electric_on_timer_s_ = 0.0f;
     electric_settle_timer_s_ = 0.0f;
@@ -154,21 +157,35 @@ void TemperatureManager::UpdateHeating(float dt)
   }
 
   // === BLOCK D: Apply outputs + periodic debug log ===
+  // Hydraulic: proportional to demand on [0, SPLIT_ELECTRIC_ON], saturated at 100% above.
+  // In PRIMARY_ELEC mode (no hydraulic source), pump stays off.
+  if (hydraulic_available_)
+  {
+    float hydro_pct = fminf(u / SPLIT_ELECTRIC_ON * 100.0f, 100.0f);
+    hydraulic_heater_->SetPower((uint8_t)hydro_pct);
+  }
+  else
+  {
+    hydraulic_heater_->SetPower(0);
+  }
+
   electric_heater_->SetPower(electric_on_ ? 1.0f : 0.0f);
+
+  uint8_t hydro_power = hydraulic_heater_->GetPower();
 
   // Log target and current temperature every 2 seconds
   debug_log_timer_s_ += dt;
   if (debug_log_timer_s_ >= 2.0f)
   {
     debug_log_timer_s_ = 0.0f;
-    Logger::Info("TempMgr: target=%FC  T=%FC  u=%F%%  elec=%s%s",
-                 effective_target, current_temperature_, u,
+    Logger::Info("TempMgr: target=%FC  T=%FC  u=%F%%  hydro=%u%%  elec=%s%s",
+                 effective_target, current_temperature_, u, hydro_power,
                  electric_on_ ? "ON" : "OFF",
                  electric_settle_timer_s_ > 0.0f ? " (settling)" : "");
   }
 
-  Logger::Debug("TempMgr: sp=%F T=%F u=%F%% freeze=%d | %s | elec=%s timer=%Fs settle=%Fs",
-                effective_target, current_temperature_, u, (int)freeze_int,
+  Logger::Debug("TempMgr: sp=%F T=%F u=%F%% hydro=%u%% freeze=%d | %s | elec=%s timer=%Fs settle=%Fs",
+                effective_target, current_temperature_, u, hydro_power, (int)freeze_int,
                 hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC",
                 electric_on_ ? "ON" : "OFF",
                 electric_on_timer_s_, electric_settle_timer_s_);
@@ -181,6 +198,7 @@ void TemperatureManager::ResetControl()
   electric_on_timer_s_ = 0.0f;
   electric_settle_timer_s_ = 0.0f;
   electric_heater_->SetPower(0.0f);
+  hydraulic_heater_->SetPower(0);
   Logger::Info("TemperatureManager: control reset (phase transition)");
 }
 

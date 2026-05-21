@@ -8,24 +8,23 @@
  * Tests data integrity verification
  */
 
-// Simplified test structure matching PersistentSettings layout
+// Mirrors the actual PersistentState struct from PersistentStateManager.h.
+// DryerPhase enum (uint8_t) replaced by uint8_t to avoid Arduino includes.
 struct __attribute__((packed)) TestSettings
 {
   uint16_t version;
-  bool dryer_running;
-  float temperature_target;
-  float temperature_deadband;
-  uint32_t total_duty_time_s;
-  float recycling_rate;
+  bool     session_running;
+  uint8_t  phase;           // DryerPhase (kStop=0, kInit=1, kBrassage=2, kExtraction=3)
+  uint32_t phase_elapsed_s;
+  uint32_t total_elapsed_s;
   uint16_t checksum;
 
   TestSettings()
-      : version(1),
-        dryer_running(false),
-        temperature_target(40.0f),
-        temperature_deadband(0.5f),
-        total_duty_time_s(0),
-        recycling_rate(50.0f),
+      : version(9),
+        session_running(false),
+        phase(0),
+        phase_elapsed_s(0),
+        total_elapsed_s(0),
         checksum(0) {}
 };
 
@@ -75,14 +74,16 @@ void test_checksum_calculation_default_settings(void)
 void test_checksum_deterministic(void)
 {
   TestSettings settings1;
-  settings1.version = 1;
-  settings1.dryer_running = true;
-  settings1.temperature_target = 42.5f;
+  settings1.version = 9;
+  settings1.session_running = true;
+  settings1.phase = 2;
+  settings1.total_elapsed_s = 3600;
 
   TestSettings settings2;
-  settings2.version = 1;
-  settings2.dryer_running = true;
-  settings2.temperature_target = 42.5f;
+  settings2.version = 9;
+  settings2.session_running = true;
+  settings2.phase = 2;
+  settings2.total_elapsed_s = 3600;
 
   // Same data should produce same checksum
   uint16_t checksum1 = CalculateChecksum(settings1);
@@ -94,10 +95,10 @@ void test_checksum_deterministic(void)
 void test_checksum_changes_with_data(void)
 {
   TestSettings settings1;
-  settings1.temperature_target = 40.0f;
+  settings1.total_elapsed_s = 1000;
 
   TestSettings settings2;
-  settings2.temperature_target = 41.0f;
+  settings2.total_elapsed_s = 2000;
 
   // Different data should produce different checksums
   uint16_t checksum1 = CalculateChecksum(settings1);
@@ -109,14 +110,14 @@ void test_checksum_changes_with_data(void)
 void test_checksum_not_affected_by_checksum_field(void)
 {
   TestSettings settings1;
-  settings1.temperature_target = 40.0f;
+  settings1.total_elapsed_s = 3600;
   settings1.checksum = 0;
 
   TestSettings settings2;
-  settings2.temperature_target = 40.0f;
-  settings2.checksum = 12345; // Different checksum field value
+  settings2.total_elapsed_s = 3600;
+  settings2.checksum = 12345;  // Different checksum field value, same payload
 
-  // Checksum field itself should not affect calculation
+  // Checksum field itself must not affect calculation
   uint16_t checksum1 = CalculateChecksum(settings1);
   uint16_t checksum2 = CalculateChecksum(settings2);
 
@@ -141,42 +142,53 @@ void test_checksum_sensitive_to_version(void)
 void test_checksum_sensitive_to_bool_field(void)
 {
   TestSettings settings1;
-  settings1.dryer_running = false;
+  settings1.session_running = false;
 
   TestSettings settings2;
-  settings2.dryer_running = true;
+  settings2.session_running = true;
 
-  // Different bool value should produce different checksum
   uint16_t checksum1 = CalculateChecksum(settings1);
   uint16_t checksum2 = CalculateChecksum(settings2);
 
   TEST_ASSERT_NOT_EQUAL(checksum1, checksum2);
 }
 
-void test_checksum_sensitive_to_uint32_field(void)
+void test_checksum_sensitive_to_phase_field(void)
 {
   TestSettings settings1;
-  settings1.total_duty_time_s = 1000;
+  settings1.phase = 1;  // kInit
 
   TestSettings settings2;
-  settings2.total_duty_time_s = 2000;
+  settings2.phase = 2;  // kBrassage
 
-  // Different uint32 value should produce different checksum
   uint16_t checksum1 = CalculateChecksum(settings1);
   uint16_t checksum2 = CalculateChecksum(settings2);
 
   TEST_ASSERT_NOT_EQUAL(checksum1, checksum2);
 }
 
-void test_checksum_sensitive_to_float_field(void)
+void test_checksum_sensitive_to_phase_elapsed_field(void)
 {
   TestSettings settings1;
-  settings1.recycling_rate = 50.0f;
+  settings1.phase_elapsed_s = 100;
 
   TestSettings settings2;
-  settings2.recycling_rate = 75.0f;
+  settings2.phase_elapsed_s = 200;
 
-  // Different float value should produce different checksum
+  uint16_t checksum1 = CalculateChecksum(settings1);
+  uint16_t checksum2 = CalculateChecksum(settings2);
+
+  TEST_ASSERT_NOT_EQUAL(checksum1, checksum2);
+}
+
+void test_checksum_sensitive_to_total_elapsed_field(void)
+{
+  TestSettings settings1;
+  settings1.total_elapsed_s = 1000;
+
+  TestSettings settings2;
+  settings2.total_elapsed_s = 2000;
+
   uint16_t checksum1 = CalculateChecksum(settings1);
   uint16_t checksum2 = CalculateChecksum(settings2);
 
@@ -188,8 +200,11 @@ void test_checksum_sensitive_to_float_field(void)
 void test_verify_checksum_valid(void)
 {
   TestSettings settings;
-  settings.version = 1;
-  settings.temperature_target = 42.0f;
+  settings.version = 9;
+  settings.session_running = true;
+  settings.phase = 2;
+  settings.phase_elapsed_s = 450;
+  settings.total_elapsed_s = 7200;
   settings.checksum = CalculateChecksum(settings);
 
   TEST_ASSERT_TRUE(VerifyChecksum(settings));
@@ -198,12 +213,13 @@ void test_verify_checksum_valid(void)
 void test_verify_checksum_invalid(void)
 {
   TestSettings settings;
-  settings.version = 1;
-  settings.temperature_target = 42.0f;
+  settings.version = 9;
+  settings.phase = 2;
+  settings.total_elapsed_s = 7200;
   settings.checksum = CalculateChecksum(settings);
 
-  // Corrupt the data
-  settings.temperature_target = 43.0f;
+  // Corrupt the data after checksum was computed
+  settings.total_elapsed_s = 7201;
 
   TEST_ASSERT_FALSE(VerifyChecksum(settings));
 }
@@ -230,8 +246,8 @@ void test_verify_checksum_zero(void)
 void test_verify_checksum_wrong_value(void)
 {
   TestSettings settings;
-  settings.temperature_target = 40.0f;
-  settings.checksum = 12345; // Arbitrary wrong value
+  settings.total_elapsed_s = 3600;
+  settings.checksum = 12345;  // Arbitrary wrong value
 
   // Should fail unless by incredible coincidence this matches
   bool valid = VerifyChecksum(settings);
@@ -252,42 +268,36 @@ void test_verify_checksum_wrong_value(void)
 void test_checksum_roundtrip(void)
 {
   TestSettings original;
-  original.version = 1;
-  original.dryer_running = true;
-  original.temperature_target = 42.5f;
-  original.temperature_deadband = 1.0f;
-  original.total_duty_time_s = 3600;
-  original.recycling_rate = 75.0f;
-
-  // Calculate and store checksum
+  original.version = 9;
+  original.session_running = true;
+  original.phase = 3;              // kExtraction
+  original.phase_elapsed_s = 120;
+  original.total_elapsed_s = 5400;
   original.checksum = CalculateChecksum(original);
 
-  // Verify checksum
   TEST_ASSERT_TRUE(VerifyChecksum(original));
 
-  // Simulate serialization/deserialization
+  // Simulate serialization/deserialization (e.g. EEPROM write/read)
   uint8_t buffer[sizeof(TestSettings)];
   memcpy(buffer, &original, sizeof(TestSettings));
 
   TestSettings restored;
   memcpy(&restored, buffer, sizeof(TestSettings));
 
-  // Verify restored data
   TEST_ASSERT_TRUE(VerifyChecksum(restored));
   TEST_ASSERT_EQUAL_UINT16(original.version, restored.version);
-  TEST_ASSERT_EQUAL(original.dryer_running, restored.dryer_running);
-  TEST_ASSERT_EQUAL_FLOAT(original.temperature_target, restored.temperature_target);
-  TEST_ASSERT_EQUAL_FLOAT(original.temperature_deadband, restored.temperature_deadband);
-  TEST_ASSERT_EQUAL_UINT32(original.total_duty_time_s, restored.total_duty_time_s);
-  TEST_ASSERT_EQUAL_FLOAT(original.recycling_rate, restored.recycling_rate);
+  TEST_ASSERT_EQUAL(original.session_running, restored.session_running);
+  TEST_ASSERT_EQUAL_UINT8(original.phase, restored.phase);
+  TEST_ASSERT_EQUAL_UINT32(original.phase_elapsed_s, restored.phase_elapsed_s);
+  TEST_ASSERT_EQUAL_UINT32(original.total_elapsed_s, restored.total_elapsed_s);
   TEST_ASSERT_EQUAL_UINT16(original.checksum, restored.checksum);
 }
 
 void test_checksum_detects_single_bit_corruption(void)
 {
   TestSettings settings;
-  settings.version = 1;
-  settings.temperature_target = 40.0f;
+  settings.version = 9;
+  settings.total_elapsed_s = 7200;
   settings.checksum = CalculateChecksum(settings);
 
   TEST_ASSERT_TRUE(VerifyChecksum(settings));
@@ -303,26 +313,24 @@ void test_checksum_detects_single_bit_corruption(void)
 void test_checksum_multiple_field_changes(void)
 {
   TestSettings settings;
-  settings.version = 1;
-  settings.dryer_running = false;
-  settings.temperature_target = 40.0f;
-  settings.recycling_rate = 50.0f;
+  settings.version = 9;
+  settings.session_running = false;
+  settings.phase = 1;
+  settings.phase_elapsed_s = 300;
+  settings.total_elapsed_s = 300;
   settings.checksum = CalculateChecksum(settings);
 
   TEST_ASSERT_TRUE(VerifyChecksum(settings));
 
   // Change multiple fields
-  settings.dryer_running = true;
-  settings.temperature_target = 45.0f;
-  settings.recycling_rate = 75.0f;
+  settings.session_running = true;
+  settings.phase = 2;
+  settings.total_elapsed_s = 1500;
 
-  // Should detect changes
   TEST_ASSERT_FALSE(VerifyChecksum(settings));
 
-  // Recalculate checksum
+  // Recalculate → should verify again
   settings.checksum = CalculateChecksum(settings);
-
-  // Should now verify
   TEST_ASSERT_TRUE(VerifyChecksum(settings));
 }
 
@@ -373,8 +381,9 @@ int main(int argc, char **argv)
   RUN_TEST(test_checksum_not_affected_by_checksum_field);
   RUN_TEST(test_checksum_sensitive_to_version);
   RUN_TEST(test_checksum_sensitive_to_bool_field);
-  RUN_TEST(test_checksum_sensitive_to_uint32_field);
-  RUN_TEST(test_checksum_sensitive_to_float_field);
+  RUN_TEST(test_checksum_sensitive_to_phase_field);
+  RUN_TEST(test_checksum_sensitive_to_phase_elapsed_field);
+  RUN_TEST(test_checksum_sensitive_to_total_elapsed_field);
 
   // Checksum verification tests
   RUN_TEST(test_verify_checksum_valid);
