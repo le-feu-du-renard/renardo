@@ -42,6 +42,12 @@ bool TimeManager::Begin()
     Serial.println("RTC time is invalid (year < 2020), updating...");
     needsUpdate = true;
   }
+  // Check if RTC is behind compile time (new build)
+  else if (now.unixtime() < compileTime.unixtime())
+  {
+    Serial.println("RTC time is behind compile time, updating...");
+    needsUpdate = true;
+  }
   // Check if RTC time is in the future compared to compile time
   else if (now.unixtime() > compileTime.unixtime() + 86400)
   {
