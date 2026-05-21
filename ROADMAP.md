@@ -78,7 +78,7 @@ Planned improvements for the renard'o dryer controller.
 - [x] Add ECO/PERFORMANCE physical mode selector
 - [x] Simplify session to fixed 3-phase cycle (Init → Brassage → Extraction)
 - [x] Remove program/cycle/preset system
-- [x] EEPROM persistence for session state (PersistentStateManager)
+- [x] SD card persistence for session state (PersistentStateManager, state.bin)
 - [x] All configuration as compile-time constants in config.h
 - [x] Migrate all Serial.print to Logger (ArduinoLog wrapper)
 - [x] Establish coding guidelines (2-space indent, Allman braces, English comments)

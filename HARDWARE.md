@@ -87,7 +87,7 @@ Each MCP23017 output drives a BC337 transistor that switches a 24 V indicator LE
 - **Interface:** I2C (GPIO 10/11), address `0x68`
 - **Purpose:** Session file timestamping
 - **Backup:** CR2032 coin cell (timekeeping during power loss)
-- Note: The AT24C32 EEPROM on the same module is not used — session state is persisted via the Pico's internal EEPROM emulation.
+- Note: The AT24C32 EEPROM on the same module is not used — session state is persisted to `/state.bin` on the SD card.
 
 ---
 

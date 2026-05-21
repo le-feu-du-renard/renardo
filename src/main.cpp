@@ -443,8 +443,9 @@ void setup()
   SetupI2C();
   delay(100);
 
-  // Load EEPROM state before touching the MCP so we can pre-load relay outputs.
-  // dryer.Begin() only accesses internal EEPROM — no I2C hardware needed.
+  // SD must be initialized before dryer.Begin() so PersistentStateManager can read state.bin.
+  SessionMonitor::InitSD();
+
   dryer.Begin();
 
   // Compute the correct initial state for Port B relay outputs from restored state.

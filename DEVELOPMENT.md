@@ -72,7 +72,7 @@ Log output uses [ArduinoLog](https://github.com/thijse/Arduino-Log) via the `Log
 ```
 [INFO ] SessionMonitor: SD card initialized successfully
 [WARN ] Inlet sensor read failed (errors=1)
-[ERROR] PersistentStateManager: EEPROM commit failed
+[ERROR] PersistentStateManager: cannot open /state.bin for write
 ```
 
 ### Log levels

@@ -1,5 +1,8 @@
 #include "PersistentStateManager.h"
 #include "Logger.h"
+#include <SD.h>
+
+using SDFile = SDLib::File;
 
 static constexpr size_t kStateSize = sizeof(PersistentState);
 
@@ -7,8 +10,7 @@ PersistentStateManager::PersistentStateManager() : state_() {}
 
 void PersistentStateManager::Begin()
 {
-  EEPROM.begin(kStateSize);
-  Logger::Info("PersistentStateManager: EEPROM initialized (%u bytes)", (unsigned)kStateSize);
+  Logger::Info("PersistentStateManager: using SD card (%s, %u bytes)", kStateFilePath, (unsigned)kStateSize);
 }
 
 void PersistentStateManager::Save(bool session_running, DryerPhase phase,
@@ -19,7 +21,7 @@ void PersistentStateManager::Save(bool session_running, DryerPhase phase,
   state_.phase           = phase;
   state_.phase_elapsed_s = phase_elapsed_s;
   state_.total_elapsed_s = total_elapsed_s;
-  WriteToEeprom();
+  WriteToSD();
   Logger::Info("PersistentStateManager: saved (running=%d, phase=%d, total=%us)",
                session_running, (int)phase, total_elapsed_s);
 }
@@ -27,7 +29,7 @@ void PersistentStateManager::Save(bool session_running, DryerPhase phase,
 bool PersistentStateManager::Load(DryerPhase &phase, uint32_t &phase_elapsed_s,
                                   uint32_t &total_elapsed_s)
 {
-  if (!ReadFromEeprom())
+  if (!ReadFromSD())
   {
     Logger::Warning("PersistentStateManager: no valid saved state, using defaults");
     return false;
@@ -48,7 +50,7 @@ bool PersistentStateManager::Load(DryerPhase &phase, uint32_t &phase_elapsed_s,
 void PersistentStateManager::Reset()
 {
   state_ = PersistentState();
-  WriteToEeprom();
+  WriteToSD();
   Logger::Info("PersistentStateManager: reset to defaults");
 }
 
@@ -61,26 +63,33 @@ uint16_t PersistentStateManager::CalculateChecksum(const PersistentState &s) con
   return sum;
 }
 
-void PersistentStateManager::WriteToEeprom()
+void PersistentStateManager::WriteToSD()
 {
-  state_.checksum        = CalculateChecksum(state_);
-  const uint8_t *data    = reinterpret_cast<const uint8_t *>(&state_);
-  for (size_t i = 0; i < kStateSize; i++)
+  state_.checksum = CalculateChecksum(state_);
+  SD.remove(kStateFilePath);
+  SDFile f = SD.open(kStateFilePath, FILE_WRITE);
+  if (!f)
   {
-    EEPROM.write(kEepromAddress + i, data[i]);
+    Logger::Error("PersistentStateManager: cannot open %s for write", kStateFilePath);
+    return;
   }
-  if (!EEPROM.commit())
-  {
-    Logger::Error("PersistentStateManager: EEPROM commit failed");
-  }
+  f.write(reinterpret_cast<const uint8_t *>(&state_), kStateSize);
+  f.close();
 }
 
-bool PersistentStateManager::ReadFromEeprom()
+bool PersistentStateManager::ReadFromSD()
 {
-  uint8_t *data = reinterpret_cast<uint8_t *>(&state_);
-  for (size_t i = 0; i < kStateSize; i++)
+  if (!SD.exists(kStateFilePath))
+    return false;
+  SDFile f = SD.open(kStateFilePath, FILE_READ);
+  if (!f)
+    return false;
+  int n = f.read(reinterpret_cast<uint8_t *>(&state_), kStateSize);
+  f.close();
+  if (n != (int)kStateSize)
   {
-    data[i] = EEPROM.read(kEepromAddress + i);
+    Logger::Warning("PersistentStateManager: short read (%d/%u bytes)", n, (unsigned)kStateSize);
+    return false;
   }
   if (state_.version != kStateVersion)
   {

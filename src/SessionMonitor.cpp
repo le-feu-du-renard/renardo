@@ -13,38 +13,41 @@ SessionMonitor::SessionMonitor(Dryer *dryer, TimeManager *time_manager)
 {
 }
 
-bool SessionMonitor::Begin()
+bool SessionMonitor::InitSD()
 {
-  Logger::Info("SessionMonitor::Begin() - START");
-
-  // Configure CS pin
   pinMode(SD_CARD_CS_PIN, OUTPUT);
   digitalWrite(SD_CARD_CS_PIN, HIGH);
-
-  // Configure SPI pins explicitly
-  Logger::Info("Configuring SPI pins (MISO=%d, MOSI=%d, SCK=%d)",
-               SD_CARD_MISO_PIN, SD_CARD_MOSI_PIN, SD_CARD_SCK_PIN);
 
   SPI.setRX(SD_CARD_MISO_PIN);
   SPI.setTX(SD_CARD_MOSI_PIN);
   SPI.setSCK(SD_CARD_SCK_PIN);
   SPI.begin();
 
-  Logger::Info("Attempting SD.begin() with CS pin %d", SD_CARD_CS_PIN);
-
-  bool sd_init_result = SD.begin(SD_CARD_CS_PIN);
-
-  if (!sd_init_result)
+  if (!SD.begin(SD_CARD_CS_PIN))
   {
-    Logger::Error("SD card initialization failed!");
-    Logger::Warning("Possible causes: no SD card, wrong wiring (MISO=%d MOSI=%d SCK=%d CS=%d), not FAT16/FAT32",
-                    SD_CARD_MISO_PIN, SD_CARD_MOSI_PIN, SD_CARD_SCK_PIN, SD_CARD_CS_PIN);
+    Logger::Error("SessionMonitor: SD init failed (MISO=%d MOSI=%d SCK=%d CS=%d)",
+                  SD_CARD_MISO_PIN, SD_CARD_MOSI_PIN, SD_CARD_SCK_PIN, SD_CARD_CS_PIN);
+    return false;
+  }
+
+  Logger::Info("SessionMonitor: SD card initialized");
+  return true;
+}
+
+bool SessionMonitor::Begin()
+{
+  Logger::Info("SessionMonitor::Begin() - START");
+
+  // SPI and SD already initialized via InitSD() — just verify access.
+  if (!SD.begin(SD_CARD_CS_PIN))
+  {
+    Logger::Error("SD card not available!");
     Logger::Warning("Data logging will be disabled.");
     sd_initialized_ = false;
     return false;
   }
 
-  Logger::Info("SD card initialized successfully");
+  Logger::Info("SD card accessible");
 
   // Try to open root directory to verify SD is working
   SDFile root = SD.open("/");
@@ -461,9 +464,8 @@ bool SessionMonitor::RetryInitialization()
 
   Logger::Info("Attempting to reinitialize SD card...");
 
-  // Reset consecutive failures
   consecutive_failures_ = 0;
 
-  // Try to initialize SD card
+  InitSD();
   return Begin();
 }

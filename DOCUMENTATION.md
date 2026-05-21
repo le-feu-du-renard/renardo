@@ -153,7 +153,7 @@ During **Extraction** phase, the target is the user humidity setpoint (potentiom
 
 ## Session Persistence
 
-Session state is written to EEPROM via `PersistentStateManager` at key events:
+Session state is written to `/state.bin` on the SD card via `PersistentStateManager` at key events:
 
 | Event | What is saved |
 |-------|--------------|
@@ -161,9 +161,9 @@ Session state is written to EEPROM via `PersistentStateManager` at key events:
 | STOP pressed | session_running = false |
 | Every 5 minutes (while running) | current phase + elapsed times |
 
-On boot, if `session_running = true` is found in EEPROM, the session resumes from the saved phase and elapsed time. The EEPROM checksum and version number guard against corrupt data.
+On boot, if `session_running = true` is found in `/state.bin`, the session resumes from the saved phase and elapsed time. A checksum and version number guard against corrupt data. If the SD card is unavailable, the system starts with defaults.
 
-EEPROM version: **9** — changing the `PersistentState` struct requires bumping `kStateVersion` in `PersistentStateManager.h`.
+State file version: **9** — changing the `PersistentState` struct requires bumping `kStateVersion` in `PersistentStateManager.h`.
 
 ---
 

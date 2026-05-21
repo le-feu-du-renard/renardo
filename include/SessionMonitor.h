@@ -32,7 +32,14 @@ public:
   SessionMonitor(Dryer *dryer, TimeManager *time_manager);
 
   /**
-   * @brief Initialize the SD card and SPI interface
+   * @brief Initialize SPI and SD card. Must be called once before dryer.Begin()
+   * so that PersistentStateManager can read state.bin at boot.
+   * @return true if SD card is ready, false otherwise
+   */
+  static bool InitSD();
+
+  /**
+   * @brief Verify SD card access (SPI + SD already initialized via InitSD).
    * @return true if initialization successful, false otherwise
    */
   bool Begin();

@@ -2,10 +2,9 @@
 #define PERSISTENT_STATE_MANAGER_H
 
 #include <Arduino.h>
-#include <EEPROM.h>
 #include "SessionManager.h"
 
-// Session state persisted to EEPROM for reboot recovery.
+// Session state persisted to SD card (state.bin) for reboot recovery.
 // PID parameters and phase durations are compile-time constants (config.h)
 // and are not stored here.
 struct PersistentState
@@ -32,25 +31,25 @@ public:
   PersistentStateManager();
   void Begin();
 
-  // Persist current session state to EEPROM.
+  // Persist current session state to SD card.
   void Save(bool session_running, DryerPhase phase,
             uint32_t phase_elapsed_s, uint32_t total_elapsed_s);
 
-  // Load session state from EEPROM.
+  // Load session state from SD card.
   // Returns true if data is valid and a running session was saved.
   bool Load(DryerPhase &phase, uint32_t &phase_elapsed_s, uint32_t &total_elapsed_s);
 
   void Reset();
 
 private:
-  static constexpr uint16_t kStateVersion = 9;
-  static constexpr uint16_t kEepromAddress = 0;
+  static constexpr uint16_t    kStateVersion  = 9;
+  static constexpr const char *kStateFilePath = "/state.bin";
 
   PersistentState state_;
 
   uint16_t CalculateChecksum(const PersistentState &s) const;
-  void     WriteToEeprom();
-  bool     ReadFromEeprom();
+  void     WriteToSD();
+  bool     ReadFromSD();
 };
 
 #endif // PERSISTENT_STATE_MANAGER_H

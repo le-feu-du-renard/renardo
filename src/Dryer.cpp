@@ -135,7 +135,7 @@ void Dryer::LoadSettings()
   if (state_manager_.Load(phase, phase_elapsed, total_elapsed))
   {
     session_manager_.RestoreState(phase, phase_elapsed, total_elapsed);
-    Logger::Info("Dryer: session restored from EEPROM");
+    Logger::Info("Dryer: session restored from SD card");
   }
   else
   {
