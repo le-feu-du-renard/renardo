@@ -288,7 +288,7 @@ static void UpdateOutputs()
     Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
   }
 
-  if (abs((int)pwm_val - (int)last_pwm) > 1)
+  if (abs((int)pwm_val - (int)last_pwm) > 5)
   {
     analogWrite(WATER_CIRCULATOR_PWM_PIN, pwm_val);
     last_pwm = pwm_val;

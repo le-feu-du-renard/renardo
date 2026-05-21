@@ -112,151 +112,106 @@
 #define ELECTRIC_ENABLED false
 #endif
 
-// ===== PID Parameters (single split-range PID) =====
+// ===== PID Parameters (hydraulic controller) =====
 //
-// This is the only PID in the system. Its output u ∈ [0, 100%] represents
-// the total heating demand. The split-range logic then decides how to distribute
-// this demand between the hydraulic (manual) and electric (ON/OFF) sources.
+// One PID drives the hydraulic source (0–100%). The electric source is
+// controlled separately by a state machine (see CTRL_ parameters below).
 //
-// The system has significant inertia (large dryer volume, slow electric heater)
+// The system has significant inertia (large dryer volume, slow thermal response)
 // so all gains should remain moderate — avoid aggressive tuning.
 //
 // Kp — Proportional gain
-//   Effect : immediate reaction to the temperature error (setpoint − measured).
-//   u_p = Kp × error
-//   Increase if the response is too slow (temperature takes too long to climb).
-//   Decrease if the output oscillates or the electric relay switches on/off rapidly.
-//   Typical sign of over-tuning: temperature overshoots the setpoint and hunts.
-//   Starting point: 5.0  →  try range [3.0 – 10.0]
-#define HYDRAULIC_KP 5.0
+//   Effect: immediate reaction to the temperature error (setpoint − measured).
+//   u_p = Kp × error.
+//   Increase if the response is too slow.
+//   Decrease if the output oscillates.
+//   Starting point: 15.0  →  try range [5.0 – 25.0]
+#define HYDRAULIC_KP 15.0f
 
 // Ki — Integral gain
-//   Effect : eliminates the steady-state offset that Kp alone cannot correct.
-//   u_i accumulates error × dt over time, so it builds up slowly.
-//   Keep low: the electric heater has high inertia and the anti-windup only
-//   partially compensates — a large Ki will still cause overshoot after a cold start.
-//   Increase only if the temperature stabilises 1–2°C below setpoint permanently.
-//   Decrease (or set to 0) if you observe slow oscillations after reaching setpoint.
+//   Effect: eliminates the steady-state offset that Kp alone cannot correct.
+//   Keep low — the integral is frozen during BOOST and electric-only mode.
+//   Increase only if temperature stabilises below setpoint permanently.
 //   Starting point: 0.1  →  try range [0.05 – 0.3]
-#define HYDRAULIC_KI 0.1
+#define HYDRAULIC_KI 0.1f
 
 // Kd — Derivative gain
-//   Effect : anticipates the error trend (rate of change). Helps brake the response
-//   before overshooting. Useful here because the dryer has long thermal lag.
-//   Increase if the temperature regularly overshoots the setpoint after a cold start.
-//   Decrease (or set to 0) if the output is noisy or the relay chatters.
-//   Note: the derivative is filtered (PID_DERIVATIVE_FILTER) to reduce sensor noise.
+//   Effect: anticipates the error trend (rate of change), helps brake before overshoot.
+//   Filtered by PID_DERIVATIVE_FILTER to reduce sensor noise.
 //   Starting point: 2.0  →  try range [0.5 – 5.0]
-#define HYDRAULIC_KD 2.0
+#define HYDRAULIC_KD 2.0f
 
-// ===== PID Advanced Parameters =====
+// PID_INTEGRAL_MAX — Anti-windup clamp on the integral accumulator (°C·s).
+//   Max integral output contribution = Ki × PID_INTEGRAL_MAX = 0.1 × 200 = 20% of u.
+//   Reduce toward 100 if overshoot occurs after a long cold start.
+#define PID_INTEGRAL_MAX 200.0f
 
-// PID_INTEGRAL_MAX — Anti-windup clamp on the integral accumulator (°C·s)
-//   Limits how much the integral can build up regardless of how long the error persists.
-//   The effective output contribution is Ki × integral, so max integral output = Ki × MAX.
-//   With Ki=0.1 and MAX=200 → max integral contribution = 20% of u.
-//   This allows the integral to compensate a small persistent error (e.g. 0.84°C) in
-//   PRIMARY_ELEC mode, where u_max = Kp×0.84 + 20% = 24.2% > 8% threshold.
-//   If the system overshoots after a long cold start, reduce this value toward 100.
-#define PID_INTEGRAL_MAX 200.0
+// PID_DERIVATIVE_FILTER — Low-pass filter coefficient for the derivative (0–1).
+//   Also used to filter the temperature derivative for ETA and prediction.
+//   Lower → more smoothing; 0.1 is conservative for 1 Hz Modbus sensor data.
+#define PID_DERIVATIVE_FILTER 0.1f
 
-// PID_DERIVATIVE_FILTER — Low-pass filter coefficient for the derivative term (0–1)
-//   filtered_d = α × raw_d + (1−α) × previous_filtered_d
-//   Lower value → more filtering (smoother but slower derivative response).
-//   Higher value → less filtering (faster but noisier).
-//   0.1 is conservative and appropriate for 1 Hz sensor data with Modbus noise.
-//   Increase toward 0.3 only if sensors are high-quality and low-noise.
-#define PID_DERIVATIVE_FILTER 0.1
-
-// ===== Split-Range Thresholds =====
+// ===== Electric Boost State Machine Parameters =====
 //
-// The PID output u ∈ [0, 100%] is distributed as follows:
+// The electric heater (ON/OFF) is governed by a state machine with two modes:
 //
-//   Normal mode (hydraulic available):
-//     u ∈ [0, 70%]  → hydraulic alone (electric stays OFF)
-//     u ∈ [70, 80%] → hysteresis dead-band (electric stays in its current state)
-//     u > 80%       → electric supplement requested (timer starts, see below)
+//   REGULATION  — hydraulic runs via PID; electric is OFF.
+//   BOOST       — electric ON, hydraulic forced to 100%.
 //
-//   Degraded mode (no hydraulic):
-//     u < 10%       → electric OFF
-//     u ∈ [10, 30%] → hysteresis dead-band
-//     u > 30%       → electric ON
-
-// SPLIT_ELECTRIC_ON — demand threshold above which the electric timer starts (normal mode)
-//   Because the electric heater has ~30s of thermal lag after relay ON, triggering at
-//   80% means the temperature has already been falling for a while before any heat arrives.
-//   Lowering this threshold gives the heater a head start — it activates with more
-//   temperature margin, so the heat arrives before the dip becomes too large.
-//   Lower toward 60% if the temperature consistently dips too far below setpoint.
-//   Raise toward 90% if the hydraulic alone can sustain the setpoint and the electric
-//   is triggering unnecessarily.
-#define SPLIT_ELECTRIC_ON 70.0f
-
-// SPLIT_ELECTRIC_OFF — demand below which the electric heater is forced OFF (normal mode)
-//   Must be strictly lower than SPLIT_ELECTRIC_ON to create a hysteresis dead-band.
-//   This prevents the contactor from cycling rapidly around the threshold.
-//   Recommended gap: at least 10%.
-#define SPLIT_ELECTRIC_OFF 55.0f
-
-// SPLIT_ELECTRIC_ON_DEG / SPLIT_ELECTRIC_OFF_DEG — thresholds for PRIMARY_ELEC mode
-//   Electric is the primary (and only) source — it must activate even with small errors.
-//   With Kp=5, Ki=0.1, PID_INTEGRAL_MAX=200:
-//     u_max with 0.84 error = 5x0.84 + 0.1x200 = 24.2% -> above 8% threshold.
-//   Gap between ON and OFF: at least 5% to avoid relay chattering.
-//   Increase ON toward 15-20% if the relay cycles too rapidly.
-#define SPLIT_ELECTRIC_ON_DEG 4.0f
-#define SPLIT_ELECTRIC_OFF_DEG 2.0f
-
-// ===== Electric Heater Timing =====
-
-// ELECTRIC_ON_DELAY_S — how long (seconds) the demand must stay above SPLIT_ELECTRIC_ON
-//   before the electric heater actually switches ON (normal mode only).
-//   Purpose: short debounce to avoid triggering on a transient demand spike.
+// BOOST is triggered when the PID alone cannot close the gap fast enough;
+// it exits once the setpoint is nearly reached. An anti-short-cycle guard
+// (CTRL_T_ON_MIN / CTRL_T_OFF_MIN) protects the electric relay.
 //
-//   *** Important — thermal lag trade-off ***
-//   The system is reactive, not predictive. By the time u > SPLIT_ELECTRIC_ON for
-//   ELECTRIC_ON_DELAY_S seconds, the temperature has already been dropping. Adding
-//   ELECTRIC_SETTLE_S on top (thermal lag before heat reaches the sensor) means the
-//   total lag from "demand spike" to "effective heat" is:
-//       ELECTRIC_ON_DELAY_S + ELECTRIC_SETTLE_S
-//   During that entire window the temperature continues to fall.
-//   → Keep this value SHORT (just enough to debounce transients, not a long guard).
-//   → To reduce undershoot: lower SPLIT_ELECTRIC_ON so the heater triggers earlier.
-//   Increase only if you observe the relay cycling ON/OFF rapidly (chattering).
-//   Starting point: 10s  →  try range [5 – 20s]
-#define ELECTRIC_ON_DELAY_S 10.0f
+// When hydraulic is disabled by the user, the system enters ELECTRIC_ONLY mode:
+// the electric heater follows a simple ON/OFF hysteresis (CTRL_BANDE_ELEC).
 
-// ELECTRIC_OFF_ANTICIPATION_S — look-ahead window (seconds) for predictive shutoff.
-//   When the electric heater is ON and temperature is rising, the controller estimates
-//   the temperature at (now + ELECTRIC_OFF_ANTICIPATION_S) using the current slope.
-//   If that predicted value already exceeds the setpoint, the heater is cut off now
-//   so thermal inertia doesn't push T above setpoint.
-//   Set this to the approximate time the temperature keeps rising after the heater
-//   is switched off (residual heat in the heating element and air volume).
-//   Increase if temperature still overshoots after the fix.
-//   Decrease if the heater turns off too early and temperature never reaches setpoint.
-//   A slope deadband of 0.02°C/s is applied to avoid noise-driven false shutoffs.
-//   Starting point: 10s  →  try range [5 – 20s]
-#define ELECTRIC_OFF_ANTICIPATION_S 20.0f
+// CTRL_E_HAUT — error threshold (°C) that triggers BOOST immediately.
+//   Raise if the electric activates too eagerly during warm-up.
+//   Lower if the system is too slow to supplement the hydraulic when needed.
+//   Starting point: 5.0°C
+#define CTRL_E_HAUT 5.0f
 
-// ELECTRIC_SETTLE_S — how long (seconds) after the heater turns ON to keep the integral
-//   frozen before the PID resumes normal integration.
-//   Purpose: the electric heater has ~30s of thermal inertia before its heat reaches the
-//   sensor. Without this freeze, the PID over-integrates during that blind window and
-//   causes overshoot once the heat finally arrives.
-//   Set this to roughly the heater's thermal lag (time from relay ON to measurable °C rise).
-//   Increase if temperature still overshoots after the heater activates.
-//   Decrease if the system is slow to react once the heater is running.
-//   Starting point: 30s  →  try range [20 – 60s]
-#define ELECTRIC_SETTLE_S 30.0f
+// CTRL_E_BAS — error threshold (°C) at which BOOST exits (hysteresis low end).
+//   Must be < CTRL_E_HAUT. Represents "close enough to setpoint" for regulation.
+//   Starting point: 0.4°C
+#define CTRL_E_BAS 0.4f
 
-// ELECTRIC_DT_ON — temperature must be at least this far below setpoint (°C) for
-//   the electric timer to increment. Prevents activating the heater when temperature
-//   is already very close to the setpoint (avoids overshoot from the electric's inertia).
-//   Increase if the electric heater tends to push temperature above the setpoint.
-//   Decrease toward 0.5 if the system consistently stabilises just below the setpoint.
-//   Starting point: 2.0°C  →  try range [0.5 – 5.0°C]
-#define ELECTRIC_DT_ON 2.0f
+// CTRL_BANDE_ELEC — hysteresis band (°C) for electric-only mode (no hydraulic).
+//   Electric turns ON when error > CTRL_BANDE_ELEC, OFF when error ≤ 0 or overshoot predicted.
+//   Starting point: 0.5°C
+#define CTRL_BANDE_ELEC 0.5f
+
+// CTRL_T_SAT — how long (seconds) hydraulic must be saturated at ≥99% with
+//   error > CTRL_E_BAS before BOOST is triggered via the saturation condition.
+//   Increase if BOOST triggers too often during partial-load heating.
+//   Starting point: 120s
+#define CTRL_T_SAT 75.0f
+
+// CTRL_ETA_MAX — maximum acceptable estimated time-to-setpoint (seconds).
+//   If eta = error / dT_dt > CTRL_ETA_MAX and error > CTRL_E_BAS, BOOST is triggered.
+//   Only evaluated when dT_dt > 0 (temperature is actually rising).
+//   Starting point: 900s (15 minutes)
+#define CTRL_ETA_MAX 900.0f
+
+// CTRL_HORIZON — prediction window (seconds) for predictive electric shutoff.
+//   If T_measured + dT_dt × CTRL_HORIZON ≥ setpoint, the electric is cut off early
+//   to avoid overshoot due to thermal inertia.
+//   Set to the approximate time the temperature keeps rising after the relay opens.
+//   Starting point: 300s
+#define CTRL_HORIZON 60.0f
+
+// CTRL_T_ON_MIN — minimum time (seconds) the electric must stay ON per cycle.
+//   Anti-short-cycle: BOOST cannot exit before this duration.
+//   Starting point: 300s (5 minutes)
+#define CTRL_T_ON_MIN 60.0f
+
+// CTRL_T_OFF_MIN — minimum time (seconds) the electric must stay OFF between cycles.
+//   Anti-short-cycle: BOOST cannot be triggered before this duration has elapsed
+//   since the electric last turned OFF.
+//   75s is a conservative protection for a contactor while still allowing the
+//   system to react within 2 minutes when the temperature continues to drop.
+//   Starting point: 75s  →  try range [60 – 300s]
+#define CTRL_T_OFF_MIN 60.0f
 
 // ===== Safety =====
 // Hard cutoff: if the measured temperature exceeds this value, the electric heater is

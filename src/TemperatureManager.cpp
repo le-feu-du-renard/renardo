@@ -14,8 +14,13 @@ TemperatureManager::TemperatureManager(ElectricHeater *electric_heater,
       electric_enabled_(ELECTRIC_ENABLED),
       fan_active_(false),
       electric_on_(false),
-      electric_on_timer_s_(0.0f),
-      electric_settle_timer_s_(0.0f),
+      control_state_(HYDRAULIC_AVAILABLE ? ControlState::REGULATION : ControlState::ELECTRIC_ONLY),
+      dT_dt_(0.0f),
+      prev_temp_(0.0f),
+      first_tick_(true),
+      hydro_sat_timer_(0.0f),
+      elec_on_timer_(0.0f),
+      elec_off_timer_(CTRL_T_OFF_MIN),  // allow immediate first activation
       debug_log_timer_s_(0.0f),
       operating_mode_(OperatingMode::PERFORMANCE),
       current_hour_(0) {}
@@ -33,10 +38,11 @@ void TemperatureManager::Begin()
 
   last_update_ms_ = millis();
 
-  Logger::Info("TemperatureManager: initialized (split-range, %s)",
-               hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC");
-  Logger::Info("PID: Kp=%F Ki=%F Kd=%F",
-               params_.hydraulic_kp, params_.hydraulic_ki, params_.hydraulic_kd);
+  Logger::Info("TemperatureManager: initialized (PID+state-machine, %s)",
+               hydraulic_available_ ? "REGULATION" : "ELECTRIC_ONLY");
+  Logger::Info("PID: Kp=%F Ki=%F Kd=%F | E_HAUT=%F E_BAS=%F T_ON=%F T_OFF=%F",
+               params_.hydraulic_kp, params_.hydraulic_ki, params_.hydraulic_kd,
+               CTRL_E_HAUT, CTRL_E_BAS, CTRL_T_ON_MIN, CTRL_T_OFF_MIN);
 }
 
 void TemperatureManager::Update(float current_temperature)
@@ -56,147 +62,230 @@ void TemperatureManager::Update(float current_temperature)
   UpdateHeating(dt);
 }
 
+// Helper: switch electric relay and reset the appropriate anti-short-cycle timer.
+void TemperatureManager::SetElectric(bool on)
+{
+  if (on == electric_on_) return;
+  electric_on_ = on;
+  if (on)
+    elec_on_timer_ = 0.0f;   // start counting new ON period
+  else
+    elec_off_timer_ = 0.0f;  // start counting new OFF period
+}
+
+// Helper: force both actuators off without touching the state machine or timers.
+void TemperatureManager::ForceAllOff()
+{
+  if (electric_on_)
+    SetElectric(false);
+  electric_heater_->SetPower(0.0f);
+  hydraulic_heater_->SetPower(0);
+}
+
 void TemperatureManager::UpdateHeating(float dt)
 {
-  float effective_target = GetEffectiveTargetTemperature();
+  float setpoint = GetEffectiveTargetTemperature();
+  float T = current_temperature_;
 
-  // === BLOCK A: Safety cutoff ===
-  // Hard stop if temperature exceeds the safety limit, regardless of mode.
-  if (current_temperature_ > TEMPERATURE_SAFETY_MAX)
+  // --- Sensor fault ---
+  if (isnan(T) || T < -20.0f || T > 200.0f)
   {
-    electric_heater_->SetPower(0.0f);
-    hydraulic_heater_->SetPower(0);
-    electric_on_ = false;
-    electric_on_timer_s_ = 0.0f;
-    electric_settle_timer_s_ = 0.0f;
+    ForceAllOff();
     pid_.Reset();
-    Logger::Warning("TempMgr: SAFETY CUTOFF T=%F > %FC — all heaters OFF",
-                    current_temperature_, TEMPERATURE_SAFETY_MAX);
+    Logger::Error("TempMgr: sensor fault (T=%F) — all off", T);
     return;
   }
 
-  // === BLOCK A+: Ventilation interlock ===
-  // Block both heaters if the fan is not confirmed active.
+  // --- Safety temperature cutoff ---
+  if (T > TEMPERATURE_SAFETY_MAX)
+  {
+    ForceAllOff();
+    pid_.Reset();
+    control_state_ = hydraulic_available_ ? ControlState::REGULATION : ControlState::ELECTRIC_ONLY;
+    Logger::Warning("TempMgr: SAFETY CUTOFF T=%FC > %FC — all off",
+                    T, TEMPERATURE_SAFETY_MAX);
+    return;
+  }
+
+  // --- Fan interlock ---
   if (!fan_active_)
   {
-    electric_heater_->SetPower(0.0f);
-    hydraulic_heater_->SetPower(0);
-    electric_on_ = false;
-    electric_on_timer_s_ = 0.0f;
-    electric_settle_timer_s_ = 0.0f;
+    ForceAllOff();
     Logger::Warning("TempMgr: fan not active — heaters blocked");
     return;
   }
 
-  // === BLOCK B: Single PID with conditional anti-windup ===
-  // The integral is frozen in three situations:
-  //   1. Output saturated (u at 0% or 100%) — classic anti-windup.
-  //   2. Electric heater pending (timer > 0 but relay not yet ON) — avoids windup
-  //      during the ~30s delay before the heater activates.
-  //   3. Settle window after heater turns ON — avoids windup during the ~30s
-  //      thermal lag before the heater's heat actually reaches the sensor.
-  float last_u = pid_.GetLastOutput();
-  bool freeze_int = (last_u >= 100.0f) ||
-                    (last_u <= 0.0f) ||
-                    (electric_on_timer_s_ > 0.0f && !electric_on_) ||
-                    (electric_settle_timer_s_ > 0.0f);
-
-  float u = electric_enabled_
-                ? pid_.Compute(effective_target, current_temperature_, dt, freeze_int)
-                : 0.0f;
-
+  // --- Heating globally disabled (sensor-timeout guard) ---
   if (!electric_enabled_)
   {
-    electric_heater_->SetPower(0.0f);
-    hydraulic_heater_->SetPower(0);
-    electric_on_ = false;
-    electric_on_timer_s_ = 0.0f;
-    electric_settle_timer_s_ = 0.0f;
+    ForceAllOff();
     return;
   }
 
-  // Track the settle window: count down from ELECTRIC_SETTLE_S after heater turns ON.
-  if (electric_settle_timer_s_ > 0.0f)
-    electric_settle_timer_s_ = (electric_settle_timer_s_ > dt) ? electric_settle_timer_s_ - dt : 0.0f;
-
-  // === BLOCK C: Unified split-range logic ===
-  // Parameters differ by heat source mode; the ON/OFF/anticipation logic is shared.
-  //   PRIMARY_HYDRO: high thresholds + debounce timer — electric is a late supplement
-  //   PRIMARY_ELEC:  low thresholds + no delay     — electric is the primary source
-  const float on_threshold = hydraulic_available_ ? SPLIT_ELECTRIC_ON : SPLIT_ELECTRIC_ON_DEG;
-  const float off_threshold = hydraulic_available_ ? SPLIT_ELECTRIC_OFF : SPLIT_ELECTRIC_OFF_DEG;
-  const float on_delay = hydraulic_available_ ? ELECTRIC_ON_DELAY_S : 0.0f;
-  const float dt_on_guard = hydraulic_available_ ? ELECTRIC_DT_ON : 0.0f;
-
-  // ON timer: demand must stay above threshold (and T must be far enough from setpoint)
-  // for on_delay seconds before the relay closes. In PRIMARY_ELEC, on_delay=0 → immediate.
-  if (u > on_threshold && current_temperature_ < (effective_target - dt_on_guard))
-    electric_on_timer_s_ += dt;
-  else
-    electric_on_timer_s_ = 0.0f;
-
-  if (!electric_on_ && electric_on_timer_s_ >= on_delay)
+  // --- Filtered temperature derivative ---
+  // dT_dt_ > 0 when temperature is rising; used for ETA and prediction.
+  if (!first_tick_)
   {
-    electric_on_ = true;
-    electric_settle_timer_s_ = ELECTRIC_SETTLE_S;
-  }
-
-  // OFF: demand below hysteresis threshold, setpoint reached, or predictive shutoff.
-  // Predictive shutoff: if temperature is rising and will overshoot setpoint within
-  // ELECTRIC_OFF_ANTICIPATION_S seconds (thermal lag after relay opens), cut off early.
-  // A 0.02°C/s deadband on the slope filters noise-driven false shutoffs.
-  const float rise_rate = -pid_.GetDerivative(); // positive when T is climbing
-  const bool will_overshoot = (rise_rate > 0.02f) &&
-                              (current_temperature_ + rise_rate * ELECTRIC_OFF_ANTICIPATION_S >= effective_target);
-
-  if (u < off_threshold || current_temperature_ >= effective_target || will_overshoot)
-  {
-    electric_on_ = false;
-    electric_on_timer_s_ = 0.0f;
-    electric_settle_timer_s_ = 0.0f;
-  }
-
-  // === BLOCK D: Apply outputs + periodic debug log ===
-  // Hydraulic: proportional to demand on [0, SPLIT_ELECTRIC_ON], saturated at 100% above.
-  // In PRIMARY_ELEC mode (no hydraulic source), pump stays off.
-  if (hydraulic_available_)
-  {
-    float hydro_pct = fminf(u / SPLIT_ELECTRIC_ON * 100.0f, 100.0f);
-    hydraulic_heater_->SetPower((uint8_t)hydro_pct);
+    float raw = (T - prev_temp_) / dt;
+    dT_dt_ = PID_DERIVATIVE_FILTER * raw + (1.0f - PID_DERIVATIVE_FILTER) * dT_dt_;
   }
   else
   {
+    dT_dt_ = 0.0f;
+    first_tick_ = false;
+  }
+  prev_temp_ = T;
+
+  float error = setpoint - T;
+
+  // --- Hydraulic availability transitions ---
+  bool should_use_hydro = hydraulic_available_;
+
+  if (!should_use_hydro && control_state_ != ControlState::ELECTRIC_ONLY)
+  {
+    // Hydraulic just lost: freeze PID, enter ELECTRIC_ONLY.
+    // Electric timers are intentionally NOT reset (anti-short-cycle preserved).
+    control_state_ = ControlState::ELECTRIC_ONLY;
+    Logger::Info("TempMgr: hydraulic disabled -> ELECTRIC_ONLY (elec=%s)",
+                 electric_on_ ? "ON" : "OFF");
+  }
+  else if (should_use_hydro && control_state_ == ControlState::ELECTRIC_ONLY)
+  {
+    // Hydraulic restored: bumpless resume.
+    // Set integral so PID output starts at 0 (hydro was off), minimising the step.
+    float resume_int = 0.0f;
+    if (params_.hydraulic_ki > 0.0f)
+      resume_int = constrain(-params_.hydraulic_kp * error / params_.hydraulic_ki,
+                              -params_.pid_integral_max, params_.pid_integral_max);
+    pid_.SetIntegral(resume_int);
+    control_state_ = ControlState::REGULATION;
+    hydro_sat_timer_ = 0.0f;
+    Logger::Info("TempMgr: hydraulic re-enabled -> REGULATION (bumpless I=%F)", resume_int);
+  }
+
+  // --- State machine ---
+
+  if (control_state_ == ControlState::ELECTRIC_ONLY)
+  {
+    // Hard guard applied here AND again at output stage.
     hydraulic_heater_->SetPower(0);
+
+    float predicted = T + dT_dt_ * CTRL_HORIZON;
+
+    if (!electric_on_)
+    {
+      if (elec_off_timer_ >= CTRL_T_OFF_MIN && error > CTRL_BANDE_ELEC)
+      {
+        SetElectric(true);
+        Logger::Info("TempMgr: ELEC_ONLY -> ON (err=%F)", error);
+      }
+    }
+    else
+    {
+      bool reached = (error <= 0.0f || predicted >= setpoint);
+      if (elec_on_timer_ >= CTRL_T_ON_MIN && reached)
+      {
+        SetElectric(false);
+        Logger::Info("TempMgr: ELEC_ONLY -> OFF (err=%F predict=%F)", error, predicted);
+      }
+    }
+  }
+  else if (control_state_ == ControlState::REGULATION)
+  {
+    // PID drives hydraulic; integral frozen when output is saturated.
+    float last_u = pid_.GetLastOutput();
+    bool freeze_int = (last_u >= 100.0f || last_u <= 0.0f);
+    float u = pid_.Compute(setpoint, T, dt, freeze_int);
+
+    hydraulic_heater_->SetPower((uint8_t)constrain(u, 0.0f, 100.0f));
+
+    hydro_sat_timer_ = (u >= 99.0f) ? hydro_sat_timer_ + dt : 0.0f;
+
+    // Estimated time to setpoint; only valid when temperature is rising.
+    float eta = (dT_dt_ > 0.001f) ? (error / dT_dt_) : 1e9f;
+
+    bool can_boost = (elec_off_timer_ >= CTRL_T_OFF_MIN);
+    bool cond1 = (error > CTRL_E_HAUT);
+    bool cond2 = (hydro_sat_timer_ >= CTRL_T_SAT && error > CTRL_E_BAS);
+    bool cond3 = (dT_dt_ > 0.001f && eta > CTRL_ETA_MAX && error > CTRL_E_BAS);
+
+    if (can_boost && (cond1 || cond2 || cond3))
+    {
+      control_state_ = ControlState::BOOST;
+      hydro_sat_timer_ = 0.0f;
+      hydraulic_heater_->SetPower(100);
+      SetElectric(true);
+      Logger::Info("TempMgr: -> BOOST (err=%F cond1=%d cond2=%d cond3=%d eta=%F)",
+                   error, (int)cond1, (int)cond2, (int)cond3,
+                   (dT_dt_ > 0.001f ? eta : -1.0f));
+    }
+  }
+  else  // BOOST
+  {
+    // Hydraulic forced to 100%. PID runs with integral frozen to track error/derivative
+    // state, so that the bumpless exit integral is computed against the current error.
+    hydraulic_heater_->SetPower(100);
+    pid_.Compute(setpoint, T, dt, true);
+
+    bool can_exit    = (elec_on_timer_ >= CTRL_T_ON_MIN);
+    bool should_exit = (error < CTRL_E_BAS);
+
+    if (can_exit && should_exit)
+    {
+      // Bumpless: set integral so PID output starts at 100% (hydro was at 100%).
+      float resume_int = 0.0f;
+      if (params_.hydraulic_ki > 0.0f)
+        resume_int = constrain((100.0f - params_.hydraulic_kp * error) / params_.hydraulic_ki,
+                                -params_.pid_integral_max, params_.pid_integral_max);
+      pid_.SetIntegral(resume_int);
+      control_state_ = ControlState::REGULATION;
+      hydro_sat_timer_ = 0.0f;
+      SetElectric(false);
+      Logger::Info("TempMgr: BOOST -> REGULATION (err=%F bumpless I=%F)", error, resume_int);
+    }
   }
 
+  // --- Hard hydraulic guard: when hydro is unavailable, force to 0 at output ---
+  if (!hydraulic_available_)
+    hydraulic_heater_->SetPower(0);
+
+  // --- Apply electric output ---
   electric_heater_->SetPower(electric_on_ ? 1.0f : 0.0f);
 
-  uint8_t hydro_power = hydraulic_heater_->GetPower();
+  // --- Advance anti-short-cycle timers ---
+  if (electric_on_)
+    elec_on_timer_ += dt;
+  else
+    elec_off_timer_ += dt;
 
-  // Log target and current temperature every 2 seconds
+  // --- Periodic debug log ---
   debug_log_timer_s_ += dt;
   if (debug_log_timer_s_ >= 2.0f)
   {
     debug_log_timer_s_ = 0.0f;
-    Logger::Info("TempMgr: target=%FC  T=%FC  u=%F%%  hydro=%u%%  elec=%s%s",
-                 effective_target, current_temperature_, u, hydro_power,
-                 electric_on_ ? "ON" : "OFF",
-                 electric_settle_timer_s_ > 0.0f ? " (settling)" : "");
+    const char *st = (control_state_ == ControlState::REGULATION)   ? "REGULATION"
+                   : (control_state_ == ControlState::BOOST)        ? "BOOST"
+                                                                     : "ELEC_ONLY";
+    Logger::Info("TempMgr: [%s] sp=%FC T=%FC err=%F dT=%F/s hydro=%u%% elec=%s",
+                 st, setpoint, T, error, dT_dt_,
+                 hydraulic_heater_->GetPower(), electric_on_ ? "ON" : "OFF");
+    Logger::Debug("TempMgr: elec_on=%Fs elec_off=%Fs sat=%Fs | P=%F I=%F D=%F u=%F",
+                  elec_on_timer_, elec_off_timer_, hydro_sat_timer_,
+                  pid_.GetProportionalTerm(), pid_.GetIntegralTerm(),
+                  pid_.GetDerivativeTerm(), pid_.GetLastOutput());
   }
-
-  Logger::Debug("TempMgr: sp=%F T=%F u=%F%% hydro=%u%% freeze=%d | %s | elec=%s timer=%Fs settle=%Fs",
-                effective_target, current_temperature_, u, hydro_power, (int)freeze_int,
-                hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC",
-                electric_on_ ? "ON" : "OFF",
-                electric_on_timer_s_, electric_settle_timer_s_);
 }
 
 void TemperatureManager::ResetControl()
 {
   pid_.Reset();
   electric_on_ = false;
-  electric_on_timer_s_ = 0.0f;
-  electric_settle_timer_s_ = 0.0f;
+  elec_on_timer_ = 0.0f;
+  elec_off_timer_ = CTRL_T_OFF_MIN;  // allow immediate first activation in new phase
+  hydro_sat_timer_ = 0.0f;
+  dT_dt_ = 0.0f;
+  first_tick_ = true;
+  control_state_ = hydraulic_available_ ? ControlState::REGULATION : ControlState::ELECTRIC_ONLY;
   electric_heater_->SetPower(0.0f);
   hydraulic_heater_->SetPower(0);
   Logger::Info("TemperatureManager: control reset (phase transition)");
@@ -204,15 +293,15 @@ void TemperatureManager::ResetControl()
 
 void TemperatureManager::PrintDebug() const
 {
-  Logger::Info("[TempMgr] err=%F P=%F I=%F D=%F u=%F%% | mode=%s | elec=%s | timer=%Fs",
-               pid_.GetLastError(),
-               pid_.GetProportionalTerm(),
-               pid_.GetIntegralTerm(),
-               pid_.GetDerivativeTerm(),
+  const char *st = (control_state_ == ControlState::REGULATION)   ? "REGULATION"
+                 : (control_state_ == ControlState::BOOST)        ? "BOOST"
+                                                                   : "ELEC_ONLY";
+  Logger::Info("[TempMgr] state=%s err=%F P=%F I=%F D=%F u=%F%% | elec=%s on=%Fs off=%Fs",
+               st, pid_.GetLastError(),
+               pid_.GetProportionalTerm(), pid_.GetIntegralTerm(), pid_.GetDerivativeTerm(),
                pid_.GetLastOutput(),
-               hydraulic_available_ ? "PRIMARY_HYDRO" : "PRIMARY_ELEC",
                electric_on_ ? "ON" : "OFF",
-               electric_on_timer_s_);
+               elec_on_timer_, elec_off_timer_);
 }
 
 void TemperatureManager::SetTargetTemperature(float temperature)
@@ -221,13 +310,18 @@ void TemperatureManager::SetTargetTemperature(float temperature)
   if (fabsf(temperature - params_.temperature_target) < 1.0f)
     return;
 
-  Logger::Info("TemperatureManager: target %FC -> %FC, resetting PID",
+  Logger::Info("TemperatureManager: target %FC -> %FC, resetting control",
                params_.temperature_target, temperature);
+  params_.temperature_target = temperature;
   pid_.Reset();
   electric_on_ = false;
-  electric_on_timer_s_ = 0.0f;
-  electric_settle_timer_s_ = 0.0f;
-  params_.temperature_target = temperature;
+  electric_heater_->SetPower(0.0f);
+  hydraulic_heater_->SetPower(0);
+  elec_on_timer_ = 0.0f;
+  elec_off_timer_ = CTRL_T_OFF_MIN;
+  hydro_sat_timer_ = 0.0f;
+  first_tick_ = true;
+  control_state_ = hydraulic_available_ ? ControlState::REGULATION : ControlState::ELECTRIC_ONLY;
 }
 
 float TemperatureManager::GetEffectiveTargetTemperature() const
@@ -254,13 +348,10 @@ void TemperatureManager::SetHydraulicAvailable(bool available)
   if (hydraulic_available_ == available)
     return;
   hydraulic_available_ = available;
-  // Reset timers and electric state when switching mode to avoid stale state
-  electric_on_ = false;
-  electric_on_timer_s_ = 0.0f;
-  electric_settle_timer_s_ = 0.0f;
-  Logger::Info("TemperatureManager: hydraulic %s — switching to %s mode",
-               available ? "available" : "unavailable",
-               available ? "PRIMARY_HYDRO" : "PRIMARY_ELEC");
+  // Do NOT reset electric timers here: UpdateHeating() handles the transition
+  // on the next tick and the anti-short-cycle timers must be preserved.
+  Logger::Info("TemperatureManager: hydraulic %s (transition on next tick)",
+               available ? "available" : "unavailable");
 }
 
 void TemperatureManager::SetElectricEnabled(bool enabled)
@@ -270,11 +361,9 @@ void TemperatureManager::SetElectricEnabled(bool enabled)
   electric_enabled_ = enabled;
   if (!enabled)
   {
-    electric_heater_->SetPower(0.0f);
-    electric_on_ = false;
-    electric_on_timer_s_ = 0.0f;
-    electric_settle_timer_s_ = 0.0f;
-    pid_.Reset();
+    // ForceAllOff() preserves the anti-short-cycle timers via SetElectric().
+    ForceAllOff();
+    hydraulic_heater_->SetPower(0);
   }
   Logger::Info("TemperatureManager: electric heating %s", enabled ? "enabled" : "disabled");
 }
@@ -286,12 +375,10 @@ void TemperatureManager::SetFanActive(bool active)
   fan_active_ = active;
   if (!active)
   {
-    electric_heater_->SetPower(0.0f);
-    electric_on_ = false;
-    electric_on_timer_s_ = 0.0f;
-    electric_settle_timer_s_ = 0.0f;
+    ForceAllOff();
+    hydraulic_heater_->SetPower(0);
   }
-  Logger::Info("TemperatureManager: fan %s", active ? "active" : "inactive — electric blocked");
+  Logger::Info("TemperatureManager: fan %s", active ? "active" : "inactive — heaters blocked");
 }
 
 void TemperatureManager::SetOperatingMode(OperatingMode mode)

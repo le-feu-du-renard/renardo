@@ -53,6 +53,11 @@ public:
   void SetIntegralLimit(float integral_max);
   void SetDerivativeFilter(float filter_coef);
 
+  // Force the integral to a specific value (clamped to ±integral_max).
+  // Used for bumpless transfer: set before resuming PID control so the first
+  // output equals the current actuator position rather than jumping.
+  void SetIntegral(float value);
+
   // Get current state (for debugging/monitoring)
   float GetLastError() const { return last_error_; }
   float GetIntegral() const { return integral_; }

@@ -125,6 +125,10 @@ void PIDController::SetDerivativeFilter(float filter_coef) {
   Log.trace("PID: Derivative filter updated - coef=%F", derivative_filter_);
 }
 
+void PIDController::SetIntegral(float value) {
+  integral_ = Clamp(value, -integral_max_, integral_max_);
+}
+
 float PIDController::Clamp(float value, float min, float max) const {
   if (value < min) return min;
   if (value > max) return max;
