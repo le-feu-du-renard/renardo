@@ -8,10 +8,10 @@ ModbusSensors::ModbusSensors() : error_count_(0) {}
 
 void ModbusSensors::Begin(uint32_t baudrate)
 {
-  // Configure UART0 pins before opening the port (GPIO 12/13 = UART0 = Serial1)
-  Serial1.setTX(RS485_TX_PIN);
-  Serial1.setRX(RS485_RX_PIN);
-  Serial1.begin(baudrate, SERIAL_8N1);
+  // GP4/GP5 are UART1 pins on the RP2040 → Serial2
+  Serial2.setTX(RS485_TX_PIN);
+  Serial2.setRX(RS485_RX_PIN);
+  Serial2.begin(baudrate, SERIAL_8N1);
 
   pinMode(RS485_DE_PIN, OUTPUT);
   digitalWrite(RS485_DE_PIN, LOW);  // Start in receive mode
@@ -21,12 +21,12 @@ void ModbusSensors::Begin(uint32_t baudrate)
   node_.preTransmission(PreTransmission);
   node_.postTransmission(PostTransmission);
 
-  Logger::Info("ModbusSensors: initialized on UART0 (Serial1) at %lu baud", baudrate);
+  Logger::Info("ModbusSensors: initialized on UART1 (Serial2) at %lu baud", baudrate);
 }
 
 bool ModbusSensors::ReadSensor(uint8_t address, float &temperature, float &humidity)
 {
-  node_.begin(address, Serial1);
+  node_.begin(address, Serial2);
   node_.preTransmission(PreTransmission);
   node_.postTransmission(PostTransmission);
 
@@ -59,6 +59,6 @@ void ModbusSensors::PreTransmission()
 
 void ModbusSensors::PostTransmission()
 {
-  Serial1.flush();                   // Wait for last byte to fully leave the UART
+  Serial2.flush();                   // Wait for last byte to fully leave the UART
   digitalWrite(RS485_DE_PIN, LOW);   // Return to receive
 }
