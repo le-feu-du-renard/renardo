@@ -67,8 +67,16 @@ private:
   uint32_t temp_adjust_until_ms_;
   uint32_t hum_adjust_until_ms_;
 
-  // Average 8 ADC samples and map to [min, max]
-  static float ReadPot(uint8_t pin, float min_val, float max_val);
+  // Pot debounce: candidate value + stable-read counter
+  float   temp_candidate_;
+  uint8_t temp_stable_count_;
+  float   hum_candidate_;
+  uint8_t hum_stable_count_;
+
+  static constexpr uint8_t kPotStableReads = 4;
+
+  // Average 8 ADC samples, map to [min, max], and quantize to step
+  static float ReadPot(uint8_t pin, float min_val, float max_val, float step);
 
   // Map raw 12-bit ADC value to [min, max]
   static float MapAdc(uint16_t raw, float min_val, float max_val);

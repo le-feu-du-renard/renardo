@@ -20,7 +20,11 @@ InputHandler::InputHandler()
       prev_target_temperature_(TEMPERATURE_TARGET),
       prev_target_humidity_(50.0f),
       temp_adjust_until_ms_(0),
-      hum_adjust_until_ms_(0) {}
+      hum_adjust_until_ms_(0),
+      temp_candidate_(TEMPERATURE_TARGET),
+      temp_stable_count_(0),
+      hum_candidate_(50.0f),
+      hum_stable_count_(0) {}
 
 void InputHandler::Begin(McpOutputs &leds)
 {
@@ -49,9 +53,30 @@ void InputHandler::Update()
 {
   uint32_t now = millis();
 
-  // Read potentiometers: averaged + mapped to physical range
-  target_temperature_ = ReadPot(POT_TEMPERATURE_PIN, POT_TEMP_MIN, POT_TEMP_MAX);
-  target_humidity_ = ReadPot(POT_HUMIDITY_PIN, POT_HUM_MIN, POT_HUM_MAX);
+  // Read potentiometers: averaged + quantized, committed only after kPotStableReads
+  float raw_temp = ReadPot(POT_TEMPERATURE_PIN, POT_TEMP_MIN, POT_TEMP_MAX, 1.0f);
+  if (raw_temp == temp_candidate_)
+  {
+    if (temp_stable_count_ < kPotStableReads) temp_stable_count_++;
+    if (temp_stable_count_ == kPotStableReads) target_temperature_ = temp_candidate_;
+  }
+  else
+  {
+    temp_candidate_    = raw_temp;
+    temp_stable_count_ = 1;
+  }
+
+  float raw_hum = ReadPot(POT_HUMIDITY_PIN, POT_HUM_MIN, POT_HUM_MAX, 1.0f);
+  if (raw_hum == hum_candidate_)
+  {
+    if (hum_stable_count_ < kPotStableReads) hum_stable_count_++;
+    if (hum_stable_count_ == kPotStableReads) target_humidity_ = hum_candidate_;
+  }
+  else
+  {
+    hum_candidate_    = raw_hum;
+    hum_stable_count_ = 1;
+  }
 
   // Detect potentiometer movement and extend the voltmeter display window
   constexpr float kTempThreshold = 0.3f;
@@ -147,7 +172,7 @@ void InputHandler::SetStopLed(bool state)
   leds_->SetOutput(MCP_BTN_STOP_LED, state);
 }
 
-float InputHandler::ReadPot(uint8_t pin, float min_val, float max_val)
+float InputHandler::ReadPot(uint8_t pin, float min_val, float max_val, float step)
 {
   // Average samples to suppress RP2040 ADC noise
   constexpr uint8_t kSamples = 20;
@@ -156,7 +181,8 @@ float InputHandler::ReadPot(uint8_t pin, float min_val, float max_val)
   {
     sum += analogRead(pin);
   }
-  return MapAdc(sum / kSamples, min_val, max_val);
+  float val = MapAdc(sum / kSamples, min_val, max_val);
+  return roundf(val / step) * step;
 }
 
 float InputHandler::MapAdc(uint16_t raw, float min_val, float max_val)
