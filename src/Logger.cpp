@@ -1,7 +1,11 @@
 #include "Logger.h"
 
+mutex_t Logger::mutex_;
+
 void Logger::Init(int level)
 {
+  mutex_init(&Logger::mutex_);
+
   // Initialize ArduinoLog
   Log.begin(level, &Serial);
 

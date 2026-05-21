@@ -46,6 +46,10 @@ void InputHandler::Begin(McpOutputs &leds)
   // misinterpret a held-low pin (power-up noise) as a rising edge.
   start_raw_prev_ = (digitalRead(BTN_START_PIN) == LOW);
   stop_raw_prev_  = (digitalRead(BTN_STOP_PIN)  == LOW);
+  // If a button is held at init, mark it consumed so Branch 3 (steady-held check)
+  // doesn't fire immediately — stop_debounce_ms_ is still 0 from the constructor.
+  start_consumed_ = start_raw_prev_;
+  stop_consumed_  = stop_raw_prev_;
 
   // Button LEDs – via MCP23017 Port B, start off
   leds_->SetOutput(MCP_BTN_START_LED, LOW);

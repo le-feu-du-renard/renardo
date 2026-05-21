@@ -3,19 +3,8 @@
 
 #include <Arduino.h>
 #include <ArduinoLog.h>
+#include <pico/mutex.h>
 
-/**
- * @brief Logger wrapper for ArduinoLog
- *
- * This class provides a centralized logging interface that outputs to Serial.
- * It uses ArduinoLog for formatting and level management.
- *
- * Usage:
- *   Logger::Init(LOG_LEVEL_VERBOSE);  // Initialize logger
- *   Log.trace("Trace message");       // Use ArduinoLog macros
- *   Log.info("Info: %d", value);      // With formatting
- *   Log.error("Error occurred!");     // Error level
- */
 class Logger
 {
 public:
@@ -23,17 +12,28 @@ public:
   static void SetLevel(int level);
   static void Flush();
 
-  // Convenience wrappers matching ArduinoLog levels
-  template<class... Args> static void Debug(const char* fmt, Args... args)   { Log.verbose(fmt, args...); }
-  template<class... Args> static void Info(const char* fmt, Args... args)    { Log.notice(fmt, args...); }
-  template<class... Args> static void Warning(const char* fmt, Args... args) { Log.warning(fmt, args...); }
-  template<class... Args> static void Error(const char* fmt, Args... args)   { Log.error(fmt, args...); }
+  // Convenience wrappers matching ArduinoLog levels — all mutex-protected for dual-core safety
+  template<class... Args> static void Debug(const char* fmt, Args... args)
+    { mutex_enter_blocking(&mutex_); Log.verbose(fmt, args...); mutex_exit(&mutex_); }
+  template<class... Args> static void Info(const char* fmt, Args... args)
+    { mutex_enter_blocking(&mutex_); Log.notice(fmt, args...); mutex_exit(&mutex_); }
+  template<class... Args> static void Warning(const char* fmt, Args... args)
+    { mutex_enter_blocking(&mutex_); Log.warning(fmt, args...); mutex_exit(&mutex_); }
+  template<class... Args> static void Error(const char* fmt, Args... args)
+    { mutex_enter_blocking(&mutex_); Log.error(fmt, args...); mutex_exit(&mutex_); }
 
   // No-arg overloads (message only)
-  static void Debug(const char* msg)   { Log.verbose(msg); }
-  static void Info(const char* msg)    { Log.notice(msg); }
-  static void Warning(const char* msg) { Log.warning(msg); }
-  static void Error(const char* msg)   { Log.error(msg); }
+  static void Debug(const char* msg)
+    { mutex_enter_blocking(&mutex_); Log.verbose(msg); mutex_exit(&mutex_); }
+  static void Info(const char* msg)
+    { mutex_enter_blocking(&mutex_); Log.notice(msg); mutex_exit(&mutex_); }
+  static void Warning(const char* msg)
+    { mutex_enter_blocking(&mutex_); Log.warning(msg); mutex_exit(&mutex_); }
+  static void Error(const char* msg)
+    { mutex_enter_blocking(&mutex_); Log.error(msg); mutex_exit(&mutex_); }
+
+private:
+  static mutex_t mutex_;
 };
 
 #endif // LOGGER_H
