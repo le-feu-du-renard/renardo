@@ -42,6 +42,11 @@ void InputHandler::Begin(McpOutputs &leds)
   pinMode(BTN_START_PIN, INPUT_PULLUP);
   pinMode(BTN_STOP_PIN, INPUT_PULLUP);
 
+  // Seed prev state from actual pin levels so the first Update() doesn't
+  // misinterpret a held-low pin (power-up noise) as a rising edge.
+  start_raw_prev_ = (digitalRead(BTN_START_PIN) == LOW);
+  stop_raw_prev_  = (digitalRead(BTN_STOP_PIN)  == LOW);
+
   // Button LEDs – via MCP23017 Port B, start off
   leds_->SetOutput(MCP_BTN_START_LED, LOW);
   leds_->SetOutput(MCP_BTN_STOP_LED, LOW);
@@ -60,7 +65,7 @@ void InputHandler::Update()
     if (temp_stable_count_ < kPotStableReads) temp_stable_count_++;
     if (temp_stable_count_ == kPotStableReads) target_temperature_ = temp_candidate_;
   }
-  else
+  else if (fabsf(raw_temp - target_temperature_) > 1.0f)
   {
     temp_candidate_    = raw_temp;
     temp_stable_count_ = 1;
@@ -72,7 +77,7 @@ void InputHandler::Update()
     if (hum_stable_count_ < kPotStableReads) hum_stable_count_++;
     if (hum_stable_count_ == kPotStableReads) target_humidity_ = hum_candidate_;
   }
-  else
+  else if (fabsf(raw_hum - target_humidity_) > 1.0f)
   {
     hum_candidate_    = raw_hum;
     hum_stable_count_ = 1;
