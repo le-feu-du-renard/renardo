@@ -301,8 +301,27 @@ static void UpdateOutputs()
 
 static void UpdateLEDs()
 {
+  static uint32_t blink_toggle_ms = 0;
+  static bool     blink_state     = false;
+
   bool running = dryer.IsRunning();
+  bool cooling = !running && dryer.GetFanOutput() > 0.0f;
   DryerPhase phase = dryer.GetCurrentPhase();
+
+  // Blink the fan LED at 1 Hz during cooldown to distinguish it from a bug
+  if (cooling)
+  {
+    uint32_t now = millis();
+    if (now - blink_toggle_ms >= 500)
+    {
+      blink_toggle_ms = now;
+      blink_state     = !blink_state;
+    }
+  }
+  else
+  {
+    blink_state = false;
+  }
 
   uint8_t mask = 0;
   if (dryer.IsEcoWindowActive())
@@ -317,7 +336,7 @@ static void UpdateLEDs()
     mask |= (1 << (uint8_t)LedId::kElectricHeater);
   if (running && dryer.GetCirculatorOutput() > 0.05f)
     mask |= (1 << (uint8_t)LedId::kHydroHeater);
-  if (running && dryer.GetFanOutput() > 0.0f)
+  if ((running && dryer.GetFanOutput() > 0.0f) || (cooling && blink_state))
     mask |= (1 << (uint8_t)LedId::kFan);
   if (running && !dryer.GetDamperOutput())
     mask |= (1 << (uint8_t)LedId::kAirRenewal);
