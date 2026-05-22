@@ -26,6 +26,7 @@ void setup()
   delay(2000);
 
   pinMode(kPwmPin, OUTPUT);
+  analogWriteFreq(500);
   Serial.println("=== Test registre PWM ===");
 
   SetPercent(kPwmLow);

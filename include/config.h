@@ -149,7 +149,7 @@
 // PID_DERIVATIVE_FILTER — Low-pass filter coefficient for the derivative (0–1).
 //   Also used to filter the temperature derivative for ETA and prediction.
 //   Lower → more smoothing; 0.1 is conservative for 1 Hz Modbus sensor data.
-#define PID_DERIVATIVE_FILTER 0.1f
+#define PID_DERIVATIVE_FILTER 0.3f
 
 // ===== Electric Boost State Machine Parameters =====
 //
@@ -189,9 +189,17 @@
 
 // CTRL_ETA_MAX — maximum acceptable estimated time-to-setpoint (seconds).
 //   If eta = error / dT_dt > CTRL_ETA_MAX and error > CTRL_E_BAS, BOOST is triggered.
-//   Only evaluated when dT_dt > 0 (temperature is actually rising).
 //   Starting point: 900s (15 minutes)
 #define CTRL_ETA_MAX 900.0f
+
+// CTRL_DT_FALLING — temperature fall rate (°C/s) below which cond3 treats ETA as infinite.
+//   If dT_dt < -CTRL_DT_FALLING (temperature dropping noticeably) AND error > CTRL_E_BAS,
+//   BOOST triggers — even though dT_dt is not positive.
+//   Covers the case where cold hydraulic water cools the air: the PID raises power
+//   but can't overcome the heat loss without electric boost.
+//   Raise if BOOST triggers too often on minor temperature dips.
+//   Starting point: 0.01°C/s (= 0.6°C/min)
+#define CTRL_DT_FALLING 0.01f
 
 // CTRL_HORIZON — prediction window (seconds) for predictive electric shutoff.
 //   If T_measured + dT_dt × CTRL_HORIZON ≥ setpoint, the electric is cut off early
@@ -203,7 +211,7 @@
 // CTRL_T_ON_MIN — minimum time (seconds) the electric must stay ON per cycle.
 //   Anti-short-cycle: BOOST cannot exit before this duration.
 //   Starting point: 300s (5 minutes)
-#define CTRL_T_ON_MIN 60.0f
+#define CTRL_T_ON_MIN 15.0f
 
 // CTRL_T_OFF_MIN — minimum time (seconds) the electric must stay OFF between cycles.
 //   Anti-short-cycle: BOOST cannot be triggered before this duration has elapsed

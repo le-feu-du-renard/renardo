@@ -201,13 +201,22 @@ void TemperatureManager::UpdateHeating(float dt)
 
     hydro_sat_timer_ = (u >= 99.0f) ? hydro_sat_timer_ + dt : 0.0f;
 
-    // Estimated time to setpoint; only valid when temperature is rising.
-    float eta = (dT_dt_ > 0.001f) ? (error / dT_dt_) : 1e9f;
+    // Estimated time to setpoint:
+    //   rising:          ETA = error / dT_dt
+    //   falling notably: treat as infinite (temp will never reach setpoint on its own)
+    //   flat/slow:       0 (don't trigger ETA-based BOOST)
+    float eta;
+    if (dT_dt_ > 0.001f)
+      eta = error / dT_dt_;
+    else if (dT_dt_ < -CTRL_DT_FALLING)
+      eta = CTRL_ETA_MAX + 1.0f;  // treat as infinite → triggers cond3
+    else
+      eta = 0.0f;
 
     bool can_boost = (elec_off_timer_ >= CTRL_T_OFF_MIN);
     bool cond1 = (error > CTRL_E_HAUT);
     bool cond2 = (hydro_sat_timer_ >= CTRL_T_SAT && error > CTRL_E_BAS);
-    bool cond3 = (dT_dt_ > 0.001f && eta > CTRL_ETA_MAX && error > CTRL_E_BAS);
+    bool cond3 = (eta > CTRL_ETA_MAX && error > CTRL_E_BAS);
 
     if (can_boost && (cond1 || cond2 || cond3))
     {

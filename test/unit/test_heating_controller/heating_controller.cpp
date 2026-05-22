@@ -19,11 +19,12 @@ static constexpr float kDerivFilter   = 0.1f;
 static constexpr float kEHaut         = 5.0f;
 static constexpr float kEBas          = 0.4f;
 static constexpr float kBandeElec     = 0.5f;
-static constexpr float kTSat          = 120.0f;
-static constexpr float kEtaMax        = 1800.0f;
-static constexpr float kHorizon       = 300.0f;
-static constexpr float kTOnMin        = 300.0f;
-static constexpr float kTOffMin       = 120.0f;
+static constexpr float kTSat          = 75.0f;
+static constexpr float kEtaMax        = 900.0f;
+static constexpr float kHorizon       = 60.0f;
+static constexpr float kTOnMin        = 60.0f;
+static constexpr float kTOffMin       = 60.0f;
+static constexpr float kDtFalling     = 0.01f;
 static constexpr float kSafetyMax     = 50.0f;
 
 // ===== Simulator =====
@@ -160,12 +161,19 @@ struct HeatingControllerSim
       hydraulic_power = (uint8_t)(u < 0.0f ? 0 : (u > 100.0f ? 100 : (uint8_t)u));
 
       hydro_sat_timer = (u >= 99.0f) ? hydro_sat_timer + dt : 0.0f;
-      float eta = (dT_dt > 0.001f) ? (error / dT_dt) : 1e9f;
+
+      float eta;
+      if (dT_dt > 0.001f)
+        eta = error / dT_dt;
+      else if (dT_dt < -kDtFalling)
+        eta = kEtaMax + 1.0f;
+      else
+        eta = 0.0f;
 
       bool can_boost = (elec_off_timer >= kTOffMin);
       bool cond1 = (error > kEHaut);
       bool cond2 = (hydro_sat_timer >= kTSat && error > kEBas);
-      bool cond3 = (dT_dt > 0.001f && eta > kEtaMax && error > kEBas);
+      bool cond3 = (eta > kEtaMax && error > kEBas);
 
       if (can_boost && (cond1 || cond2 || cond3))
       {
@@ -519,6 +527,53 @@ void test_integral_frozen_during_boost(void)
   TEST_ASSERT_EQUAL_FLOAT(integral_on_boost_entry, sim.pid.GetIntegral());
 }
 
+// ===== Falling temperature triggers BOOST (cold hydraulic water scenario) =====
+
+void test_boost_triggers_when_temperature_falling_with_error(void)
+{
+  // Cold hydraulic water scenario: temperature falls steadily at -0.02°C/s.
+  // setpoint=30, T starts at 32 and drops. For cond3 to fire we need:
+  //   - error > kEBas (0.4): T < 29.6 → reached after ~120 ticks (32 - 120*0.02 = 29.6)
+  //   - dT_dt < -kDtFalling (-0.01): filter converges after ~20 ticks at -0.02°C/s
+  //   - can_boost: elec_off_timer initialized to kTOffMin → true from tick 1
+  HeatingControllerSim sim(true);
+  float T = 32.0f;
+  sim.step(30.0f, T);  // prime prev_temp
+
+  for (int i = 0; i < 150; i++)
+  {
+    T -= 0.02f;
+    sim.step(30.0f, T);
+    if (sim.state == HeatingControllerSim::State::BOOST) break;
+  }
+
+  // After ~125 ticks: T≈29.5°C, error≈0.5 > kEBas, dT_dt≈-0.018 < -kDtFalling
+  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
+  TEST_ASSERT_TRUE(sim.electric_on);
+}
+
+void test_boost_not_triggered_when_temperature_barely_falling(void)
+{
+  // dT_dt ≈ -0.005°C/s < kDtFalling (0.01): falling branch of cond3 NOT taken.
+  // setpoint=30, T starts at 32, drops 0.005°C/tick.
+  // After 500 ticks: T = 32 - 2.5 = 29.5°C, error = 0.5 > kEBas.
+  // cond1 won't fire (error < kEHaut=5), cond2 won't fire (PID not saturated),
+  // cond3 won't fire (dT barely below threshold, eta branch = 0).
+  HeatingControllerSim sim(true);
+  float T = 32.0f;
+  sim.step(30.0f, T);  // prime prev_temp
+
+  bool boost_seen = false;
+  for (int i = 0; i < 500; i++)
+  {
+    T -= 0.005f;
+    sim.step(30.0f, T);
+    if (sim.state == HeatingControllerSim::State::BOOST) { boost_seen = true; break; }
+  }
+
+  TEST_ASSERT_FALSE(boost_seen);
+}
+
 // ===== BOOST exits only when setpoint is reached =====
 
 void test_boost_exits_only_when_error_below_e_bas(void)
@@ -628,6 +683,10 @@ int main(int argc, char **argv)
   // Hydraulic re-enabled: bumpless
   RUN_TEST(test_hydro_reenabled_hydro_does_not_jump_to_full);
   RUN_TEST(test_hydro_reenabled_after_boost_bumpless_not_zero);
+
+  // Falling temperature triggers BOOST
+  RUN_TEST(test_boost_triggers_when_temperature_falling_with_error);
+  RUN_TEST(test_boost_not_triggered_when_temperature_barely_falling);
 
   // PID behaviour during BOOST
   RUN_TEST(test_integral_frozen_during_boost);

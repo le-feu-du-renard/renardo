@@ -26,8 +26,6 @@ float HydraulicHeater::GetOutput() const {
 }
 
 float HydraulicHeater::MapPowerToPwm(float power) const {
-  if (power_ == 0) return 0.0f;  // Pump completely off
-
   // Reverse: 100% power = fast circulation = low PWM duty
   float reversed_power = 100.0f - (float)power_;
 
