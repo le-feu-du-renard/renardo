@@ -2,12 +2,13 @@
 #define INPUT_HANDLER_H
 
 #include <Arduino.h>
+#include "RotaryEncoder.h"
 
-// Reads the physical START/STOP buttons.
+// Reads every physical input: the START/STOP buttons and the rotary encoder.
 // Call Update() regularly (every INPUT_UPDATE_INTERVAL ms) from the main loop.
 //
-// The rotary encoder is handled separately by RotaryEncoder; setpoints now come
-// from the menu rather than from potentiometers.
+// Setpoints now come from the menu rather than from potentiometers, so the
+// encoder is the only way to change a value.
 
 class InputHandler
 {
@@ -16,14 +17,20 @@ public:
 
   void Begin();
 
-  // Must be called periodically to debounce the buttons.
+  // Must be called periodically to debounce the buttons and the encoder switch.
   void Update();
 
   // Buttons — return true once per press, edge-triggered.
   bool IsStartPressed();
   bool IsStopPressed();
 
+  // Encoder — detents since the last call (positive clockwise), and the click.
+  int32_t ConsumeEncoderDelta() { return encoder_.ConsumeDelta(); }
+  bool    IsEncoderClicked()    { return encoder_.IsClicked(); }
+
 private:
+  RotaryEncoder encoder_;
+
   bool     start_raw_prev_;
   bool     stop_raw_prev_;
   bool     start_pending_;    // Unconsumed press event

@@ -3,7 +3,8 @@
 #include "Logger.h"
 
 InputHandler::InputHandler()
-    : start_raw_prev_(false),
+    : encoder_(ENCODER_A_PIN, ENCODER_B_PIN, ENCODER_SW_PIN),
+      start_raw_prev_(false),
       stop_raw_prev_(false),
       start_pending_(false),
       stop_pending_(false),
@@ -27,12 +28,16 @@ void InputHandler::Begin()
   start_consumed_ = start_raw_prev_;
   stop_consumed_  = stop_raw_prev_;
 
+  encoder_.Begin();
+
   Logger::Info("InputHandler: initialized");
 }
 
 void InputHandler::Update()
 {
   uint32_t now = millis();
+
+  encoder_.Update();
 
   // --- START button debounce (active LOW, fires once per press) ---
   bool start_raw = (digitalRead(BTN_START_PIN) == LOW);
