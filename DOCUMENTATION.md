@@ -177,7 +177,11 @@ Entries that make no sense in the current configuration are greyed out and
 skipped rather than hidden, so the menu keeps the same shape whatever hardware
 is fitted.
 
-**START and STOP remain physical and always act**, whatever is on screen.
+**The START/STOP button remains physical and always acts**, whatever is on
+screen. A single button serves both: pressing it starts a stopped dryer and
+stops a running one. It fires once per press and is ignored while held, and a
+button stuck low at boot is treated as already consumed — otherwise it would
+stop a session restored from flash the moment the board came back up.
 
 ---
 

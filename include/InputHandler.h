@@ -4,11 +4,12 @@
 #include <Arduino.h>
 #include "RotaryEncoder.h"
 
-// Reads every physical input: the START/STOP buttons and the rotary encoder.
+// Reads every physical input: the single START/STOP button and the encoder.
 // Call Update() regularly (every INPUT_UPDATE_INTERVAL ms) from the main loop.
 //
-// Setpoints now come from the menu rather than from potentiometers, so the
-// encoder is the only way to change a value.
+// One button now serves both roles: pressing it starts a stopped dryer and
+// stops a running one. Setpoints come from the menu, so the encoder is the only
+// way to change a value.
 
 class InputHandler
 {
@@ -17,12 +18,12 @@ public:
 
   void Begin();
 
-  // Must be called periodically to debounce the buttons and the encoder switch.
+  // Must be called periodically to debounce the button and the encoder switch.
   void Update();
 
-  // Buttons — return true once per press, edge-triggered.
-  bool IsStartPressed();
-  bool IsStopPressed();
+  // Returns true once per press. The caller decides whether that means start or
+  // stop, from the current session state.
+  bool IsButtonPressed();
 
   // Encoder — detents since the last call (positive clockwise), and the click.
   int32_t ConsumeEncoderDelta() { return encoder_.ConsumeDelta(); }
@@ -31,14 +32,10 @@ public:
 private:
   RotaryEncoder encoder_;
 
-  bool     start_raw_prev_;
-  bool     stop_raw_prev_;
-  bool     start_pending_;    // Unconsumed press event
-  bool     stop_pending_;
-  bool     start_consumed_;   // True after event fired; cleared on button release
-  bool     stop_consumed_;
-  uint32_t start_debounce_ms_;
-  uint32_t stop_debounce_ms_;
+  bool     button_raw_prev_;
+  bool     button_pending_;   // Unconsumed press event
+  bool     button_consumed_;  // True after the event fired; cleared on release
+  uint32_t button_debounce_ms_;
 
   static constexpr uint32_t kDebounceMs = 50;
 };

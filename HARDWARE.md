@@ -10,7 +10,7 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 
 ## GPIO map
 
-24 of the 26 available GPIOs are used. **GP8 and GP22 are free.**
+23 of the 26 available GPIOs are used. **GP8, GP15 and GP22 are free.**
 
 | Function | GPIO | Notes |
 |---|---|---|
@@ -27,8 +27,7 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 | Encoder A | 6 | EC11, internal pull-up |
 | Encoder B | 7 | EC11, internal pull-up |
 | Encoder SW | 9 | EC11, internal pull-up |
-| START button | 14 | active LOW, internal pull-up |
-| STOP button | 15 | active LOW, internal pull-up |
+| START/STOP button | 14 | active LOW, internal pull-up, toggles the session |
 | RS485 DE/RE | 3 | HIGH = transmit |
 | RS485 TX | 4 | UART1 → MAX3485 DI |
 | RS485 RX | 5 | UART1 ← MAX3485 RO |
@@ -175,6 +174,7 @@ transmission does not brown out the display.
 1. Pico alone, USB serial: check the boot log.
 2. TFT: mire, fonts, icons. Confirm orientation and colours.
 3. Encoder: detents and click, no phantom steps.
+   Button: one press starts, the next stops — check it never double-fires.
 4. Outputs one at a time, **measuring at the connector before wiring the loads**
    — this is where a polarity mistake is caught.
 5. Damper feedback: full travel, record the two end-stop values, calibrate.

@@ -4,29 +4,24 @@
 
 InputHandler::InputHandler()
     : encoder_(ENCODER_A_PIN, ENCODER_B_PIN, ENCODER_SW_PIN),
-      start_raw_prev_(false),
-      stop_raw_prev_(false),
-      start_pending_(false),
-      stop_pending_(false),
-      start_consumed_(false),
-      stop_consumed_(false),
-      start_debounce_ms_(0),
-      stop_debounce_ms_(0) {}
+      button_raw_prev_(false),
+      button_pending_(false),
+      button_consumed_(false),
+      button_debounce_ms_(0) {}
 
 void InputHandler::Begin()
 {
-  // Buttons – active LOW with internal pullup
+  // Button – active LOW with internal pullup
   pinMode(BTN_START_PIN, INPUT_PULLUP);
-  pinMode(BTN_STOP_PIN, INPUT_PULLUP);
 
-  // Seed prev state from actual pin levels so the first Update() doesn't
+  // Seed prev state from the actual pin level so the first Update() doesn't
   // misinterpret a held-low pin (power-up noise) as a rising edge.
-  start_raw_prev_ = (digitalRead(BTN_START_PIN) == LOW);
-  stop_raw_prev_  = (digitalRead(BTN_STOP_PIN)  == LOW);
-  // If a button is held at init, mark it consumed so the steady-held check
-  // doesn't fire immediately — the debounce timers are still 0 here.
-  start_consumed_ = start_raw_prev_;
-  stop_consumed_  = stop_raw_prev_;
+  button_raw_prev_ = (digitalRead(BTN_START_PIN) == LOW);
+  // A button held at init is marked consumed so the steady-held check doesn't
+  // fire immediately — the debounce timer is still 0 here. This matters more
+  // now that one press toggles: a stuck button would otherwise stop a session
+  // restored from flash the instant the board came back up.
+  button_consumed_ = button_raw_prev_;
 
   encoder_.Begin();
 
@@ -39,56 +34,29 @@ void InputHandler::Update()
 
   encoder_.Update();
 
-  // --- START button debounce (active LOW, fires once per press) ---
-  bool start_raw = (digitalRead(BTN_START_PIN) == LOW);
-  if (!start_raw)
+  // Active LOW, fires once per press.
+  bool raw = (digitalRead(BTN_START_PIN) == LOW);
+  if (!raw)
   {
-    start_consumed_ = false; // Button released: allow next press
+    button_consumed_ = false; // released: allow the next press
   }
-  else if (!start_raw_prev_)
+  else if (!button_raw_prev_)
   {
-    start_debounce_ms_ = now; // Rising edge: start debounce timer
+    button_debounce_ms_ = now; // rising edge: start the debounce window
   }
-  else if (!start_consumed_ && (now - start_debounce_ms_) >= kDebounceMs)
+  else if (!button_consumed_ && (now - button_debounce_ms_) >= kDebounceMs)
   {
-    start_pending_ = true;
-    start_consumed_ = true; // Block re-fire while button remains held
+    button_pending_  = true;
+    button_consumed_ = true; // block re-fire while the button remains held
   }
-  start_raw_prev_ = start_raw;
-
-  // --- STOP button debounce (active LOW, fires once per press) ---
-  bool stop_raw = (digitalRead(BTN_STOP_PIN) == LOW);
-  if (!stop_raw)
-  {
-    stop_consumed_ = false;
-  }
-  else if (!stop_raw_prev_)
-  {
-    stop_debounce_ms_ = now;
-  }
-  else if (!stop_consumed_ && (now - stop_debounce_ms_) >= kDebounceMs)
-  {
-    stop_pending_ = true;
-    stop_consumed_ = true;
-  }
-  stop_raw_prev_ = stop_raw;
+  button_raw_prev_ = raw;
 }
 
-bool InputHandler::IsStartPressed()
+bool InputHandler::IsButtonPressed()
 {
-  if (start_pending_)
+  if (button_pending_)
   {
-    start_pending_ = false;
-    return true;
-  }
-  return false;
-}
-
-bool InputHandler::IsStopPressed()
-{
-  if (stop_pending_)
-  {
-    stop_pending_ = false;
+    button_pending_ = false;
     return true;
   }
   return false;

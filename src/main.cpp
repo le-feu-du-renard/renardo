@@ -223,18 +223,20 @@ static void UpdateInputs()
     dryer.SetOperatingMode(OperatingMode::PERFORMANCE);
   }
 
-  // START and STOP are read before the menu and act whatever is on screen:
-  // they are the safety controls, not menu entries.
-  if (input_handler.IsStartPressed() && !dryer.IsRunning())
+  // The button is read before the menu and acts whatever is on screen: it is
+  // the safety control, not a menu entry. One press toggles the session.
+  if (input_handler.IsButtonPressed())
   {
-    Logger::Info("START button pressed — starting session");
-    dryer.Start();
-  }
-
-  if (input_handler.IsStopPressed() && dryer.IsRunning())
-  {
-    Logger::Info("STOP button pressed — stopping session");
-    dryer.Stop();
+    if (dryer.IsRunning())
+    {
+      Logger::Info("Button pressed — stopping session");
+      dryer.Stop();
+    }
+    else
+    {
+      Logger::Info("Button pressed — starting session");
+      dryer.Start();
+    }
   }
 
   int32_t detents = input_handler.ConsumeEncoderDelta();

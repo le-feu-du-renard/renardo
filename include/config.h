@@ -31,9 +31,9 @@
 #define ENCODER_B_PIN 7
 #define ENCODER_SW_PIN 9
 
-// Physical buttons (active LOW, internal pullup)
+// Single START/STOP button (active LOW, internal pullup).
+// One press starts a stopped dryer, the next stops a running one.
 #define BTN_START_PIN 14
-#define BTN_STOP_PIN 15
 
 // RS485 — single Modbus bus carrying both probes and the hydraulic module
 // (UART1 / Serial2 → MAX3485)
@@ -74,7 +74,7 @@
 #define I2C_BUS_1_SDA_PIN 26
 #define I2C_BUS_1_SCL_PIN 27
 
-// Free for expansion: GP8, GP22
+// Free for expansion: GP8, GP15, GP22
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
