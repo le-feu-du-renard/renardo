@@ -8,6 +8,7 @@
 #include "HumidityManager.h"
 #include "AirDamper.h"
 #include "SessionManager.h"
+#include "DryerSettings.h"
 
 // Main dryer coordinator.
 // Owns all hardware managers and forwards sensor readings / mode updates to them.
@@ -69,6 +70,14 @@ public:
 
   // Session restoration after reboot — driven by SettingsStore.
   void RestoreSession(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s);
+
+  // Push a settings record into the live managers, and read the current values
+  // back out for persistence. ECO is only applied when an RTC is present.
+  void ApplySettings(const DryerSettings &settings, bool rtc_available);
+  void CaptureSettings(DryerSettings &settings) const;
+
+  // Current session progress, for SettingsStore.
+  void CaptureSession(SessionSnapshot &session) const;
 
 private:
   ElectricHeater     electric_heater_;

@@ -9,6 +9,7 @@
 #include "HydraulicRemote.h"
 #include "SharedSensorState.h"
 #include "OutputDriver.h"
+#include "SettingsStore.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -33,6 +34,10 @@ InputHandler input_handler;
 // RTC — optional module; absence disables ECO mode
 TimeManager time_manager(&i2c_bus_1);
 static bool g_rtc_available = false;
+
+// Persistence on internal flash
+SettingsStore settings_store;
+DryerSettings settings;
 
 // Main controller
 Dryer dryer;
@@ -96,6 +101,8 @@ void loop1()
 // ========== TIMING STATE ==========
 
 static uint32_t last_input_update = 0;
+static uint32_t last_session_save = 0;
+static bool     was_running = false;
 
 static constexpr uint32_t kMemoryCheckInterval = 30000; // 30 s
 static constexpr uint32_t kHeartbeatInterval = 10000;   // 10 s
@@ -253,6 +260,42 @@ static void UpdateDamperPosition()
   dryer.GetAirDamper()->SetRawPosition(static_cast<uint16_t>(sum / kSamples));
 }
 
+// ========== SESSION PERSISTENCE ==========
+
+static void SaveSessionNow()
+{
+  SessionSnapshot snapshot;
+  snapshot.Reset();
+  dryer.CaptureSession(snapshot);
+  settings_store.SaveSession(snapshot);
+}
+
+static void UpdateSessionPersistence()
+{
+  bool is_running = dryer.IsRunning();
+
+  // Persist immediately on both edges so a power cut right after START or STOP
+  // does not resume the wrong state.
+  if (is_running != was_running)
+  {
+    was_running = is_running;
+    SaveSessionNow();
+    last_session_save = millis();
+    return;
+  }
+
+  if (!is_running)
+  {
+    return;
+  }
+
+  uint32_t now = millis();
+  if (now - last_session_save < SETTINGS_SAVE_INTERVAL)
+    return;
+  last_session_save = now;
+  SaveSessionNow();
+}
+
 // ========== DIAGNOSTICS ==========
 
 static void UpdateDiagnostics()
@@ -314,11 +357,30 @@ void setup()
   dryer.Begin();
   input_handler.Begin();
 
+  // Settings must be applied before any session is restored, so the restored
+  // cycle runs with the phase durations the user actually configured.
+  settings_store.Begin();
+  settings_store.LoadSettings(settings);
+  dryer.ApplySettings(settings, g_rtc_available);
+
+  SessionSnapshot session;
+  if (settings_store.LoadSession(session) && session.running)
+  {
+    dryer.RestoreSession(static_cast<DryerPhase>(session.phase),
+                         session.phase_elapsed_s, session.total_elapsed_s);
+  }
+  else
+  {
+    Logger::Info("No session to restore");
+  }
+  was_running = dryer.IsRunning();
+  last_session_save = millis();
+
   // Sync the last_* tracking variables in UpdateOutputs() with the pin levels
   // established by SetupOutputs().
   UpdateOutputs();
 
-  Logger::Info("Setup complete");
+  Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
   g_core0_ready = true; // Signal Core 1 to start Modbus initialization
 }
 
@@ -335,6 +397,7 @@ void loop()
   dryer.Update();
   UpdateOutputs();
   UpdateDamperPosition();
+  UpdateSessionPersistence();
   UpdateDiagnostics();
 
   delay(10);

@@ -161,13 +161,13 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
         }
         else if (current_humidity >= user_target_humidity_)
         {
-          uint32_t remaining = INIT_PHASE_DURATION - elapsed;
-          if (remaining > EXTRACTION_DAMPER_OPEN_DURATION)
+          uint32_t remaining = durations_.init - elapsed;
+          if (remaining > durations_.extraction_damper_open)
           {
-            init_extraction_end_ms_ = millis() + (uint32_t)EXTRACTION_DAMPER_OPEN_DURATION * 1000UL;
+            init_extraction_end_ms_ = millis() + (uint32_t)durations_.extraction_damper_open * 1000UL;
             humidity_manager_->SetMode(HumidityManager::Mode::kForceOpen);
             Logger::Info("SessionManager: Init humidity reached, extracting for %us",
-                         EXTRACTION_DAMPER_OPEN_DURATION);
+                         durations_.extraction_damper_open);
           }
           else
           {
@@ -179,7 +179,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
       }
       // Transition when temperature target is reached OR max duration elapsed
       bool temp_reached = (current_temperature >= temperature_manager_->GetTargetTemperature());
-      bool timed_out    = (elapsed >= INIT_PHASE_DURATION);
+      bool timed_out    = (elapsed >= durations_.init);
       if (temp_reached || timed_out)
       {
         Logger::Info("SessionManager: Init -> Brassage (%s)",
@@ -196,7 +196,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
         EnterPhase(DryerPhase::kExtraction);
         break;
       }
-      if (elapsed >= BRASSAGE_PHASE_DURATION)
+      if (elapsed >= durations_.brassage)
       {
         Logger::Info("SessionManager: Brassage -> Extraction");
         EnterPhase(DryerPhase::kExtraction);
@@ -205,7 +205,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
 
     case DryerPhase::kExtraction:
       // Run for full duration to remove maximum moisture
-      if (elapsed >= EXTRACTION_PHASE_DURATION)
+      if (elapsed >= durations_.extraction)
       {
         Logger::Info("SessionManager: Extraction -> Brassage");
         EnterPhase(DryerPhase::kBrassage);

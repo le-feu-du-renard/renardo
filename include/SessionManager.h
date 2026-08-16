@@ -23,14 +23,32 @@ enum class DryerPhase : uint8_t
     kExtraction = 3,
 };
 
+// Phase durations, in seconds. Defaults come from config.h and are overridden
+// from the menu, then persisted by SettingsStore.
+struct PhaseDurations
+{
+    uint32_t init;
+    uint32_t brassage;
+    uint32_t extraction;
+    uint32_t extraction_damper_open;
+
+    PhaseDurations()
+        : init(INIT_PHASE_DURATION),
+          brassage(BRASSAGE_PHASE_DURATION),
+          extraction(EXTRACTION_PHASE_DURATION),
+          extraction_damper_open(EXTRACTION_DAMPER_OPEN_DURATION) {}
+};
+
 // Manages the three-phase drying session.
-// Phase durations and thresholds come from config.h constants.
 class SessionManager
 {
 public:
     SessionManager(TemperatureManager *temperature_manager, HumidityManager *humidity_manager);
 
     void Begin();
+
+    PhaseDurations       &GetDurations()       { return durations_; }
+    const PhaseDurations &GetDurations() const { return durations_; }
 
     // Call every control loop iteration with fresh sensor readings.
     void Update(float current_temperature, float current_humidity);
@@ -59,6 +77,8 @@ public:
 private:
     TemperatureManager *temperature_manager_;
     HumidityManager *humidity_manager_;
+
+    PhaseDurations durations_;
 
     SessionState state_;
     DryerPhase current_phase_;
