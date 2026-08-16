@@ -64,6 +64,7 @@ public:
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
   HumidityManager    *GetHumidityManager()    { return &humidity_manager_; }
   SessionManager     *GetSessionManager()     { return &session_manager_; }
+  AirDamper          *GetAirDamper()          { return &air_damper_; }
 
   // Session restoration after reboot — driven by SettingsStore.
   void RestoreSession(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s);

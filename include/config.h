@@ -60,6 +60,15 @@
 
 // Air damper position feedback — Belimo 2-10V output through a divider (ADC2)
 #define DAMPER_FEEDBACK_PIN 28
+// Raw 12-bit ADC values at each end stop. The actuator's feedback starts at 2V,
+// not 0V, so the closed position is well above zero. Both are overwritten by
+// the two-point calibration in the menu.
+#define DAMPER_RAW_CLOSED_DEFAULT 820
+#define DAMPER_RAW_OPEN_DEFAULT 4000
+// Below this span the calibration is treated as invalid (feedback wire absent).
+#define DAMPER_CALIBRATION_MIN_SPAN 200
+// Distance from the commanded end stop (%) under which travel is complete.
+#define DAMPER_POSITION_TOLERANCE 5.0f
 
 // I2C Bus 1 — optional RTC DS1307. Absent RTC disables ECO mode.
 #define I2C_BUS_1_SDA_PIN 26
@@ -108,6 +117,7 @@
 #define SETTINGS_SAVE_INTERVAL 60000 // ms (1 minute)
 #define DATA_LOG_INTERVAL 60000      // ms (1 minute)
 #define INPUT_UPDATE_INTERVAL 50     // ms (button debounce)
+#define DAMPER_SAMPLE_INTERVAL 500   // ms (position feedback, display only)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 

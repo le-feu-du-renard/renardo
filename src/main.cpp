@@ -8,6 +8,7 @@
 #include "ModbusSensors.h"
 #include "HydraulicRemote.h"
 #include "SharedSensorState.h"
+#include "OutputDriver.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -24,6 +25,9 @@ ModbusSensors modbus_sensors(&rs485);
 HydraulicRemote hydraulic_remote(&rs485);
 
 // Physical I/O
+OutputDriver fan_output(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, "fan");
+OutputDriver damper_output(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, "damper");
+OutputDriver electric_output(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, "electric");
 InputHandler input_handler;
 
 // RTC — optional module; absence disables ECO mode
@@ -111,22 +115,17 @@ static void SetupI2C()
   Logger::Info("I2C bus 1 ready (10kHz)");
 }
 
-// TODO(v4): move to OutputDriver, which will own polarity and edge detection.
-static void WriteOutput(uint8_t pin, bool active_low, bool active)
-{
-  digitalWrite(pin, (active != active_low) ? HIGH : LOW);
-}
-
 static void SetupOutputs()
 {
-  // Drive each stage to its inactive level before switching the pin to OUTPUT,
-  // so no load is energised during the boot window.
-  WriteOutput(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, false);
-  WriteOutput(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, false);
-  WriteOutput(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, false);
-  pinMode(OUT_FAN_PIN, OUTPUT);
-  pinMode(OUT_DAMPER_PIN, OUTPUT);
-  pinMode(OUT_ELECTRIC_PIN, OUTPUT);
+  fan_output.Begin();
+  damper_output.Begin();
+  electric_output.Begin();
+}
+
+static void SetupAnalogInputs()
+{
+  analogReadResolution(12);
+  pinMode(DAMPER_FEEDBACK_PIN, INPUT);
 }
 
 // The RTC is an optional module: probe it and degrade gracefully when absent.
@@ -224,37 +223,34 @@ static void UpdateInputs()
 
 static void UpdateOutputs()
 {
-  static bool last_heater = false;
-  static bool last_fan = false;
-  static bool last_damper = false;
-
-  bool heater_state = dryer.GetHeaterOutput() > 0.5f;
-  bool fan_state = dryer.GetFanOutput() > 0.0f;
-  bool damper_state = dryer.GetDamperOutput();
+  electric_output.Set(dryer.GetHeaterOutput() > 0.5f);
+  fan_output.Set(dryer.GetFanOutput() > 0.0f);
+  damper_output.Set(dryer.GetDamperOutput());
 
   // Hand the hydraulic on/off request to the core that owns the RS485 bus.
   g_hydraulic_request = dryer.GetHydraulicOn();
+}
 
-  if (heater_state != last_heater)
-  {
-    WriteOutput(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, heater_state);
-    last_heater = heater_state;
-    Logger::Info("Electric heater: %s", heater_state ? "ON" : "OFF");
-  }
+// ========== DAMPER POSITION FEEDBACK ==========
 
-  if (fan_state != last_fan)
-  {
-    WriteOutput(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, fan_state);
-    last_fan = fan_state;
-    Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
-  }
+static uint32_t last_damper_sample = 0;
 
-  if (damper_state != last_damper)
+static void UpdateDamperPosition()
+{
+  uint32_t now = millis();
+  if (now - last_damper_sample < DAMPER_SAMPLE_INTERVAL)
+    return;
+  last_damper_sample = now;
+
+  // Average a few samples: the RP2040 ADC is noisy and this only feeds a
+  // display, so a slow, smooth value is what we want.
+  constexpr uint8_t kSamples = 8;
+  uint32_t sum = 0;
+  for (uint8_t i = 0; i < kSamples; i++)
   {
-    WriteOutput(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, damper_state);
-    last_damper = damper_state;
-    Logger::Info("Air damper: %s", damper_state ? "EXTRACTION" : "RECIRCULATION");
+    sum += analogRead(DAMPER_FEEDBACK_PIN);
   }
+  dryer.GetAirDamper()->SetRawPosition(static_cast<uint16_t>(sum / kSamples));
 }
 
 // ========== DIAGNOSTICS ==========
@@ -307,6 +303,7 @@ void setup()
   Logger::Info("Watchdog enabled (8 s timeout)");
 
   SetupOutputs();
+  SetupAnalogInputs();
 
   SetupI2C();
   delay(100);
@@ -337,6 +334,7 @@ void loop()
   UpdateInputs();
   dryer.Update();
   UpdateOutputs();
+  UpdateDamperPosition();
   UpdateDiagnostics();
 
   delay(10);
