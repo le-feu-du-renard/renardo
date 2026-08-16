@@ -2,6 +2,7 @@
 #define DRYER_H
 
 #include <Arduino.h>
+#include "config.h"
 #include "ElectricHeater.h"
 #include "TemperatureManager.h"
 #include "HumidityManager.h"
@@ -82,7 +83,7 @@ private:
   float outlet_humidity_;
 
   uint32_t last_control_update_ms_;
-  static constexpr uint32_t kControlIntervalMs = 1000;
+  static constexpr uint32_t kControlIntervalMs = CONTROL_LOOP_INTERVAL;
 
   void UpdateControl();
 };

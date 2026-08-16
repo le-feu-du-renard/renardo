@@ -7,8 +7,8 @@ TemperatureManager::TemperatureManager(ElectricHeater *electric_heater)
       current_temperature_(0.0f),
       last_update_ms_(0),
       hydraulic_online_(false),
-      hydraulic_enabled_(HYDRAULIC_AVAILABLE),
-      electric_enabled_(ELECTRIC_ENABLED),
+      hydraulic_enabled_(HYDRAULIC_ENABLED_DEFAULT),
+      electric_enabled_(ELECTRIC_ENABLED_DEFAULT),
       heating_permitted_(false),  // no reading yet at construction
       fan_active_(false),
       electric_on_(false),

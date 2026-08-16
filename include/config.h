@@ -135,15 +135,12 @@
 #define WATER_TARGET_MIN 30.0f     // °C
 #define WATER_TARGET_MAX 70.0f     // °C
 
-// Heater enable defaults
-#ifndef HYDRAULIC_AVAILABLE
-#define HYDRAULIC_AVAILABLE true // overridable via build flag: -D HYDRAULIC_AVAILABLE=false
-#endif
-#ifdef ELECTRIC_HEATING
-#define ELECTRIC_ENABLED true
-#else
-#define ELECTRIC_ENABLED false
-#endif
+// Heat source enable defaults — these are the factory values of the two menu
+// toggles, not a statement about whether the hardware is present. Actual
+// availability is decided at runtime: the hydraulic module has to answer on
+// RS485, and the inlet probe has to be fresh.
+#define HYDRAULIC_ENABLED_DEFAULT true
+#define ELECTRIC_ENABLED_DEFAULT true
 
 // ===== Heating Control Parameters =====
 //
@@ -228,13 +225,12 @@
 #define FAN_COOLDOWN_DURATION_S 60  // seconds — fan runs after stop to cool electric heater
 #define INIT_PHASE_DURATION 3600    // seconds
 #define BRASSAGE_PHASE_DURATION 900 // seconds
-// 150s to open the air dumper (2.5min)
+// 150s to open the air damper (2.5min)
 // 60s to extract the air (1min)
 // note: it takes 150s to close also (in brassage phase)
 #define EXTRACTION_PHASE_DURATION 210 // seconds
 
 // ===== Extraction Parameters =====
 #define EXTRACTION_DAMPER_OPEN_DURATION 120 // seconds
-#define DRYING_SESSION_DURATION 172800      // seconds (48 hours)
 
 #endif // CONFIG_H
