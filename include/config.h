@@ -118,6 +118,7 @@
 #define DATA_LOG_INTERVAL 60000      // ms (1 minute)
 #define INPUT_UPDATE_INTERVAL 50     // ms (button debounce)
 #define DAMPER_SAMPLE_INTERVAL 500   // ms (position feedback, display only)
+#define DISPLAY_UPDATE_INTERVAL 100  // ms (values throttle themselves further)
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 

@@ -10,6 +10,7 @@
 #include "SharedSensorState.h"
 #include "OutputDriver.h"
 #include "SettingsStore.h"
+#include "TftDisplay.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -30,6 +31,7 @@ OutputDriver fan_output(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, "fan");
 OutputDriver damper_output(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, "damper");
 OutputDriver electric_output(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, "electric");
 InputHandler input_handler;
+TftDisplay display;
 
 // RTC — optional module; absence disables ECO mode
 TimeManager time_manager(&i2c_bus_1);
@@ -260,6 +262,50 @@ static void UpdateDamperPosition()
   dryer.GetAirDamper()->SetRawPosition(static_cast<uint16_t>(sum / kSamples));
 }
 
+// ========== DISPLAY ==========
+
+static uint32_t last_display_update = 0;
+
+static void UpdateDisplay()
+{
+  uint32_t now = millis();
+  if (now - last_display_update < DISPLAY_UPDATE_INTERVAL)
+    return;
+  last_display_update = now;
+
+  const TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
+  const AirDamper *damper = dryer.GetAirDamper();
+
+  DisplayModel model;
+  model.total_elapsed_s = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
+  model.phase_name      = dryer.GetPhaseName();
+  model.running         = dryer.IsRunning();
+  model.lora_linked     = false; // wired up with LoraLink
+
+  model.inlet_temperature  = g_sensors.inlet_temperature;
+  model.inlet_humidity     = g_sensors.inlet_humidity;
+  model.target_temperature = temperature_manager->GetEffectiveTargetTemperature();
+  model.target_humidity    = dryer.GetHumidityManager()->GetTargetHumidity();
+
+  model.hydraulic_online  = temperature_manager->GetHydraulicOnline();
+  model.hydraulic_enabled = temperature_manager->GetHydraulicEnabled();
+  model.hydraulic_on      = temperature_manager->GetHydraulicOn();
+  model.water_temperature = g_sensors.water_temperature;
+  model.tank_temperature  = g_sensors.tank_temperature;
+
+  model.fan_on            = dryer.GetFanOutput() > 0.0f && dryer.IsRunning();
+  model.fan_cooling       = !dryer.IsRunning() && dryer.GetFanOutput() > 0.0f;
+  model.electric_on       = temperature_manager->GetElectricOn();
+  model.electric_enabled  = temperature_manager->GetElectricEnabled();
+  model.damper_open       = damper->IsOpen();
+  model.damper_position   = damper->GetPositionPercent();
+  model.damper_moving     = damper->IsMoving();
+
+  model.sensor_fault = !temperature_manager->GetHeatingPermitted();
+
+  display.RenderMain(model);
+}
+
 // ========== SESSION PERSISTENCE ==========
 
 static void SaveSessionNow()
@@ -356,6 +402,7 @@ void setup()
 
   dryer.Begin();
   input_handler.Begin();
+  display.Begin();
 
   // Settings must be applied before any session is restored, so the restored
   // cycle runs with the phase durations the user actually configured.
@@ -397,6 +444,7 @@ void loop()
   dryer.Update();
   UpdateOutputs();
   UpdateDamperPosition();
+  UpdateDisplay();
   UpdateSessionPersistence();
   UpdateDiagnostics();
 
