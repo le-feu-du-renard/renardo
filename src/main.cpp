@@ -4,7 +4,10 @@
 
 #include "config.h"
 #include "Dryer.h"
+#include "Rs485Bus.h"
 #include "ModbusSensors.h"
+#include "HydraulicRemote.h"
+#include "SharedSensorState.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -14,8 +17,10 @@
 // I2C bus (optional RTC DS1307)
 TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 
-// RS485 bus A — sensors + hydraulic module (Core 1)
-ModbusSensors modbus_sensors;
+// RS485 bus A — sensors + hydraulic module, owned exclusively by Core 1
+Rs485Bus bus_a(Serial2, RS485_A_TX_PIN, RS485_A_RX_PIN, RS485_A_DE_PIN, "A");
+ModbusSensors modbus_sensors(&bus_a);
+HydraulicRemote hydraulic_remote(&bus_a);
 
 // Physical I/O
 InputHandler input_handler;
@@ -29,14 +34,17 @@ Dryer dryer;
 
 // ========== CORE 1 ==========
 
-// Core 1 owns RS485 bus A exclusively.
-// Core 0 reads these volatile variables without blocking.
-// TODO(v4): replace with a seqlock-protected struct carrying freshness timestamps.
+// Core 1 owns RS485 bus A exclusively: both probes and the hydraulic module.
+// It publishes a coherent snapshot that Core 0 reads without blocking.
 
-static volatile float g_inlet_temp = 0.0f;
-static volatile float g_inlet_hum = 0.0f;
-static volatile float g_outlet_temp = 0.0f;
-static volatile float g_outlet_hum = 0.0f;
+static SharedSensorState g_sensor_state;
+
+// Hydraulic command travels the other way, Core 0 -> Core 1. A single bool and
+// a float are each written by one core and read by the other, so they need no
+// seqlock: a torn read simply means the command applies one cycle later.
+static volatile bool  g_hydraulic_request = false;
+static volatile float g_water_target = WATER_TARGET_DEFAULT;
+
 static volatile bool g_core0_ready = false;
 
 void setup1()
@@ -44,30 +52,38 @@ void setup1()
   while (!g_core0_ready)
   {
   } // Wait for Core 0 to finish setup
-  modbus_sensors.Begin(MODBUS_BAUDRATE);
+
+  bus_a.Begin(MODBUS_BAUDRATE);
+  modbus_sensors.Begin();
+  hydraulic_remote.Begin();
 }
 
 void loop1()
 {
-  float temp, hum;
+  modbus_sensors.Poll(ModbusSensors::kInlet);
+  modbus_sensors.Poll(ModbusSensors::kOutlet);
 
-  temp = g_inlet_temp;
-  hum = g_inlet_hum;
-  if (modbus_sensors.ReadSensor(MODBUS_INLET_ADDRESS, temp, hum))
-  {
-    g_inlet_temp = temp;
-    g_inlet_hum = hum;
-  }
+  hydraulic_remote.SetState(g_hydraulic_request);
+  hydraulic_remote.SetWaterTarget(g_water_target);
+  hydraulic_remote.Update();
 
-  delay(50); // RS485 bus settle between requests
+  const SensorReading &inlet  = modbus_sensors.GetReading(ModbusSensors::kInlet);
+  const SensorReading &outlet = modbus_sensors.GetReading(ModbusSensors::kOutlet);
 
-  temp = g_outlet_temp;
-  hum = g_outlet_hum;
-  if (modbus_sensors.ReadSensor(MODBUS_OUTLET_ADDRESS, temp, hum))
-  {
-    g_outlet_temp = temp;
-    g_outlet_hum = hum;
-  }
+  SensorSnapshot snapshot;
+  snapshot.inlet_temperature  = inlet.temperature;
+  snapshot.inlet_humidity     = inlet.humidity;
+  snapshot.inlet_updated_ms   = inlet.last_success_ms;
+  snapshot.inlet_valid        = inlet.valid;
+  snapshot.outlet_temperature = outlet.temperature;
+  snapshot.outlet_humidity    = outlet.humidity;
+  snapshot.outlet_updated_ms  = outlet.last_success_ms;
+  snapshot.outlet_valid       = outlet.valid;
+  snapshot.water_temperature  = hydraulic_remote.GetWaterTemperature();
+  snapshot.tank_temperature   = hydraulic_remote.GetTankTemperature();
+  snapshot.hydraulic_available = hydraulic_remote.IsAvailable();
+
+  g_sensor_state.Publish(snapshot);
 
   delay(SENSOR_UPDATE_INTERVAL);
 }
@@ -128,21 +144,55 @@ static void SetupRTC()
 // Non-blocking: Core 1 handles Modbus reads; Core 0 just copies the latest values.
 
 static uint32_t last_sensor_log = 0;
+static SensorSnapshot g_sensors;   // latest snapshot, refreshed every loop
 
 static void UpdateSensors()
 {
   uint32_t now = millis();
 
-  dryer.SetInletTemperature(g_inlet_temp);
-  dryer.SetInletHumidity(g_inlet_hum);
-  dryer.SetOutletTemperature(g_outlet_temp);
-  dryer.SetOutletHumidity(g_outlet_hum);
+  g_sensor_state.Read(g_sensors);
+
+  dryer.SetInletTemperature(g_sensors.inlet_temperature);
+  dryer.SetInletHumidity(g_sensors.inlet_humidity);
+  dryer.SetOutletTemperature(g_sensors.outlet_temperature);
+  dryer.SetOutletHumidity(g_sensors.outlet_humidity);
+
+  // Sensor freshness interlock. The inlet probe is the control input: if it
+  // goes silent, its last value would otherwise stay frozen forever and the
+  // heaters would keep chasing a stale reading. v3 declared both
+  // SENSOR_TIMEOUT_MS and SetElectricEnabled() for this and wired neither.
+  bool inlet_fresh = g_sensors.inlet_valid &&
+                     (now - g_sensors.inlet_updated_ms) < SENSOR_TIMEOUT_MS;
+
+  TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
+  if (inlet_fresh != temperature_manager->GetElectricEnabled())
+  {
+    temperature_manager->SetElectricEnabled(inlet_fresh);
+    if (!inlet_fresh)
+    {
+      Logger::Error("Inlet probe silent for %lu ms — heating disabled", SENSOR_TIMEOUT_MS);
+    }
+    else
+    {
+      Logger::Info("Inlet probe back online — heating re-enabled");
+    }
+  }
+
+  // The hydraulic module is optional at runtime: losing it degrades to
+  // electric-only rather than stopping the session.
+  if (g_sensors.hydraulic_available != temperature_manager->GetHydraulicAvailable())
+  {
+    temperature_manager->SetHydraulicAvailable(g_sensors.hydraulic_available);
+    Logger::Warning("Hydraulic module %s",
+                    g_sensors.hydraulic_available ? "online" : "offline — electric only");
+  }
 
   if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
     last_sensor_log = now;
-    Logger::Debug("Inlet:  %F C  %F%%RH", (float)g_inlet_temp, (float)g_inlet_hum);
-    Logger::Debug("Outlet: %F C  %F%%RH", (float)g_outlet_temp, (float)g_outlet_hum);
+    Logger::Debug("Inlet:  %F C  %F%%RH", g_sensors.inlet_temperature, g_sensors.inlet_humidity);
+    Logger::Debug("Outlet: %F C  %F%%RH", g_sensors.outlet_temperature, g_sensors.outlet_humidity);
+    Logger::Debug("Water:  %F C  Tank %F C", g_sensors.water_temperature, g_sensors.tank_temperature);
   }
 }
 
@@ -196,6 +246,10 @@ static void UpdateOutputs()
   bool heater_state = dryer.GetHeaterOutput() > 0.5f;
   bool fan_state = dryer.GetFanOutput() > 0.0f;
   bool damper_state = dryer.GetDamperOutput();
+
+  // Hand the hydraulic command to Core 1, which owns bus A.
+  // TODO(v4): becomes a plain on/off request once TemperatureManager drops the PID.
+  g_hydraulic_request = dryer.GetCirculatorOutput() > 0.05f;
 
   if (heater_state != last_heater)
   {

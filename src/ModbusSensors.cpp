@@ -2,63 +2,68 @@
 #include "ModbusSensors.h"
 #include "Logger.h"
 
-static constexpr uint8_t kMaxErrors = 10;
-
-ModbusSensors::ModbusSensors() : error_count_(0) {}
-
-void ModbusSensors::Begin(uint32_t baudrate)
+ModbusSensors::ModbusSensors(Rs485Bus *bus) : bus_(bus)
 {
-  // GP4/GP5 are UART1 pins on the RP2040 → Serial2
-  Serial2.setTX(RS485_A_TX_PIN);
-  Serial2.setRX(RS485_A_RX_PIN);
-  Serial2.begin(baudrate, SERIAL_8N1);
-
-  pinMode(RS485_A_DE_PIN, OUTPUT);
-  digitalWrite(RS485_A_DE_PIN, LOW);  // Start in receive mode
-
-  // ModbusMaster reuses the same physical node instance per call to Begin().
-  // Direction callbacks are set once; the address is updated per-request in ReadSensor().
-  node_.preTransmission(PreTransmission);
-  node_.postTransmission(PostTransmission);
-
-  Logger::Info("ModbusSensors: initialized on UART1 (Serial2) at %lu baud", baudrate);
+  addresses_[kInlet]  = MODBUS_INLET_ADDRESS;
+  addresses_[kOutlet] = MODBUS_OUTLET_ADDRESS;
 }
 
-bool ModbusSensors::ReadSensor(uint8_t address, float &temperature, float &humidity)
+void ModbusSensors::Begin()
 {
-  node_.begin(address, Serial2);
-  node_.preTransmission(PreTransmission);
-  node_.postTransmission(PostTransmission);
+  Logger::Info("ModbusSensors: inlet @%d, outlet @%d on bus %s",
+               addresses_[kInlet], addresses_[kOutlet], bus_->GetName());
+}
 
-  // Read 2 holding registers starting at MODBUS_REG_HUMIDITY (FC03)
-  // Register layout: 0x0000 = humidity, 0x0001 = temperature
-  uint8_t result = node_.readHoldingRegisters(MODBUS_REG_HUMIDITY, 2);
-  if (result != ModbusMaster::ku8MBSuccess)
+bool ModbusSensors::Poll(uint8_t index)
+{
+  if (index >= kCount || bus_ == nullptr)
   {
-    if (error_count_ < kMaxErrors)
-    {
-      error_count_++;
-    }
-    Logger::Warning("ModbusSensors: read failed for address %d (error 0x%02X, count %d)",
-                    address, result, error_count_);
     return false;
   }
 
-  error_count_ = 0;
-  humidity    = static_cast<float>(node_.getResponseBuffer(0)) / MODBUS_RAW_SCALE;
-  temperature = static_cast<float>(node_.getResponseBuffer(1)) / MODBUS_RAW_SCALE;
+  SensorReading &reading = readings_[index];
+  uint16_t raw[2] = {0, 0};
+
+  if (!bus_->ReadHoldingRegisters(addresses_[index], MODBUS_REG_HUMIDITY, 2, raw))
+  {
+    if (reading.error_count < kMaxErrors)
+    {
+      reading.error_count++;
+    }
+    Logger::Warning("ModbusSensors: read failed @%d (error 0x%02X, count %d)",
+                    addresses_[index], bus_->GetLastError(), reading.error_count);
+    return false;
+  }
+
+  // Register layout: 0x0000 = humidity, 0x0001 = temperature
+  reading.humidity        = static_cast<float>(raw[0]) / MODBUS_RAW_SCALE;
+  reading.temperature     = static_cast<float>(raw[1]) / MODBUS_RAW_SCALE;
+  reading.last_success_ms = millis();
+  reading.error_count     = 0;
+  reading.valid           = true;
   return true;
 }
 
-// Static callbacks — toggle the DE/RE pin to switch UART direction
-
-void ModbusSensors::PreTransmission()
+const SensorReading &ModbusSensors::GetReading(uint8_t index) const
 {
-  digitalWrite(RS485_A_DE_PIN, HIGH);  // Enable transmit
+  if (index >= kCount)
+  {
+    return invalid_;
+  }
+  return readings_[index];
 }
 
-void ModbusSensors::PostTransmission()
+bool ModbusSensors::IsFresh(uint8_t index, uint32_t timeout_ms) const
 {
-  Serial2.flush();                   // Wait for last byte to fully leave the UART
-  digitalWrite(RS485_A_DE_PIN, LOW);   // Return to receive
+  if (index >= kCount)
+  {
+    return false;
+  }
+
+  const SensorReading &reading = readings_[index];
+  if (!reading.valid)
+  {
+    return false;
+  }
+  return (millis() - reading.last_success_ms) < timeout_ms;
 }
