@@ -10,20 +10,22 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 
 ## GPIO map
 
-23 of the 26 available GPIOs are used. **GP8, GP15 and GP22 are free.**
+25 of the 26 available GPIOs are used. **GP16 is free.**
 
 | Function | GPIO | Notes |
 |---|---|---|
-| SPI0 SCK | 18 | shared bus |
-| SPI0 MOSI | 19 | shared bus |
-| SPI0 MISO | 16 | only the SX1262 drives it |
+| SPI0 SCK | 18 | display only |
+| SPI0 MOSI | 19 | display only; MISO not wired |
 | TFT CS | 17 | |
 | TFT DC | 20 | |
 | TFT RST | 21 | |
-| LoRa NSS | 13 | |
-| LoRa BUSY | 12 | mandatory on SX126x |
-| LoRa DIO1 | 11 | RX interrupt |
-| LoRa RST | 10 | |
+| SPI1 SCK | 10 | radio only |
+| SPI1 MOSI | 11 | radio only |
+| SPI1 MISO | 12 | radio only |
+| LoRa NSS | 13 | driven in software |
+| LoRa BUSY | 8 | mandatory on SX126x |
+| LoRa DIO1 | 15 | RX interrupt |
+| LoRa RST | 22 | |
 | Encoder A | 6 | EC11, internal pull-up |
 | Encoder B | 7 | EC11, internal pull-up |
 | Encoder SW | 9 | EC11, internal pull-up |
@@ -43,18 +45,22 @@ Pin assignments live in [include/config.h](include/config.h). The TFT pins are
 [platformio.ini](platformio.ini) — change both together or the display will not
 initialise.
 
-## Shared SPI bus
+## Separate SPI buses
 
-The display and the radio sit on SPI0 with separate chip selects. Only the
-SX1262 drives MISO; the ST7789 is write-only.
+The display owns **SPI0**, the radio owns **SPI1**. They share nothing.
 
-Both are serviced from core 0 in the same loop and neither runs asynchronously,
-so they cannot interleave mid-transaction. They do need different bus settings,
-which is why `SUPPORT_TRANSACTIONS` is enabled for `TFT_eSPI`.
+This costs two GPIOs over a shared bus and is worth it. `TFT_eSPI` on the
+RP2040 may drive the panel through the **PIO** rather than the hardware SPI
+block; on a shared bus that would put two different masters on the same pins,
+and no amount of transaction bracketing would fix it. Separate buses remove the
+question entirely, and let each device run at its own clock — the panel is happy
+at 40 MHz, the SX1262 tops out around 16 and is driven at 8.
 
-**This is the main thing to exercise early during bring-up.** Symptoms of a
-problem are a display that corrupts when the radio transmits, or a radio that
-stops answering after a screen redraw.
+The display is write-only, so SPI0 MISO is not wired at all (`TFT_MISO=-1`).
+
+SPI1 pin choices are fixed by the RP2040 and cannot be moved freely:
+SCK ∈ {10, 14, 26}, MOSI ∈ {11, 15, 27}, MISO ∈ {8, 12, 24, 28}. NSS is driven
+in software by RadioLib, so it is free of the hardware chip-select constraint.
 
 ## Command outputs
 
@@ -179,4 +185,5 @@ transmission does not brown out the display.
    — this is where a polarity mistake is caught.
 5. Damper feedback: full travel, record the two end-stop values, calibrate.
 6. RS485: probes first, then the hydraulic module.
-7. Radio, with the display refreshing at the same time — see "Shared SPI bus".
+7. Radio, with the display refreshing at the same time. The buses are
+   independent, so this should be uneventful — confirm it anyway.

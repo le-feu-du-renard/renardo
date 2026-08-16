@@ -9,8 +9,8 @@ deported hydraulic module, LoRa link, and the removal of every v3 panel control.
 
 - [x] Strip the v3 hardware layer (voltmeters, MCP23017, LEDs, potentiometers,
       selector, TM1637, SD card) and move to `rpipico`
-- [x] New pin map: shared SPI0 for TFT and radio, single RS485 bus, three
-      2N2222 command outputs, damper ADC feedback, optional RTC
+- [x] New pin map: SPI0 for the TFT, SPI1 for the radio, single RS485 bus,
+      three 2N2222 command outputs, damper ADC feedback, optional RTC
 - [x] `Rs485Bus` transport, per-probe error and freshness tracking,
       `HydraulicRemote` client for the deported module
 - [x] Sensor freshness interlock, cross-core seqlock snapshot
@@ -27,7 +27,8 @@ deported hydraulic module, LoRa link, and the removal of every v3 panel control.
 
 - [ ] Bring-up on real hardware, in the order given in HARDWARE.md
 - [ ] Confirm the ST7789 variant: orientation, colour inversion, offsets
-- [ ] Exercise the shared SPI bus: radio transmitting while the display refreshes
+- [ ] Confirm the two SPI buses stay independent under load: radio
+      transmitting while the display refreshes
 - [ ] Measure the three outputs at the connector before wiring the loads
 - [ ] Record the damper end-stop ADC values and calibrate
 - [ ] Build the deported hydraulic module against the register map in HARDWARE.md

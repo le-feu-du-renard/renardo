@@ -163,8 +163,9 @@ saved, or one reset from Système → Réinit. usine.
 - Check the TFT pins in `platformio.ini` match `config.h`
 - Inverted colours or an offset image is the usual ST7789 variant question —
   try `TFT_INVERSION_ON` or a column/row offset
-- Corruption appearing when the radio transmits points at the shared SPI bus;
-  see HARDWARE.md
+- The radio is on its own bus (SPI1), so a redraw and a transmission cannot
+  interfere; corruption during transmission would point at the power rail
+  rather than the bus
 
 ### Sensors not responding
 

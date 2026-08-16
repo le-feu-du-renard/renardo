@@ -1,4 +1,5 @@
 #include <string.h>
+#include <SPI.h>
 
 #include "config.h"
 #include "LoraLink.h"
@@ -12,7 +13,9 @@ void LoraLink::OnDio1Action()
 }
 
 LoraLink::LoraLink()
-    : radio_(new Module(LORA_NSS_PIN, LORA_DIO1_PIN, LORA_RST_PIN, LORA_BUSY_PIN)),
+    : radio_(new Module(LORA_NSS_PIN, LORA_DIO1_PIN, LORA_RST_PIN, LORA_BUSY_PIN,
+                        SPI1,
+                        SPISettings(LORA_SPI_FREQUENCY, MSBFIRST, SPI_MODE0))),
       ready_(false),
       device_id_(0),
       tx_sequence_(0),
@@ -26,6 +29,13 @@ LoraLink::LoraLink()
 bool LoraLink::Begin(uint16_t device_id)
 {
   device_id_ = device_id;
+
+  // The RP2040 needs its SPI1 pins assigned before the peripheral starts, and
+  // RadioLib calls begin() on the bus from inside radio_.begin() — so this has
+  // to happen first.
+  SPI1.setSCK(SPI1_SCK_PIN);
+  SPI1.setTX(SPI1_MOSI_PIN);
+  SPI1.setRX(SPI1_MISO_PIN);
 
   int16_t state = radio_.begin(LORA_FREQUENCY, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
                                LORA_CODING_RATE, LORA_SYNC_WORD, LORA_TX_POWER,

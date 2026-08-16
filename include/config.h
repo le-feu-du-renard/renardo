@@ -5,13 +5,10 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// ----- SPI0, shared by the TFT and the LoRa radio -----
-// Both devices sit on one bus with separate chip selects. Only the SX1262
-// drives MISO; the display is write-only. Every radio transaction must be
-// bracketed so it does not interleave with a display write.
+// ----- SPI0, the display alone -----
+// Write-only, so no MISO is wired at all.
 #define SPI0_SCK_PIN 18
 #define SPI0_MOSI_PIN 19
-#define SPI0_MISO_PIN 16
 
 // TFT display — GMT020-02-7P v1.3 (ST7789, 240x320).
 // The pins are mirrored into TFT_eSPI via build flags in platformio.ini;
@@ -20,11 +17,26 @@
 #define TFT_DC_PIN 20
 #define TFT_RST_PIN 21
 
-// LoRa radio — DX-LR30 (SX1262, 868 MHz)
+// ----- SPI1, the LoRa radio alone -----
+// The radio deliberately does not share the display's bus. TFT_eSPI may drive
+// the panel through the RP2040's PIO rather than the hardware SPI block, in
+// which case two different masters would be fighting over the same pins and no
+// amount of transaction bracketing would help. Separate buses remove the
+// question, and let each run at its own clock — the panel is happy at 40 MHz,
+// the SX1262 tops out around 16.
+// SPI1 pin choices are fixed by the RP2040: SCK {10,14,26}, MOSI {11,15,27},
+// MISO {8,12,24,28}.
+#define SPI1_SCK_PIN 10
+#define SPI1_MOSI_PIN 11
+#define SPI1_MISO_PIN 12
+#define LORA_SPI_FREQUENCY 8000000 // Hz, conservative against the SX1262 limit
+
+// LoRa radio — DX-LR30 (SX1262, 868 MHz). NSS is driven in software, so it is
+// not tied to the SPI1 hardware chip-select pins.
 #define LORA_NSS_PIN 13
-#define LORA_BUSY_PIN 12
-#define LORA_DIO1_PIN 11
-#define LORA_RST_PIN 10
+#define LORA_BUSY_PIN 8
+#define LORA_DIO1_PIN 15
+#define LORA_RST_PIN 22
 
 // Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups
 #define ENCODER_A_PIN 6
@@ -74,7 +86,7 @@
 #define I2C_BUS_1_SDA_PIN 26
 #define I2C_BUS_1_SCL_PIN 27
 
-// Free for expansion: GP8, GP15, GP22
+// Free for expansion: GP16
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)

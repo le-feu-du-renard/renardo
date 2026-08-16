@@ -6,17 +6,16 @@
 
 #include "LoraProtocol.h"
 
-// SX1262 (DX-LR30, 868 MHz) on SPI0, shared with the display.
+// SX1262 (DX-LR30, 868 MHz) on SPI1, its own bus.
 //
 // The dryer sends telemetry on a timer and listens the rest of the time, so a
 // command from the Commander is picked up within a second rather than at the
 // next transmission. Reception is interrupt-driven on DIO1.
 //
-// The radio shares the SPI bus with the TFT. Both live on core 0 and neither
-// runs asynchronously, so they cannot interleave mid-transaction, but they do
-// need different bus settings — hence SUPPORT_TRANSACTIONS on the TFT side and
-// RadioLib's own SPI settings here. This is the part of the design most worth
-// exercising early on real hardware.
+// The radio deliberately does not share the display's bus: TFT_eSPI may drive
+// the panel through the RP2040's PIO instead of the hardware SPI block, which
+// would put two different masters on the same pins. Separate buses also let
+// each run at its own clock, the panel at 40 MHz and the SX1262 well below it.
 class LoraLink
 {
 public:
