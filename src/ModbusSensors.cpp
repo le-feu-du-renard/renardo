@@ -9,12 +9,12 @@ ModbusSensors::ModbusSensors() : error_count_(0) {}
 void ModbusSensors::Begin(uint32_t baudrate)
 {
   // GP4/GP5 are UART1 pins on the RP2040 → Serial2
-  Serial2.setTX(RS485_TX_PIN);
-  Serial2.setRX(RS485_RX_PIN);
+  Serial2.setTX(RS485_A_TX_PIN);
+  Serial2.setRX(RS485_A_RX_PIN);
   Serial2.begin(baudrate, SERIAL_8N1);
 
-  pinMode(RS485_DE_PIN, OUTPUT);
-  digitalWrite(RS485_DE_PIN, LOW);  // Start in receive mode
+  pinMode(RS485_A_DE_PIN, OUTPUT);
+  digitalWrite(RS485_A_DE_PIN, LOW);  // Start in receive mode
 
   // ModbusMaster reuses the same physical node instance per call to Begin().
   // Direction callbacks are set once; the address is updated per-request in ReadSensor().
@@ -54,11 +54,11 @@ bool ModbusSensors::ReadSensor(uint8_t address, float &temperature, float &humid
 
 void ModbusSensors::PreTransmission()
 {
-  digitalWrite(RS485_DE_PIN, HIGH);  // Enable transmit
+  digitalWrite(RS485_A_DE_PIN, HIGH);  // Enable transmit
 }
 
 void ModbusSensors::PostTransmission()
 {
   Serial2.flush();                   // Wait for last byte to fully leave the UART
-  digitalWrite(RS485_DE_PIN, LOW);   // Return to receive
+  digitalWrite(RS485_A_DE_PIN, LOW);   // Return to receive
 }

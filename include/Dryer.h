@@ -8,7 +8,6 @@
 #include "HumidityManager.h"
 #include "AirDamper.h"
 #include "SessionManager.h"
-#include "PersistentStateManager.h"
 
 // Main dryer coordinator.
 // Owns all hardware managers and forwards sensor readings / mode updates to them.
@@ -66,11 +65,9 @@ public:
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
   HumidityManager    *GetHumidityManager()    { return &humidity_manager_; }
   SessionManager     *GetSessionManager()     { return &session_manager_; }
-  PersistentStateManager *GetPersistentStateManager() { return &state_manager_; }
 
-  // Settings persistence
-  void SaveSettings();
-  void LoadSettings();
+  // Session restoration after reboot — driven by SettingsStore.
+  void RestoreSession(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s);
 
 private:
   ElectricHeater     electric_heater_;
@@ -79,7 +76,6 @@ private:
   TemperatureManager temperature_manager_;
   HumidityManager    humidity_manager_;
   SessionManager     session_manager_;
-  PersistentStateManager state_manager_;
 
   float inlet_temperature_;
   float outlet_temperature_;

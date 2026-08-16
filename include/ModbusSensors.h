@@ -11,9 +11,9 @@
 // Function code 0x04 (Read Input Registers) is used.
 //
 // Connections (pins defined in config.h):
-//   UART1 TX  -> RS485_TX_PIN
-//   UART1 RX  -> RS485_RX_PIN
-//   DE/RE pin -> RS485_DE_PIN  (HIGH = transmit, LOW = receive)
+//   UART1 TX  -> RS485_A_TX_PIN
+//   UART1 RX  -> RS485_A_RX_PIN
+//   DE/RE pin -> RS485_A_DE_PIN  (HIGH = transmit, LOW = receive)
 
 class ModbusSensors
 {

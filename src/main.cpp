@@ -5,45 +5,33 @@
 #include "config.h"
 #include "Dryer.h"
 #include "ModbusSensors.h"
-#include "McpOutputs.h"
-#include "VoltmeterOutputs.h"
-#ifdef DURATION_DISPLAY
-#include "DurationDisplay.h"
-#endif
 #include "InputHandler.h"
 #include "TimeManager.h"
-#include "SessionMonitor.h"
 #include "Logger.h"
 
 // ========== GLOBAL OBJECTS ==========
 
-// I2C bus (shared by MCP23017 and RTC DS1307)
+// I2C bus (optional RTC DS1307)
 TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 
-// RS485 Modbus sensors (Core 1)
+// RS485 bus A — sensors + hydraulic module (Core 1)
 ModbusSensors modbus_sensors;
 
 // Physical I/O
-McpOutputs mcp_outputs;
-VoltmeterOutputs voltmeters;
-#ifdef DURATION_DISPLAY
-DurationDisplay duration_display;
-#endif
 InputHandler input_handler;
 
-// RTC
+// RTC — optional module; absence disables ECO mode
 TimeManager time_manager(&i2c_bus_1);
+static bool g_rtc_available = false;
 
 // Main controller
 Dryer dryer;
 
-// Session data logger
-SessionMonitor session_monitor(&dryer, &time_manager);
-
 // ========== CORE 1 ==========
 
-// Core 1 owns the RS485/Modbus peripheral exclusively.
+// Core 1 owns RS485 bus A exclusively.
 // Core 0 reads these volatile variables without blocking.
+// TODO(v4): replace with a seqlock-protected struct carrying freshness timestamps.
 
 static volatile float g_inlet_temp = 0.0f;
 static volatile float g_inlet_hum = 0.0f;
@@ -87,8 +75,6 @@ void loop1()
 // ========== TIMING STATE ==========
 
 static uint32_t last_input_update = 0;
-static uint32_t last_settings_save = 0;
-static bool was_running = false;
 
 static constexpr uint32_t kMemoryCheckInterval = 30000; // 30 s
 static constexpr uint32_t kHeartbeatInterval = 10000;   // 10 s
@@ -100,91 +86,42 @@ static uint32_t loop_count = 0;
 
 static void SetupI2C()
 {
-  // i2c1: MCP23017 + RTC
   pinMode(I2C_BUS_1_SDA_PIN, INPUT_PULLUP);
   pinMode(I2C_BUS_1_SCL_PIN, INPUT_PULLUP);
   i2c_bus_1.begin();
   i2c_bus_1.setClock(10000);
   i2c_bus_1.setTimeout(1000);
-  Logger::Info("I2C bus 1 ready (MCP23017 + RTC, 10kHz)");
+  Logger::Info("I2C bus 1 ready (10kHz)");
 }
 
-static void SetupPins()
+static void SetupOutputs()
 {
-  // Hydraulic circulator PWM
-  pinMode(WATER_CIRCULATOR_PWM_PIN, OUTPUT);
-  analogWrite(WATER_CIRCULATOR_PWM_PIN, 0);
+  // TODO(v4): move to OutputDriver. Drive the 2N2222 stages to their idle level
+  // before switching them to OUTPUT so no load is energised at boot.
+  const uint8_t idle = OUTPUTS_ACTIVE_LOW ? HIGH : LOW;
+  digitalWrite(OUT_FAN_PIN, idle);
+  digitalWrite(OUT_DAMPER_PIN, idle);
+  digitalWrite(OUT_ELECTRIC_PIN, idle);
+  pinMode(OUT_FAN_PIN, OUTPUT);
+  pinMode(OUT_DAMPER_PIN, OUTPUT);
+  pinMode(OUT_ELECTRIC_PIN, OUTPUT);
 }
 
-static void SetupLEDs(uint8_t initial_portb)
-{
-  if (!mcp_outputs.Begin(MCP_EXPANDER_ADDRESS, i2c_bus_1, initial_portb))
-  {
-    Logger::Error("McpOutputs: MCP23017 not found — continuing without outputs");
-  }
-}
-
+// The RTC is an optional module: probe it and degrade gracefully when absent.
 static void SetupRTC()
 {
-  if (!time_manager.Begin())
+  g_rtc_available = time_manager.Begin();
+  if (!g_rtc_available)
   {
-    Logger::Error("RTC initialization failed");
+    Logger::Warning("RTC not detected — ECO mode unavailable");
+    return;
   }
-  else
+
+  if (time_manager.HasLostPower())
   {
-    if (time_manager.HasLostPower())
-    {
-      Logger::Warning("RTC lost power — time may be incorrect");
-    }
-    Logger::Info("RTC ready: %s", time_manager.GetDateTimeString());
+    Logger::Warning("RTC lost power — time may be incorrect");
   }
-}
-
-static void StartupSelfTest()
-{
-  Logger::Info("Startup self-test: all outputs ON for 2 s");
-
-  // All Port A indicator LEDs on
-  mcp_outputs.UpdateAll(0xFF);
-
-  // Button LEDs on Port B
-  mcp_outputs.SetOutput(MCP_BTN_START_LED, true);
-  mcp_outputs.SetOutput(MCP_BTN_STOP_LED, true);
-
-  // All voltmeters at full scale, TM1637 shows 88:88
-  voltmeters.SetInletTemperature(VOLTMETER_TEMPERATURE_MAX);
-  voltmeters.SetInletHumidity(VOLTMETER_HUMIDITY_MAX);
-  voltmeters.SetOutletTemperature(VOLTMETER_TEMPERATURE_MAX);
-  voltmeters.SetOutletHumidity(VOLTMETER_HUMIDITY_MAX);
-#ifdef DURATION_DISPLAY
-  duration_display.SetDuration(5999); // 59:59 — all segments lit
-#endif
-
-  delay(2000);
-
-  // Reset all outputs
-  mcp_outputs.Clear();
-  mcp_outputs.SetOutput(MCP_BTN_START_LED, false);
-  mcp_outputs.SetOutput(MCP_BTN_STOP_LED, false);
-  voltmeters.SetInletTemperature(0.0f);
-  voltmeters.SetInletHumidity(0.0f);
-  voltmeters.SetOutletTemperature(0.0f);
-  voltmeters.SetOutletHumidity(0.0f);
-#ifdef DURATION_DISPLAY
-  duration_display.SetDuration(0);
-#endif
-}
-
-static void SetupSessionMonitor()
-{
-  if (!session_monitor.Begin())
-  {
-    Logger::Warning("Session monitor: SD card not available, logging disabled");
-  }
-  else
-  {
-    Logger::Info("Session monitor ready");
-  }
+  Logger::Info("RTC ready: %s", time_manager.GetDateTimeString());
 }
 
 // ========== SENSOR UPDATE ==========
@@ -220,192 +157,66 @@ static void UpdateInputs()
 
   input_handler.Update();
 
-  // Push potentiometer readings to dryer
-  dryer.SetTargetTemperature(input_handler.GetTargetTemperature());
-  dryer.SetTargetHumidity(input_handler.GetTargetHumidity());
+  // ECO mode needs the wall clock; without an RTC it stays in PERFORMANCE.
+  if (g_rtc_available)
+  {
+    dryer.SetCurrentHour(time_manager.GetNow().hour());
+  }
+  else
+  {
+    dryer.SetOperatingMode(OperatingMode::PERFORMANCE);
+  }
 
-  // Push mode selector to dryer
-  OperatingMode mode = input_handler.IsEcoMode()
-                           ? OperatingMode::ECO
-                           : OperatingMode::PERFORMANCE;
-  dryer.SetOperatingMode(mode);
-
-  // Push current hour to dryer for time-based ECO logic
-  dryer.SetCurrentHour(time_manager.GetNow().hour());
-
-  // Handle START button
   if (input_handler.IsStartPressed() && !dryer.IsRunning())
   {
     Logger::Info("START button pressed — starting session");
     dryer.Start();
   }
 
-  // Handle STOP button
   if (input_handler.IsStopPressed() && dryer.IsRunning())
   {
     Logger::Info("STOP button pressed — stopping session");
     dryer.Stop();
   }
-
-  // Update button LEDs: START LED = running, STOP LED = not running
-  input_handler.SetStartLed(dryer.IsRunning());
-  input_handler.SetStopLed(!dryer.IsRunning());
 }
 
 // ========== OUTPUT UPDATE ==========
+
+static void WriteOutput(uint8_t pin, bool active)
+{
+  digitalWrite(pin, (active != OUTPUTS_ACTIVE_LOW) ? HIGH : LOW);
+}
 
 static void UpdateOutputs()
 {
   static bool last_heater = false;
   static bool last_fan = false;
   static bool last_damper = false;
-  static uint8_t last_pwm = 0;
 
   bool heater_state = dryer.GetHeaterOutput() > 0.5f;
   bool fan_state = dryer.GetFanOutput() > 0.0f;
   bool damper_state = dryer.GetDamperOutput();
-  // GetCirculatorOutput() returns a mapped duty (0.0-1.0); invert for PNP transistor
-  uint8_t pwm_val = static_cast<uint8_t>((1.0f - dryer.GetCirculatorOutput()) * 255.0f);
 
   if (heater_state != last_heater)
   {
-    mcp_outputs.SetOutput(MCP_HEATER_RELAY, heater_state);
+    WriteOutput(OUT_ELECTRIC_PIN, heater_state);
     last_heater = heater_state;
     Logger::Info("Electric heater: %s", heater_state ? "ON" : "OFF");
   }
 
   if (fan_state != last_fan)
   {
-    mcp_outputs.SetOutput(MCP_FAN_RELAY, fan_state);
+    WriteOutput(OUT_FAN_PIN, fan_state);
     last_fan = fan_state;
     Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
   }
 
   if (damper_state != last_damper)
   {
-    mcp_outputs.SetOutput(MCP_BELIMO_RELAY, !damper_state);
+    WriteOutput(OUT_DAMPER_PIN, damper_state);
     last_damper = damper_state;
-    Logger::Info("Air damper: %s", damper_state ? "OPEN" : "CLOSED");
+    Logger::Info("Air damper: %s", damper_state ? "EXTRACTION" : "RECIRCULATION");
   }
-
-  if (abs((int)pwm_val - (int)last_pwm) > 5)
-  {
-    analogWrite(WATER_CIRCULATOR_PWM_PIN, pwm_val);
-    last_pwm = pwm_val;
-    Logger::Debug("Circulator PWM: %d/255 (%F%%)",
-                  pwm_val, dryer.GetCirculatorOutput() * 100.0f);
-  }
-}
-
-// ========== INDICATOR LED UPDATE ==========
-
-static void UpdateLEDs()
-{
-  static uint32_t blink_toggle_ms = 0;
-  static bool     blink_state     = false;
-
-  bool running = dryer.IsRunning();
-  bool cooling = !running && dryer.GetFanOutput() > 0.0f;
-  DryerPhase phase = dryer.GetCurrentPhase();
-
-  // Blink the fan LED at 1 Hz during cooldown to distinguish it from a bug
-  if (cooling)
-  {
-    uint32_t now = millis();
-    if (now - blink_toggle_ms >= 500)
-    {
-      blink_toggle_ms = now;
-      blink_state     = !blink_state;
-    }
-  }
-  else
-  {
-    blink_state = false;
-  }
-
-  uint8_t mask = 0;
-  if (dryer.IsEcoWindowActive())
-    mask |= (1 << (uint8_t)LedId::kEcoMode);
-  if (running && phase == DryerPhase::kInit)
-    mask |= (1 << (uint8_t)LedId::kPhaseInit);
-  if (running && phase == DryerPhase::kBrassage)
-    mask |= (1 << (uint8_t)LedId::kPhaseBrassage);
-  if (running && phase == DryerPhase::kExtraction)
-    mask |= (1 << (uint8_t)LedId::kPhaseExtraction);
-  if (running && dryer.GetHeaterOutput() > 0.5f)
-    mask |= (1 << (uint8_t)LedId::kElectricHeater);
-  if (running && dryer.GetCirculatorOutput() > 0.05f)
-    mask |= (1 << (uint8_t)LedId::kHydroHeater);
-  if ((running && dryer.GetFanOutput() > 0.0f) || (cooling && blink_state))
-    mask |= (1 << (uint8_t)LedId::kFan);
-  if (running && !dryer.GetDamperOutput())
-    mask |= (1 << (uint8_t)LedId::kAirRenewal);
-
-  mcp_outputs.UpdateAll(mask);
-}
-
-// ========== DISPLAY UPDATE ==========
-
-static void UpdateDisplays()
-{
-  float inlet_temp = input_handler.IsTemperatureBeingAdjusted()
-                         ? input_handler.GetTargetTemperature()
-                         : dryer.GetInletTemperature();
-
-  float inlet_hum = input_handler.IsHumidityBeingAdjusted()
-                        ? input_handler.GetTargetHumidity()
-                        : dryer.GetInletHumidity();
-
-  voltmeters.SetInletTemperature(inlet_temp);
-  voltmeters.SetInletHumidity(inlet_hum);
-  voltmeters.SetOutletTemperature(dryer.GetOutletTemperature());
-  voltmeters.SetOutletHumidity(dryer.GetOutletHumidity());
-
-  uint32_t elapsed = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
-#ifdef DURATION_DISPLAY
-  duration_display.SetDuration(elapsed);
-#endif
-}
-
-// ========== SESSION MONITOR UPDATE ==========
-
-static void UpdateSessionMonitor()
-{
-  bool is_running = dryer.IsRunning();
-
-  if (is_running && !was_running)
-  {
-    Logger::Info("Dryer started — starting session logging");
-    session_monitor.StartSession();
-  }
-  else if (!is_running && was_running)
-  {
-    Logger::Info("Dryer stopped — ending session logging");
-    session_monitor.StopSession();
-    dryer.SaveSettings();
-  }
-
-  was_running = is_running;
-  session_monitor.Update();
-
-  if (!session_monitor.IsReady())
-  {
-    session_monitor.RetryInitialization();
-  }
-}
-
-// ========== SETTINGS SAVE ==========
-
-static void UpdateSettings()
-{
-  uint32_t now = millis();
-  if (!dryer.IsRunning())
-    return;
-  if (now - last_settings_save < SETTINGS_SAVE_INTERVAL)
-    return;
-  last_settings_save = now;
-  dryer.SaveSettings();
-  Logger::Debug("Settings auto-saved");
 }
 
 // ========== DIAGNOSTICS ==========
@@ -417,10 +228,8 @@ static void UpdateDiagnostics()
   if (now - last_heartbeat >= kHeartbeatInterval)
   {
     last_heartbeat = now;
-    Logger::Info("Heartbeat — loops=%lu uptime=%us SD=%s logging=%s",
-                 loop_count, now / 1000,
-                 session_monitor.IsReady() ? "OK" : "NOK",
-                 session_monitor.IsLogging() ? "YES" : "NO");
+    Logger::Info("Heartbeat — loops=%lu uptime=%us running=%s",
+                 loop_count, now / 1000, dryer.IsRunning() ? "YES" : "NO");
   }
 
   if (now - last_memory_check >= kMemoryCheckInterval)
@@ -447,7 +256,7 @@ void setup()
   Logger::Init(LOG_LEVEL_VERBOSE);
 
   Logger::Info("========================================");
-  Logger::Info("    Dryer Controller — startup");
+  Logger::Info("    Dryer Controller v4 — startup");
   Logger::Info("========================================");
 
   if (watchdog_caused_reboot())
@@ -459,53 +268,22 @@ void setup()
   watchdog_enable(8000, 1);
   Logger::Info("Watchdog enabled (8 s timeout)");
 
+  SetupOutputs();
+
   SetupI2C();
   delay(100);
-
-  // SD must be initialized before dryer.Begin() so PersistentStateManager can read state.bin.
-  SessionMonitor::InitSD();
-
-  dryer.Begin();
-
-  // Compute the correct initial state for Port B relay outputs from restored state.
-  // Passed to McpOutputs::Begin() so OLAT_B is pre-loaded before pins switch to OUTPUT.
-  // Relay pins then drive the correct level from the first clock edge — no glitch.
-  uint8_t initial_portb = 0;
-  if (dryer.GetHeaterOutput() > 0.5f) initial_portb |= (1 << (MCP_HEATER_RELAY  - 8));
-  if (dryer.GetFanOutput()    > 0.0f) initial_portb |= (1 << (MCP_FAN_RELAY     - 8));
-  if (!dryer.GetDamperOutput())       initial_portb |= (1 << (MCP_BELIMO_RELAY  - 8));
-
-  SetupLEDs(initial_portb);
-  delay(50);
 
   SetupRTC();
   delay(50);
 
-  SetupPins();
-  delay(50);
+  dryer.Begin();
+  input_handler.Begin();
 
-  voltmeters.Begin();
-#ifdef DURATION_DISPLAY
-  duration_display.Begin();
-#endif
-  input_handler.Begin(mcp_outputs);
-
-  StartupSelfTest();
-
-  SetupSessionMonitor();
-
-  was_running = dryer.IsRunning();
-  if (was_running && session_monitor.IsReady())
-  {
-    session_monitor.StartSession();
-  }
-
-  // Sync last_* tracking variables in UpdateOutputs() with the hardware state
-  // that was established via initial_portb. Without this, the first loop iteration
-  // would see spurious changes (last_* defaults differ from actual relay state).
+  // Sync the last_* tracking variables in UpdateOutputs() with the pin levels
+  // established by SetupOutputs().
   UpdateOutputs();
 
-  Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
+  Logger::Info("Setup complete");
   g_core0_ready = true; // Signal Core 1 to start Modbus initialization
 }
 
@@ -521,10 +299,6 @@ void loop()
   UpdateInputs();
   dryer.Update();
   UpdateOutputs();
-  UpdateLEDs();
-  UpdateDisplays();
-  UpdateSessionMonitor();
-  UpdateSettings();
   UpdateDiagnostics();
 
   delay(10);

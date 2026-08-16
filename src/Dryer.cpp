@@ -8,7 +8,6 @@ Dryer::Dryer()
       temperature_manager_(&electric_heater_, &hydraulic_heater_),
       humidity_manager_(&air_damper_),
       session_manager_(&temperature_manager_, &humidity_manager_),
-      state_manager_(),
       inlet_temperature_(0.0f),
       outlet_temperature_(0.0f),
       inlet_humidity_(0.0f),
@@ -20,9 +19,7 @@ void Dryer::Begin()
   temperature_manager_.Begin();
   humidity_manager_.Begin();
   session_manager_.Begin();
-  state_manager_.Begin();
 
-  LoadSettings();
   Logger::Info("Dryer: initialized");
 }
 
@@ -31,7 +28,6 @@ void Dryer::Start()
   if (session_manager_.IsRunning()) return;
   temperature_manager_.SetFanActive(true);
   session_manager_.Start();
-  SaveSettings();
   Logger::Info("Dryer: session started");
 }
 
@@ -40,7 +36,6 @@ void Dryer::Stop()
   if (!session_manager_.IsRunning()) return;
   temperature_manager_.SetFanActive(false);
   session_manager_.Stop();
-  state_manager_.Save(false, DryerPhase::kStop, 0, 0);
   Logger::Info("Dryer: session stopped");
 }
 
@@ -117,29 +112,10 @@ float Dryer::GetCirculatorOutput() const
   return hydraulic_heater_.GetOutput();
 }
 
-void Dryer::SaveSettings()
+void Dryer::RestoreSession(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s)
 {
-  state_manager_.Save(
-      session_manager_.IsRunning(),
-      session_manager_.GetCurrentPhase(),
-      session_manager_.GetPhaseElapsedTime(),
-      session_manager_.GetTotalElapsedTime());
-}
-
-void Dryer::LoadSettings()
-{
-  DryerPhase phase         = DryerPhase::kStop;
-  uint32_t   phase_elapsed = 0;
-  uint32_t   total_elapsed = 0;
-
-  if (state_manager_.Load(phase, phase_elapsed, total_elapsed))
-  {
-    temperature_manager_.SetFanActive(true);
-    session_manager_.RestoreState(phase, phase_elapsed, total_elapsed);
-    Logger::Info("Dryer: session restored from SD card");
-  }
-  else
-  {
-    Logger::Info("Dryer: no session to restore");
-  }
+  temperature_manager_.SetFanActive(true);
+  session_manager_.RestoreState(phase, phase_elapsed_s, total_elapsed_s);
+  Logger::Info("Dryer: session restored (phase=%s elapsed=%us)",
+               session_manager_.GetCurrentPhaseName(), total_elapsed_s);
 }

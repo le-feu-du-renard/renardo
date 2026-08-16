@@ -5,79 +5,78 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// I2C Bus 1 (MCP23017 GPIO expander + RTC DS1307)
-#define I2C_BUS_1_SDA_PIN 14
-#define I2C_BUS_1_SCL_PIN 15
+// TFT display — GMT020-02-7P v1.3 (ST7789, 240x320) on SPI0, write-only (no MISO).
+// These values are mirrored into TFT_eSPI via build flags in platformio.ini;
+// both must be changed together.
+#define TFT_SCK_PIN 18
+#define TFT_MOSI_PIN 19
+#define TFT_CS_PIN 17
+#define TFT_DC_PIN 16
+#define TFT_RST_PIN 22
 
-// SD Card SPI (SPI0)
-#define SD_CARD_MISO_PIN 16 // SPI0 RX
-#define SD_CARD_CS_PIN 17   // Chip Select
-#define SD_CARD_SCK_PIN 18  // SCK
-#define SD_CARD_MOSI_PIN 19 // SPI0 TX
-
-// Hydraulic circulator PWM (0-10V)
-#define WATER_CIRCULATOR_PWM_PIN 13
-
-// RS485 Modbus RTU (UART1 → MAX3485)
-#define RS485_TX_PIN 4 // UART1 TX → MAX3485 DI
-#define RS485_RX_PIN 5 // UART1 RX ← MAX3485 RO
-#define RS485_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
+// Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups
+#define ENCODER_A_PIN 10
+#define ENCODER_B_PIN 11
+#define ENCODER_SW_PIN 12
 
 // Physical buttons (active LOW, internal pullup)
 #define BTN_START_PIN 20
 #define BTN_STOP_PIN 21
 
-// Voltmeter outputs (PWM, 0-3V)
-#define VOLTMETER_INLET_HUMIDITY_PIN 6
-#define VOLTMETER_INLET_TEMPERATURE_PIN 7
-#define VOLTMETER_OUTLET_HUMIDITY_PIN 8
-#define VOLTMETER_OUTLET_TEMPERATURE_PIN 9
+// RS485 bus A — sensors + hydraulic module (UART1 / Serial2 → MAX3485)
+#define RS485_A_TX_PIN 4 // UART1 TX → MAX3485 DI
+#define RS485_A_RX_PIN 5 // UART1 RX ← MAX3485 RO
+#define RS485_A_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
 
-// TM1637 4-digit LED display (total session duration)
-#ifdef DURATION_DISPLAY
-#define TM1637_CLK_PIN 11
-#define TM1637_DIO_PIN 12
-#endif // DURATION_DISPLAY
+// RS485 bus B — LoRa module (UART0 / Serial1 → MAX3485)
+#define RS485_B_TX_PIN 0
+#define RS485_B_RX_PIN 1
+#define RS485_B_DE_PIN 2
 
-// Mode selector (LOW = ECO, HIGH = PERFORMANCE)
-#define MODE_SELECTOR_PIN 22
+// Command outputs — 2N2222 open collector, pulled up to the load side.
+// The transistor inverts: GPIO HIGH pulls the output line to 0V.
+#define OUT_FAN_PIN 6      // ventilation, 24V command signal
+#define OUT_DAMPER_PIN 7   // air damper (Belimo LM24A-SR), 0-10V command signal
+#define OUT_ELECTRIC_PIN 8 // electric heating, 24V command signal
+#define OUTPUTS_ACTIVE_LOW true
 
-// Potentiometers (ADC)
-#define POT_TEMPERATURE_PIN 26 // ADC0
-#define POT_HUMIDITY_PIN 27    // ADC1
+// Air damper position feedback — Belimo 2-10V output through a divider (ADC0)
+#define DAMPER_FEEDBACK_PIN 26
+
+// I2C Bus 1 — optional RTC DS1307. Absent RTC disables ECO mode.
+#define I2C_BUS_1_SDA_PIN 14
+#define I2C_BUS_1_SCL_PIN 15
 
 // ========== I2C ADDRESSES ==========
-#define MCP_EXPANDER_ADDRESS 0x20 // MCP23017 (on I2C Bus 1)
-#define RTC_DS1307_ADDR 0x68      // DS1307 (on I2C Bus 1)
-
-// ========== MCP23017 PIN MAPPING ==========
-
-// Port A – Indicator LEDs (GPA bit index 0-7)
-#define MCP_LED_ECO_MODE 7         // GPA7 - ECO mode indicator LED
-#define MCP_LED_PHASE_INIT 6       // GPA6 - init phase indicator LED
-#define MCP_LED_PHASE_BRASSAGE 5   // GPA5 - mixing phase indicator LED
-#define MCP_LED_PHASE_EXTRACTION 4 // GPA4 - extraction phase indicator LED
-#define MCP_LED_HEATER 3           // GPA3 - electric heater indicator LED
-#define MCP_LED_HYDRO_HEATER 2     // GPA2 - hydraulic heater indicator LED
-#define MCP_LED_FAN 1              // GPA1 - fan indicator LED
-#define MCP_LED_AIR_RENEWAL 0      // GPA0 - air renewal indicator LED
-
-// Port B – Digital outputs (Adafruit library: pin = 8 + GPB bit index)
-#define MCP_BTN_START_LED 8 // GPB0 - START button indicator LED
-#define MCP_BTN_STOP_LED 9  // GPB1 - STOP button indicator LED
-#define MCP_HEATER_RELAY 10 // GPB2 - electric heater relay
-#define MCP_FAN_RELAY 11    // GPB3 - fan relay
-#define MCP_BELIMO_RELAY 12 // GPB4 - belimo damper actuator relay
+#define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
 
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600
+
+// Bus A slave addresses
 #define MODBUS_INLET_ADDRESS 1
 #define MODBUS_OUTLET_ADDRESS 2
+#define MODBUS_HYDRAULIC_ADDRESS 10
+
+// Bus B slave address
+#define MODBUS_LORA_ADDRESS 20
 
 // SHT30 RS485 sensor register map (function code FC03)
 #define MODBUS_REG_HUMIDITY 0x0000    // raw / MODBUS_RAW_SCALE = %RH
 #define MODBUS_REG_TEMPERATURE 0x0001 // raw / MODBUS_RAW_SCALE = C
 #define MODBUS_RAW_SCALE 10.0f        // sensor raw value divisor
+
+// Hydraulic module register map (FC03 read / FC06 write)
+#define HYDRO_REG_STATE 0x0000       // write: 0 = off, 1 = on
+#define HYDRO_REG_WATER_TARGET 0x0001 // write: water setpoint x10 (C)
+#define HYDRO_REG_WATER_TEMP 0x0010  // read: circulating water temperature x10
+#define HYDRO_REG_TANK_TEMP 0x0011   // read: storage tank temperature x10
+#define HYDRO_REG_STATUS 0x0012      // read: status bits
+
+// LoRa module register map
+#define LORA_REG_TELEMETRY 0x0000 // write: telemetry block base address
+#define LORA_REG_COMMAND 0x0100   // read: pending command block base address
+#define LORA_REG_ACK 0x0110       // write: last consumed command sequence number
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms
@@ -89,28 +88,19 @@
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 
-// Temperature target (potentiometer overrides at runtime)
+// Temperature target (menu overrides at runtime)
 #define TEMPERATURE_TARGET 40.0f // °C
 
-// Potentiometer ADC mapping ranges
-#define POT_TEMP_MIN 20.0f // °C
-#define POT_TEMP_MAX 45.0f // °C
-#define POT_HUM_MIN 0.0f   // %RH
-#define POT_HUM_MAX 100.0f // %RH
+// Setpoint adjustment ranges (menu limits)
+#define TARGET_TEMP_MIN 20.0f // °C
+#define TARGET_TEMP_MAX 45.0f // °C
+#define TARGET_HUM_MIN 0.0f   // %RH
+#define TARGET_HUM_MAX 100.0f // %RH
 
-// Voltmeter display ranges
-#define VOLTMETER_TEMPERATURE_MAX 60.0f // °C (inlet and outlet)
-#define VOLTMETER_HUMIDITY_MAX 100.0f   // %RH (inlet and outlet)
-
-// Voltmeter PWM calibration (raw 12-bit values, val_min may be negative to offset the zero point)
-#define VOLTMETER_V1_TEMP_IN_MIN    0
-#define VOLTMETER_V1_TEMP_IN_MAX    3050
-#define VOLTMETER_V2_HUM_IN_MIN     -100  // needle rests above zero at PWM=0, offset compensates
-#define VOLTMETER_V2_HUM_IN_MAX     2900
-#define VOLTMETER_V3_TEMP_OUT_MIN   0
-#define VOLTMETER_V3_TEMP_OUT_MAX   2990
-#define VOLTMETER_V4_HUM_OUT_MIN    0
-#define VOLTMETER_V4_HUM_OUT_MAX    2980
+// Hydraulic module water setpoint (fixed value pushed to the remote module)
+#define WATER_TARGET_DEFAULT 55.0f // °C
+#define WATER_TARGET_MIN 30.0f     // °C
+#define WATER_TARGET_MAX 70.0f     // °C
 
 // Heater enable defaults
 #ifndef HYDRAULIC_AVAILABLE
