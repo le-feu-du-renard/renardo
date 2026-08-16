@@ -4,70 +4,93 @@
 #include <Arduino.h>
 #include "config.h"
 #include "ElectricHeater.h"
-#include "HydraulicHeater.h"
-#include "PIDController.h"
 
 enum class OperatingMode : uint8_t
 {
-  ECO         = 0,  // Target reduced to 85% during night window (18h–9h)
+  ECO         = 0,  // Target reduced during the night window
   PERFORMANCE = 1,  // Full target at all times
 };
 
-// Control state for the heating state machine.
+// Which heat sources are actually usable this cycle. Reporting only — the two
+// sources are regulated independently, there is no mode to switch between.
 enum class ControlState : uint8_t
 {
-  REGULATION    = 0,  // PID drives hydraulic; electric OFF
-  BOOST         = 1,  // Hydraulic forced to 100%; electric ON
-  ELECTRIC_ONLY = 2,  // Hydraulic disabled by user; electric follows ON/OFF hysteresis
+  OFF                = 0,  // no source usable (fault, safety, fan off, all disabled)
+  ELECTRIC_ONLY      = 1,
+  HYDRAULIC_ONLY     = 2,
+  HYDRAULIC_ELECTRIC = 3,
 };
 
 // Temperature control parameters (all initialised from config.h defaults).
+// Overridable at runtime from the menu and persisted by SettingsStore.
 struct TemperatureParams
 {
   float temperature_target;
 
-  float hydraulic_kp;
-  float hydraulic_ki;
-  float hydraulic_kd;
+  float band_hydraulic;      // °C, error above which the hydraulic is requested
+  float band_electric;       // °C, error above which the electric is requested
+  float horizon_hydraulic;   // s, predictive shutoff window, hydraulic
+  float horizon_electric;    // s, predictive shutoff window, electric
+  float hydraulic_t_on_min;  // s, anti-short-cycle
+  float hydraulic_t_off_min; // s
+  float electric_t_on_min;   // s
+  float electric_t_off_min;  // s
+  float safety_max;          // °C, hard cutoff
 
-  float pid_integral_max;
-  float pid_derivative_filter;
+  uint8_t eco_start_hour;
+  uint8_t eco_end_hour;
+  float   eco_target_percentage;
 
   TemperatureParams()
       : temperature_target(TEMPERATURE_TARGET),
-        hydraulic_kp(HYDRAULIC_KP),
-        hydraulic_ki(HYDRAULIC_KI),
-        hydraulic_kd(HYDRAULIC_KD),
-        pid_integral_max(PID_INTEGRAL_MAX),
-        pid_derivative_filter(PID_DERIVATIVE_FILTER) {}
+        band_hydraulic(CTRL_BANDE_HYDRO),
+        band_electric(CTRL_BANDE_ELEC),
+        horizon_hydraulic(CTRL_HYDRO_HORIZON),
+        horizon_electric(CTRL_HORIZON),
+        hydraulic_t_on_min(CTRL_HYDRO_T_ON_MIN),
+        hydraulic_t_off_min(CTRL_HYDRO_T_OFF_MIN),
+        electric_t_on_min(CTRL_T_ON_MIN),
+        electric_t_off_min(CTRL_T_OFF_MIN),
+        safety_max(TEMPERATURE_SAFETY_MAX),
+        eco_start_hour(ECO_START_HOUR),
+        eco_end_hour(ECO_END_HOUR),
+        eco_target_percentage(ECO_NIGHT_TARGET_PERCENTAGE) {}
 };
 
-// Manages temperature via a single PID (hydraulic) + electric state machine.
+// Regulates the dryer air temperature with two independent on/off heat sources.
 //
-// Architecture:
-//   REGULATION  — PID drives hydraulic (0–100%); electric stays OFF.
-//   BOOST       — Triggered when hydraulic alone cannot close the gap fast enough.
-//                 Hydraulic forced to 100%, electric ON.
-//                 Exits once setpoint is nearly reached (with anti-short-cycle guard).
-//   ELECTRIC_ONLY — hydraulic_available_ == false (user-disabled).
-//                 Hydraulic hard-guarded to 0; electric regulated by simple hysteresis.
+// Hydraulic — base heat, commanded on/off on a wide hysteresis band with long
+//   minimum on/off times. The remote module holds a fixed water setpoint; its
+//   three-way valve is far too slow to be modulated, which is why v3's PID on
+//   the circulator was dropped.
+// Electric — fine trim on a narrow band, with predictive shutoff so thermal
+//   inertia does not carry the temperature past the setpoint.
 //
-// Invariant: when electric is ON and hydraulic is available, hydraulic is at 100%.
+// Because the bands differ (hydraulic 1.5°C, electric 0.5°C), a large error
+// engages both sources while the last fraction of a degree is closed by the
+// electric alone.
 //
-// SetCurrentHour() must be called each loop (from RTC) for time-based ECO logic.
+// Four independent conditions gate heating, all of which must hold:
+//   heating_permitted_ — inlet probe is fresh (sensor timeout interlock)
+//   fan_active_        — no heat without airflow
+//   *_enabled_         — user toggles from the menu
+//   hydraulic_online_  — the remote module is answering on RS485
+//
+// SetCurrentHour() must be called each loop (from the optional RTC) for the ECO
+// window. Without an RTC the mode stays PERFORMANCE.
 class TemperatureManager
 {
 public:
-  TemperatureManager(ElectricHeater *electric_heater, HydraulicHeater *hydraulic_heater);
+  explicit TemperatureManager(ElectricHeater *electric_heater);
 
   void Begin();
   void Update(float current_temperature);
 
-  // Temperature target (overridden at runtime by potentiometer)
+  // Temperature target (set from the menu)
   void  SetTargetTemperature(float temperature);
   float GetTargetTemperature() const { return params_.temperature_target; }
 
-  // Returns the currently active setpoint (reduced in ECO mode during night window)
+  // Returns the currently active setpoint (reduced during the ECO night window)
   float GetEffectiveTargetTemperature() const;
 
   bool IsTemperatureInRange() const;
@@ -76,86 +99,100 @@ public:
   TemperatureParams       &GetParams()       { return params_; }
   const TemperatureParams &GetParams() const { return params_; }
 
-  // Heater access (for LEDs / monitoring)
-  ElectricHeater  *GetElectricHeater()  { return electric_heater_; }
-  HydraulicHeater *GetHydraulicHeater() { return hydraulic_heater_; }
+  ElectricHeater *GetElectricHeater() { return electric_heater_; }
 
-  // PID access (for logging/monitoring)
-  PIDController *GetPID() { return &pid_; }
+  // --- Source availability and user intent ---
 
-  // Hydraulic availability — compile-time default, overridable at runtime.
-  // False → ELECTRIC_ONLY mode; electric continues without resetting its timers.
-  void SetHydraulicAvailable(bool available);
-  bool GetHydraulicAvailable() const { return hydraulic_available_; }
+  // Remote hydraulic module answering on RS485.
+  void SetHydraulicOnline(bool online);
+  bool GetHydraulicOnline() const { return hydraulic_online_; }
 
-  // Electric heater enable/disable (sensor-timeout safety guard in main.cpp).
-  // False → all heating off; PID frozen. Timers preserved for anti-short-cycle.
+  // Menu toggles.
+  void SetHydraulicEnabled(bool enabled);
+  bool GetHydraulicEnabled() const { return hydraulic_enabled_; }
   void SetElectricEnabled(bool enabled);
   bool GetElectricEnabled() const { return electric_enabled_; }
 
-  // Fan active flag — both heaters blocked when fan is not running.
+  // Sensor freshness interlock: false → all heating off, timers preserved.
+  void SetHeatingPermitted(bool permitted);
+  bool GetHeatingPermitted() const { return heating_permitted_; }
+
+  // Fan interlock — both sources blocked when the fan is not running.
   void SetFanActive(bool active);
   bool GetFanActive() const { return fan_active_; }
 
-  // Electric heater current state (for LEDs / monitoring)
-  bool  GetElectricOn()      const { return electric_on_; }
-  float GetElectricOnTimer() const { return elec_on_timer_; }
+  // --- Current outputs (for the display and telemetry) ---
+  bool GetElectricOn()  const { return electric_on_; }
+  bool GetHydraulicOn() const { return hydraulic_on_; }
 
-  // Current control state (for logging / monitoring)
+  float GetElectricOnTimer()  const { return elec_on_timer_; }
+  float GetHydraulicOnTimer() const { return hydro_on_timer_; }
+  float GetTemperatureDerivative() const { return dT_dt_; }
+
   ControlState GetControlState() const { return control_state_; }
+  static const char *GetControlStateName(ControlState state);
 
-  // Operating mode (set from physical MODE_SELECTOR_PIN each cycle)
+  // Operating mode (ECO requires an RTC; forced to PERFORMANCE without one)
   void          SetOperatingMode(OperatingMode mode);
   OperatingMode GetOperatingMode() const { return operating_mode_; }
   bool          IsEcoActive() const { return operating_mode_ == OperatingMode::ECO; }
 
-  // Current hour from RTC — must be updated each loop for time-based ECO logic
+  // Current hour from the RTC — must be updated each loop for the ECO window
   void SetCurrentHour(uint8_t hour) { current_hour_ = hour; }
 
-  // Returns true when ECO switch is ON and current time is inside the night window
+  // True when ECO is selected and the current time is inside the night window
   bool IsEcoWindowActive() const;
 
-  // Reset PID and all electric heater timers — call on phase transitions
+  // Turn both sources off immediately, preserving the anti-short-cycle timers.
+  void AllOff() { ForceAllOff(); }
+
+  // Reset both sources and their timers — called on phase transitions
   void ResetControl();
 
-  // Print current control state and heater status to logger (for tuning / debug)
   void PrintDebug() const;
 
 private:
   ElectricHeater   *electric_heater_;
-  HydraulicHeater  *hydraulic_heater_;
   TemperatureParams params_;
-
-  PIDController pid_;  // Drives hydraulic (0–100%), output frozen during BOOST
 
   float    current_temperature_;
   uint32_t last_update_ms_;
 
-  bool hydraulic_available_;  // User toggle: false → ELECTRIC_ONLY
-  bool electric_enabled_;     // Sensor-timeout guard: false → all heating off
-  bool fan_active_;           // Fan interlock: false → all heating blocked
-  bool electric_on_;          // Current state of the electric relay
+  bool hydraulic_online_;   // remote module reachable
+  bool hydraulic_enabled_;  // menu toggle
+  bool electric_enabled_;   // menu toggle
+  bool heating_permitted_;  // sensor freshness interlock
+  bool fan_active_;         // fan interlock
 
-  ControlState control_state_;  // Current state machine state
+  bool electric_on_;
+  bool hydraulic_on_;
 
-  float dT_dt_;           // Filtered temperature derivative (°C/s), positive when rising
-  float prev_temp_;       // Previous temperature for derivative computation
-  bool  first_tick_;      // Skip derivative on the very first tick
+  ControlState control_state_;
 
-  float hydro_sat_timer_; // Seconds hydraulic has been continuously at ≥99%
-  float elec_on_timer_;   // Seconds electric has been continuously ON (this cycle)
-  float elec_off_timer_;  // Seconds electric has been continuously OFF (this cycle)
+  float dT_dt_;       // Filtered temperature derivative (°C/s), positive when rising
+  float prev_temp_;
+  bool  first_tick_;
+
+  float elec_on_timer_;
+  float elec_off_timer_;
+  float hydro_on_timer_;
+  float hydro_off_timer_;
 
   float debug_log_timer_s_;
 
   OperatingMode operating_mode_;
   uint8_t       current_hour_;
 
-  // Switch electric relay state; resets the appropriate timer for anti-short-cycle.
+  // Switch a source; resets the matching anti-short-cycle timer.
   void SetElectric(bool on);
+  void SetHydraulic(bool on);
 
-  // Force both actuators off without changing state machine or timers.
+  // Force both sources off without disturbing the anti-short-cycle timers.
   void ForceAllOff();
+
+  // True when the temperature is rising fast enough that it would overshoot
+  // the setpoint within `horizon` seconds if the source kept running.
+  bool WillOvershoot(float temperature, float setpoint, float horizon) const;
 
   void UpdateHeating(float dt);
 };

@@ -1,746 +1,459 @@
+// Unit tests for TemperatureManager — the real class, compiled natively.
+//
+// v4 replaced the PID on the circulator with two independent on/off sources:
+// the hydraulic as base heat (wide band, slow cycling) and the electric as fine
+// trim (narrow band, predictive shutoff). These tests drive the production code
+// directly through the shim clock, so a change in config.h or in the control
+// logic shows up here instead of silently diverging.
+
 #include <unity.h>
-#include <cmath>
-#include "../../../include/PIDController.h"
 
-/**
- * Unit tests for the PID + electric state machine heating strategy.
- *
- * HeatingControllerSim replicates TemperatureManager::UpdateHeating() logic
- * in pure C++ (no Arduino / hardware dependencies). All thresholds and gains
- * mirror config.h defaults so that any constant change breaks a test.
- */
+#include "TemperatureManager.h"
+#include "ElectricHeater.h"
 
-// ===== Constants (mirrored from config.h) =====
-static constexpr float kKp            = 15.0f;
-static constexpr float kKi            = 0.1f;
-static constexpr float kKd            = 2.0f;
-static constexpr float kIntMax        = 200.0f;
-static constexpr float kDerivFilter   = 0.1f;
-static constexpr float kEHaut         = 5.0f;
-static constexpr float kEBas          = 0.4f;
-static constexpr float kBandeElec     = 0.5f;
-static constexpr float kTSat          = 75.0f;
-static constexpr float kEtaMax        = 900.0f;
-static constexpr float kHorizon       = 60.0f;
-static constexpr float kTOnMin        = 60.0f;
-static constexpr float kTOffMin       = 60.0f;
-static constexpr float kDtFalling     = 0.01f;
-static constexpr float kDtPredictMin  = 0.05f;
-static constexpr float kSafetyMax     = 50.0f;
+// --- Harness ----------------------------------------------------------------
 
-// ===== Simulator =====
-
-struct HeatingControllerSim
+namespace
 {
-  enum class State { REGULATION, BOOST, ELECTRIC_ONLY };
 
-  PIDController pid;
+struct Harness
+{
+  ElectricHeater     electric;
+  TemperatureManager manager;
 
-  State   state;
-  bool    electric_on;
-  uint8_t hydraulic_power;  // 0-100%
+  Harness() : electric(), manager(&electric) {}
 
-  bool    hydro_available;
-  bool    fan_active;
-  bool    heating_enabled;
-
-  float   dT_dt;
-  float   prev_temp;
-  bool    first_tick;
-
-  float   hydro_sat_timer;
-  float   elec_on_timer;
-  float   elec_off_timer;
-
-  explicit HeatingControllerSim(bool hydro = true, bool fan = true, bool heating = true)
-      : pid(kKp, kKi, kKd, 0.0f, 100.0f, kIntMax, kDerivFilter),
-        state(hydro ? State::REGULATION : State::ELECTRIC_ONLY),
-        electric_on(false),
-        hydraulic_power(0),
-        hydro_available(hydro),
-        fan_active(fan),
-        heating_enabled(heating),
-        dT_dt(0.0f),
-        prev_temp(0.0f),
-        first_tick(true),
-        hydro_sat_timer(0.0f),
-        elec_on_timer(0.0f),
-        elec_off_timer(kTOffMin) {}  // initialized to allow immediate first activation
-
-  void set_electric(bool on)
+  // Bring the manager into a state where both sources are allowed to run.
+  void Arm(bool hydraulic_online = true)
   {
-    if (on == electric_on) return;
-    electric_on = on;
-    if (on)
-      elec_on_timer = 0.0f;
-    else
-      elec_off_timer = 0.0f;
+    TestSetMillis(0);
+    manager.Begin();
+    manager.SetFanActive(true);
+    manager.SetHeatingPermitted(true);
+    manager.SetElectricEnabled(true);
+    manager.SetHydraulicEnabled(true);
+    manager.SetHydraulicOnline(hydraulic_online);
   }
 
-  void step(float setpoint, float T, float dt = 1.0f)
+  // Advance the clock by `seconds` and run one control tick at `temperature`.
+  void Tick(float temperature, uint32_t seconds = 1)
   {
-    // Sensor fault
-    if (std::isnan(T) || T < -20.0f || T > 200.0f)
-    {
-      hydraulic_power = 0;
-      set_electric(false);
-      pid.Reset();
-      return;
-    }
-
-    // Safety cutoff
-    if (T > kSafetyMax)
-    {
-      hydraulic_power = 0;
-      set_electric(false);
-      pid.Reset();
-      state = hydro_available ? State::REGULATION : State::ELECTRIC_ONLY;
-      return;
-    }
-
-    // Fan / heating interlock
-    if (!fan_active || !heating_enabled)
-    {
-      hydraulic_power = 0;
-      set_electric(false);
-      return;
-    }
-
-    // Filtered temperature derivative
-    if (!first_tick)
-    {
-      float raw = (T - prev_temp) / dt;
-      dT_dt = kDerivFilter * raw + (1.0f - kDerivFilter) * dT_dt;
-    }
-    else
-    {
-      dT_dt = 0.0f;
-      first_tick = false;
-    }
-    prev_temp = T;
-
-    float error = setpoint - T;
-
-    // Hydraulic availability transitions
-    if (!hydro_available && state != State::ELECTRIC_ONLY)
-    {
-      state = State::ELECTRIC_ONLY;
-      hydraulic_power = 0;
-    }
-    else if (hydro_available && state == State::ELECTRIC_ONLY)
-    {
-      float resume_int = (-kKp * error) / kKi;
-      if (resume_int < -kIntMax) resume_int = -kIntMax;
-      if (resume_int > kIntMax)  resume_int = kIntMax;
-      pid.SetIntegral(resume_int);
-      state = State::REGULATION;
-      hydro_sat_timer = 0.0f;
-    }
-
-    if (state == State::ELECTRIC_ONLY)
-    {
-      hydraulic_power = 0;
-
-      if (!electric_on)
-      {
-        if (elec_off_timer >= kTOffMin && error > kBandeElec)
-          set_electric(true);
-      }
-      else
-      {
-        float predicted = T + dT_dt * kHorizon;
-        bool will_overshoot = (dT_dt > kDtPredictMin) && (predicted >= setpoint);
-        if (elec_on_timer >= kTOnMin && (error <= 0.0f || will_overshoot))
-          set_electric(false);
-      }
-    }
-    else if (state == State::REGULATION)
-    {
-      float last_u = pid.GetLastOutput();
-      bool freeze_int = (last_u >= 100.0f || last_u <= 0.0f);
-      float u = pid.Compute(setpoint, T, dt, freeze_int);
-      hydraulic_power = (uint8_t)(u < 0.0f ? 0 : (u > 100.0f ? 100 : (uint8_t)u));
-
-      hydro_sat_timer = (u >= 99.0f) ? hydro_sat_timer + dt : 0.0f;
-
-      float eta;
-      if (dT_dt > 0.001f)
-        eta = error / dT_dt;
-      else if (dT_dt < -kDtFalling)
-        eta = kEtaMax + 1.0f;
-      else
-        eta = 0.0f;
-
-      bool can_boost = (elec_off_timer >= kTOffMin);
-      bool cond1 = (error > kEHaut);
-      bool cond2 = (hydro_sat_timer >= kTSat && error > kEBas);
-      bool cond3 = (eta > kEtaMax && error > kEBas);
-
-      if (can_boost && (cond1 || cond2 || cond3))
-      {
-        state = State::BOOST;
-        hydro_sat_timer = 0.0f;
-        hydraulic_power = 100;
-        set_electric(true);
-      }
-    }
-    else  // BOOST
-    {
-      hydraulic_power = 100;
-      pid.Compute(setpoint, T, dt, true);
-
-      bool can_exit    = (elec_on_timer >= kTOnMin);
-      bool should_exit = (error < kEBas);
-
-      if (can_exit && should_exit)
-      {
-        float resume_int = (100.0f - kKp * error) / kKi;
-        if (resume_int < -kIntMax) resume_int = -kIntMax;
-        if (resume_int > kIntMax)  resume_int = kIntMax;
-        pid.SetIntegral(resume_int);
-        state = State::REGULATION;
-        hydro_sat_timer = 0.0f;
-        set_electric(false);
-      }
-    }
-
-    // Hard hydraulic guard
-    if (!hydro_available) hydraulic_power = 0;
-
-    // Advance timers
-    if (electric_on) elec_on_timer += dt;
-    else             elec_off_timer += dt;
+    TestAdvanceMillis(seconds * 1000);
+    manager.Update(temperature);
   }
 
-  void step_n(int n, float setpoint, float T, float dt = 1.0f)
+  // Hold a steady temperature for `seconds`, one tick per second.
+  void Hold(float temperature, uint32_t seconds)
   {
-    for (int i = 0; i < n; i++) step(setpoint, T, dt);
+    for (uint32_t i = 0; i < seconds; i++)
+    {
+      Tick(temperature, 1);
+    }
   }
 };
 
-// ===== Boilerplate =====
+} // namespace
+
 void setUp(void) {}
 void tearDown(void) {}
 
-// ===== Cold start: BOOST triggered immediately by large error =====
+// --- Interlocks -------------------------------------------------------------
 
-void test_boost_triggers_immediately_on_large_error(void)
+void test_no_heating_without_fan(void)
 {
-  // error = 40 - 29 = 11°C > kEHaut (5°C) → BOOST on the very first tick.
-  // elec_off_timer is initialised to kTOffMin so can_boost is true immediately.
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, 29.0f);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.SetFanActive(false);
 
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_EQUAL_UINT8(100, sim.hydraulic_power);
-  TEST_ASSERT_TRUE(sim.electric_on);
+  h.Hold(20.0f, 5);
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_EQUAL(static_cast<int>(ControlState::OFF),
+                    static_cast<int>(h.manager.GetControlState()));
 }
 
-void test_boost_not_triggered_for_small_error(void)
+void test_no_heating_when_reading_is_stale(void)
 {
-  // error = 40 - 35.5 = 4.5°C < kEHaut (5°C) → stays in REGULATION.
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, 35.5f);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  // Warm up normally, then lose the probe.
+  h.Hold(20.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  h.manager.SetHeatingPermitted(false);
+  h.Hold(20.0f, 5);
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
 }
 
-// ===== Fine regulation: electric stays off near setpoint =====
-
-void test_fine_regulation_electric_stays_off(void)
+void test_safety_cutoff_stops_both_sources(void)
 {
-  // Temperature 0.2°C below setpoint — well within REGULATION, no BOOST conditions met.
-  HeatingControllerSim sim(true);
-  sim.step_n(500, 40.0f, 39.8f);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(45.0f);
 
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  h.Hold(20.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // Above TEMPERATURE_SAFETY_MAX everything must drop out at once.
+  h.Tick(TEMPERATURE_SAFETY_MAX + 1.0f);
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
 }
 
-// ===== Anti-short-cycle: BOOST cannot re-trigger before kTOffMin =====
-
-void test_anti_short_cycle_blocks_boost_after_exit(void)
+void test_sensor_fault_stops_both_sources(void)
 {
-  HeatingControllerSim sim(true);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.Hold(20.0f, 5);
 
-  // Trigger BOOST (large error)
-  sim.step(40.0f, 29.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
+  h.Tick(NAN);
 
-  // Force exit conditions: bring error < kEBas and run kTOnMin ticks
-  sim.step_n((int)kTOnMin + 1, 40.0f, 39.9f);  // error = 0.1 < kEBas
-  // Should have exited BOOST
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-  TEST_ASSERT_FALSE(sim.electric_on);
-
-  // elec_off_timer just reset to 0 — BOOST cannot retrigger for kTOffMin seconds
-  // even if a large error appears again
-  sim.step(40.0f, 29.0f);  // large error again, but elec_off_timer < kTOffMin
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
 }
 
-void test_boost_allowed_after_toffmin_elapsed(void)
+// --- Electric trim ----------------------------------------------------------
+
+void test_electric_turns_on_beyond_its_band(void)
 {
-  HeatingControllerSim sim(true);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  // Trigger and exit BOOST
-  sim.step(40.0f, 29.0f);
-  sim.step_n((int)kTOnMin + 1, 40.0f, 39.9f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
+  h.Tick(39.0f); // error 1.0 > CTRL_BANDE_ELEC
 
-  // Wait kTOffMin seconds in regulation with small error
-  sim.step_n((int)kTOffMin, 40.0f, 39.8f);
-
-  // Now large error should trigger BOOST again
-  sim.step(40.0f, 29.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_TRUE(sim.electric_on);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
-// ===== Anti-short-cycle: BOOST cannot exit before kTOnMin =====
-
-void test_anti_short_cycle_boost_minimum_on_time(void)
+void test_electric_stays_off_inside_its_band(void)
 {
-  HeatingControllerSim sim(true);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  // Enter BOOST
-  sim.step(40.0f, 29.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
+  h.Hold(39.8f, 5); // error 0.2 < CTRL_BANDE_ELEC
 
-  // Setpoint already reached (error < kEBas), but kTOnMin not elapsed yet
-  sim.step(40.0f, 39.9f);  // error = 0.1 < kEBas, but elec_on_timer ≈ 1s < kTOnMin
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_TRUE(sim.electric_on);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
 }
 
-// ===== Safety cutoff =====
-
-void test_safety_cutoff_forces_all_off(void)
+void test_electric_respects_minimum_on_time(void)
 {
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, 29.0f);  // enter BOOST
-  TEST_ASSERT_TRUE(sim.electric_on);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  sim.step(40.0f, kSafetyMax + 0.1f);
+  h.Tick(39.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  // Setpoint reached immediately, but the minimum ON time is not elapsed.
+  h.Tick(41.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
 }
 
-void test_safety_does_not_fire_at_exact_limit(void)
+void test_electric_respects_minimum_off_time(void)
 {
-  // Condition is T > kSafetyMax (strict), not T >= kSafetyMax.
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, kSafetyMax);
-  // No safety cutoff; normal control applies (error = 40 - 50 = -10 → u = 0)
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  // Drive one full ON/OFF cycle.
+  h.Tick(39.0f);
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  // Demand heat again straight away: the OFF timer must hold it back.
+  h.Tick(39.0f);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  h.Hold(39.0f, static_cast<uint32_t>(CTRL_T_OFF_MIN) + 2);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
-void test_sensor_fault_forces_all_off(void)
+void test_predictive_shutoff_ignores_sensor_noise(void)
 {
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, 29.0f);  // enter BOOST
-  TEST_ASSERT_TRUE(sim.electric_on);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  sim.step(40.0f, std::numeric_limits<float>::quiet_NaN());
+  // Settle just under the setpoint with a flat derivative.
+  h.Tick(39.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+  h.Hold(39.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
 
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  // One isolated 0.1°C quantization step, then flat again. Filtered, that peaks
+  // at ~0.03°C/s — below CTRL_DT_PREDICT_MIN. The naive prediction
+  // 39.1 + 0.03 * 60 = 40.9 does cross the setpoint, so without the noise gate
+  // this spike alone would cut the electric out.
+  h.Tick(39.1f);
+  h.Tick(39.1f);
+
+  TEST_ASSERT_TRUE(h.manager.GetTemperatureDerivative() < CTRL_DT_PREDICT_MIN);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
-// ===== Fan interlock =====
-
-void test_fan_interlock_blocks_all_heating(void)
+void test_predictive_shutoff_fires_on_genuine_rise(void)
 {
-  HeatingControllerSim sim(true, /*fan=*/false);
-  sim.step_n(20, 40.0f, 22.0f);  // large error, but fan off
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-  TEST_ASSERT_FALSE(sim.electric_on);
-}
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-void test_fan_restored_allows_boost(void)
-{
-  HeatingControllerSim sim(true, /*fan=*/false);
-  sim.step_n(10, 40.0f, 22.0f);  // blocked
-  TEST_ASSERT_FALSE(sim.electric_on);
+  h.Tick(35.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+  h.Hold(35.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
 
-  sim.fan_active = true;
-  sim.step(40.0f, 22.0f);  // error = 18 > kEHaut → BOOST
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_TRUE(sim.electric_on);
-}
-
-// ===== ELECTRIC_ONLY mode (hydraulic unavailable) =====
-
-void test_electric_only_hydro_always_zero(void)
-{
-  HeatingControllerSim sim(false);  // hydro unavailable
-  sim.step_n(20, 40.0f, 22.0f);
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-}
-
-void test_electric_only_turns_on_when_error_exceeds_band(void)
-{
-  // error = 40 - 39 = 1°C > kBandeElec (0.5°C) → electric ON (elec_off_timer >= kTOffMin)
-  HeatingControllerSim sim(false);
-  sim.step(40.0f, 39.0f);
-
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::ELECTRIC_ONLY, (int)sim.state);
-  TEST_ASSERT_TRUE(sim.electric_on);
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-}
-
-void test_electric_only_stays_off_when_error_below_band(void)
-{
-  // error = 40 - 39.7 = 0.3°C < kBandeElec (0.5°C) → stays OFF
-  HeatingControllerSim sim(false);
-  sim.step_n(20, 40.0f, 39.7f);
-  TEST_ASSERT_FALSE(sim.electric_on);
-}
-
-void test_electric_only_turns_off_when_setpoint_reached(void)
-{
-  HeatingControllerSim sim(false);
-  sim.step(40.0f, 39.0f);  // turn ON
-  TEST_ASSERT_TRUE(sim.electric_on);
-
-  // Run kTOnMin seconds, then present T > setpoint
-  sim.step_n((int)kTOnMin + 1, 40.0f, 40.5f);  // error < 0 → reached
-  TEST_ASSERT_FALSE(sim.electric_on);
-}
-
-void test_electric_only_predictive_shutoff_ignores_noise(void)
-{
-  // Sensor quantization (0.1°C steps at 1 Hz) creates derivative spikes of ~0.03°C/s.
-  // These must NOT trigger predictive shutoff because they are below kDtPredictMin (0.05).
-  // Simulate: sp=33°C, T oscillates between 32.1 and 32.2 while electric is ON.
-  HeatingControllerSim sim(false);
-  sim.step(33.0f, 32.4f);  // turn ON (error = 0.6 > kBandeElec)
-  TEST_ASSERT_TRUE(sim.electric_on);
-
-  // Feed kTOnMin+ ticks alternating 32.1/32.2 — derivative stays at ~0.03°C/s (noise)
-  float temps[] = { 32.1f, 32.2f, 32.1f, 32.2f };
-  for (int i = 0; i < (int)kTOnMin + 10; i++)
-    sim.step(33.0f, temps[i % 4]);
-
-  // Electric must still be ON: dT noise < kDtPredictMin (0.05), prediction should not fire
-  // (T never reaches setpoint either — error = 33 - 32.2 = 0.8 > 0)
-  TEST_ASSERT_TRUE(sim.electric_on);
-}
-
-void test_electric_only_predictive_shutoff_fires_on_genuine_rise(void)
-{
-  // When temperature is genuinely rising fast enough (dT > kDtPredictMin = 0.05°C/s)
-  // and the prediction shows overshoot, the electric should shut off early.
-  HeatingControllerSim sim(false);
-  sim.step(33.0f, 32.0f);  // turn ON
-
-  // Build up a genuine rise: 0.06°C/tick over kTOnMin+ steps
-  // After kTOnMin steps at +0.06°C/tick: T ≈ 32 + kTOnMin*0.06 ≈ 35.6°C > sp
-  // But prediction will fire before that (when T + dT*kHorizon >= sp)
-  float T = 32.0f;
-  bool shutoff_seen = false;
-  for (int i = 0; i < (int)kTOnMin + 100; i++)
+  // A sustained 0.5°C/s climb predicts far past the setpoint within
+  // CTRL_HORIZON, so the electric must cut out before overshooting.
+  for (int i = 1; i <= 6 && h.manager.GetElectricOn(); i++)
   {
-    T += 0.06f;
-    if (T > 36.0f) T = 36.0f;
-    sim.step(33.0f, T);
-    if (!sim.electric_on && i > (int)kTOnMin) { shutoff_seen = true; break; }
-  }
-  TEST_ASSERT_TRUE(shutoff_seen);
-}
-
-void test_electric_only_anti_short_cycle_observed(void)
-{
-  HeatingControllerSim sim(false);
-  sim.step(40.0f, 39.0f);  // ON
-  TEST_ASSERT_TRUE(sim.electric_on);
-
-  sim.step_n((int)kTOnMin + 1, 40.0f, 40.5f);  // OFF after kTOnMin
-  TEST_ASSERT_FALSE(sim.electric_on);
-
-  // elec_off_timer just reset; cannot turn ON again immediately
-  sim.step(40.0f, 39.0f);  // error > band, but elec_off_timer < kTOffMin
-  TEST_ASSERT_FALSE(sim.electric_on);
-}
-
-// ===== Hydraulic disabled mid-BOOST =====
-
-void test_hydro_disabled_during_boost_drops_hydro_to_zero(void)
-{
-  HeatingControllerSim sim(true);
-
-  // Enter BOOST
-  sim.step(40.0f, 29.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_EQUAL_UINT8(100, sim.hydraulic_power);
-
-  // Disable hydraulic mid-BOOST
-  sim.hydro_available = false;
-  sim.step(40.0f, 30.0f);
-
-  // Must transition to ELECTRIC_ONLY and hydro forced to 0
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::ELECTRIC_ONLY, (int)sim.state);
-  TEST_ASSERT_EQUAL_UINT8(0, sim.hydraulic_power);
-}
-
-void test_hydro_disabled_during_boost_electric_continues(void)
-{
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, 29.0f);  // BOOST, electric ON
-  TEST_ASSERT_TRUE(sim.electric_on);
-
-  sim.hydro_available = false;
-  sim.step(40.0f, 30.0f);  // transition to ELECTRIC_ONLY
-
-  // Electric was ON; in ELECTRIC_ONLY it follows its own hysteresis.
-  // error = 40 - 30 = 10 > kBandeElec (0.5), and the elec_on_timer has been running.
-  // The electric should remain ON (can_turn_off requires kTOnMin elapsed).
-  TEST_ASSERT_TRUE(sim.electric_on);
-}
-
-void test_hydro_disabled_anti_short_cycle_timers_preserved(void)
-{
-  // Disable hydro BEFORE any electric cycling — timers should be at their initial values.
-  HeatingControllerSim sim(true);
-  float off_timer_before = sim.elec_off_timer;
-
-  sim.hydro_available = false;
-  sim.step(40.0f, 39.0f);  // ELECTRIC_ONLY, error > band → electric turns ON
-
-  // The off timer at the moment of transition was preserved (≥ kTOffMin), so electric
-  // is allowed to turn on immediately.
-  TEST_ASSERT_TRUE(sim.electric_on);
-  (void)off_timer_before;
-}
-
-// ===== Hydraulic re-enabled: bumpless (no jump to 100%) =====
-
-void test_hydro_reenabled_hydro_does_not_jump_to_full(void)
-{
-  // Start in ELECTRIC_ONLY with a moderate error (2°C).
-  // When hydro is re-enabled, the bumpless integral init should prevent hydro
-  // from immediately jumping to 100%.
-  HeatingControllerSim sim(false);
-  sim.step_n(10, 40.0f, 38.0f);  // settle in ELECTRIC_ONLY
-
-  sim.hydro_available = true;
-  sim.step(40.0f, 38.0f);  // transition to REGULATION, error = 2°C
-
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-  // PID was initialised with bumpless integral so output < 100% for a 2°C error
-  TEST_ASSERT_LESS_THAN(100, (int)sim.hydraulic_power);
-}
-
-void test_hydro_reenabled_after_boost_bumpless_not_zero(void)
-{
-  // BOOST → REGULATION transition: hydro was at 100%. Bumpless should give a
-  // first-tick hydro output that is significantly above 0.
-  HeatingControllerSim sim(true);
-
-  // Enter BOOST with large error
-  sim.step(40.0f, 25.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-
-  // Wait kTOnMin steps then bring error just below kEBas
-  sim.step_n((int)kTOnMin + 1, 40.0f, 39.9f);  // error = 0.1 < kEBas → REGULATION
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-
-  // Hydraulic should have resumed from a value > 0 (bumpless from 100% sets a
-  // positive integral that keeps output non-trivial)
-  TEST_ASSERT_GREATER_THAN(0, (int)sim.hydraulic_power);
-}
-
-// ===== PID integral frozen during BOOST =====
-
-void test_integral_frozen_during_boost(void)
-{
-  HeatingControllerSim sim(true);
-
-  // Enter BOOST
-  sim.step(40.0f, 29.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-
-  float integral_on_boost_entry = sim.pid.GetIntegral();
-  sim.step(40.0f, 30.0f);  // tick inside BOOST
-  TEST_ASSERT_EQUAL_FLOAT(integral_on_boost_entry, sim.pid.GetIntegral());
-}
-
-// ===== Falling temperature triggers BOOST (cold hydraulic water scenario) =====
-
-void test_boost_triggers_when_temperature_falling_with_error(void)
-{
-  // Cold hydraulic water scenario: temperature falls steadily at -0.02°C/s.
-  // setpoint=30, T starts at 32 and drops. For cond3 to fire we need:
-  //   - error > kEBas (0.4): T < 29.6 → reached after ~120 ticks (32 - 120*0.02 = 29.6)
-  //   - dT_dt < -kDtFalling (-0.01): filter converges after ~20 ticks at -0.02°C/s
-  //   - can_boost: elec_off_timer initialized to kTOffMin → true from tick 1
-  HeatingControllerSim sim(true);
-  float T = 32.0f;
-  sim.step(30.0f, T);  // prime prev_temp
-
-  for (int i = 0; i < 150; i++)
-  {
-    T -= 0.02f;
-    sim.step(30.0f, T);
-    if (sim.state == HeatingControllerSim::State::BOOST) break;
+    h.Tick(35.0f + 0.5f * i);
   }
 
-  // After ~125 ticks: T≈29.5°C, error≈0.5 > kEBas, dT_dt≈-0.018 < -kDtFalling
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_TRUE(sim.electric_on);
+  TEST_ASSERT_TRUE(h.manager.GetTemperatureDerivative() > CTRL_DT_PREDICT_MIN);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
 }
 
-void test_boost_not_triggered_when_temperature_barely_falling(void)
+// --- Hydraulic base heat ----------------------------------------------------
+
+void test_hydraulic_turns_on_beyond_its_wider_band(void)
 {
-  // dT_dt ≈ -0.005°C/s < kDtFalling (0.01): falling branch of cond3 NOT taken.
-  // setpoint=30, T starts at 32, drops 0.005°C/tick.
-  // After 500 ticks: T = 32 - 2.5 = 29.5°C, error = 0.5 > kEBas.
-  // cond1 won't fire (error < kEHaut=5), cond2 won't fire (PID not saturated),
-  // cond3 won't fire (dT barely below threshold, eta branch = 0).
-  HeatingControllerSim sim(true);
-  float T = 32.0f;
-  sim.step(30.0f, T);  // prime prev_temp
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  bool boost_seen = false;
-  for (int i = 0; i < 500; i++)
-  {
-    T -= 0.005f;
-    sim.step(30.0f, T);
-    if (sim.state == HeatingControllerSim::State::BOOST) { boost_seen = true; break; }
-  }
+  h.Tick(35.0f); // error 5.0 > CTRL_BANDE_HYDRO
 
-  TEST_ASSERT_FALSE(boost_seen);
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
-// ===== BOOST exits only when setpoint is reached =====
-
-void test_boost_exits_only_when_error_below_e_bas(void)
+void test_small_error_is_trimmed_by_electric_alone(void)
 {
-  HeatingControllerSim sim(true);
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  // Enter BOOST
-  sim.step(40.0f, 25.0f);
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
+  // Error 1.0: above the electric band, below the hydraulic band.
+  h.Hold(39.0f, 5);
 
-  // Simulate temperature rising but stopping just above E_BAS (not at setpoint yet)
-  // After kTOnMin steps, error = 40 - 39.7 = 0.3 < kEBas → should exit
-  sim.step_n((int)kTOnMin, 40.0f, 39.5f);   // error = 0.5 ≥ kEBas → still BOOST
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-
-  sim.step(40.0f, 39.7f);  // error = 0.3 < kEBas AND kTOnMin elapsed → REGULATION
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::REGULATION, (int)sim.state);
-  TEST_ASSERT_FALSE(sim.electric_on);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
 }
 
-void test_boost_does_not_exit_early_while_below_setpoint(void)
+void test_hydraulic_respects_its_long_minimum_on_time(void)
 {
-  // Even after kTOnMin seconds, BOOST must NOT exit if error >= kEBas.
-  HeatingControllerSim sim(true);
-  sim.step(40.0f, 25.0f);  // enter BOOST
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
 
-  // Run kTOnMin+10 steps at error = 2°C (> kEBas)
-  sim.step_n((int)kTOnMin + 10, 40.0f, 38.0f);  // error = 2 > kEBas
+  h.Tick(35.0f);
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
 
-  TEST_ASSERT_EQUAL((int)HeatingControllerSim::State::BOOST, (int)sim.state);
-  TEST_ASSERT_TRUE(sim.electric_on);
+  // Setpoint reached, but the valve must not be cycled before its minimum.
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_HYDRO_T_ON_MIN) - 10);
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
+
+  h.Hold(41.0f, 20);
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
 }
 
-// ===== SetIntegral bumpless mechanics =====
-
-void test_set_integral_bumpless_resume_from_boost(void)
+void test_hydraulic_stays_off_when_module_is_offline(void)
 {
-  // Verify that SetIntegral() correctly positions the PID output near 100%.
-  // At error = 0.3°C: integral = (100 - 15*0.3) / 0.1 = (100-4.5)/0.1 = 955 → clamped 200.
-  // Output = 15*0.3 + 0.1*200 = 4.5 + 20 = 24.5%.  Not 100% due to clamp, but above 0.
-  PIDController pid(kKp, kKi, kKd, 0.0f, 100.0f, kIntMax, kDerivFilter);
-  float error = 0.3f;
-  float resume_int = (100.0f - kKp * error) / kKi;
-  if (resume_int > kIntMax) resume_int = kIntMax;
-  if (resume_int < -kIntMax) resume_int = -kIntMax;
-  pid.SetIntegral(resume_int);
-  float u = pid.Compute(40.0f, 40.0f - error, 1.0f, false);
-  TEST_ASSERT_GREATER_THAN(0.0f, u);   // output is above 0 (not reset to 0)
+  Harness h;
+  h.Arm(/*hydraulic_online=*/false);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(30.0f, 5);
+
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn()); // electric still trims
+  TEST_ASSERT_EQUAL(static_cast<int>(ControlState::ELECTRIC_ONLY),
+                    static_cast<int>(h.manager.GetControlState()));
 }
 
-void test_set_integral_value_is_clamped(void)
+void test_hydraulic_stays_off_when_disabled_in_menu(void)
 {
-  PIDController pid(1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 50.0f);
-  pid.SetIntegral(9999.0f);
-  TEST_ASSERT_EQUAL_FLOAT(50.0f, pid.GetIntegral());
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.SetHydraulicEnabled(false);
 
-  pid.SetIntegral(-9999.0f);
-  TEST_ASSERT_EQUAL_FLOAT(-50.0f, pid.GetIntegral());
+  h.Hold(30.0f, 5);
+
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
-void test_set_integral_within_bounds(void)
+void test_electric_stays_off_when_disabled_in_menu(void)
 {
-  PIDController pid(1.0f, 1.0f, 0.0f, 0.0f, 100.0f, 50.0f);
-  pid.SetIntegral(25.0f);
-  TEST_ASSERT_EQUAL_FLOAT(25.0f, pid.GetIntegral());
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.SetElectricEnabled(false);
+
+  h.Hold(30.0f, 5);
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_EQUAL(static_cast<int>(ControlState::HYDRAULIC_ONLY),
+                    static_cast<int>(h.manager.GetControlState()));
 }
 
-// ===== Test Runner =====
+void test_both_disabled_reports_off(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.SetElectricEnabled(false);
+  h.manager.SetHydraulicEnabled(false);
+
+  h.Hold(30.0f, 5);
+
+  TEST_ASSERT_EQUAL(static_cast<int>(ControlState::OFF),
+                    static_cast<int>(h.manager.GetControlState()));
+}
+
+// --- Setpoint and ECO -------------------------------------------------------
+
+void test_target_is_clamped_to_menu_range(void)
+{
+  Harness h;
+  h.Arm();
+
+  h.manager.SetTargetTemperature(99.0f);
+  TEST_ASSERT_EQUAL_FLOAT(TARGET_TEMP_MAX, h.manager.GetTargetTemperature());
+
+  h.manager.SetTargetTemperature(-10.0f);
+  TEST_ASSERT_EQUAL_FLOAT(TARGET_TEMP_MIN, h.manager.GetTargetTemperature());
+}
+
+void test_setpoint_change_preserves_anti_short_cycle(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  // Run the electric, then stop it so its OFF timer starts from zero.
+  h.Tick(39.0f);
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  // v3 reset the timers on every setpoint change, which turned the menu into a
+  // way to re-energise the contactor immediately. It must not.
+  h.manager.SetTargetTemperature(44.0f);
+  h.Tick(39.0f);
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+}
+
+void test_eco_window_reduces_setpoint_overnight(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.SetOperatingMode(OperatingMode::ECO);
+
+  h.manager.SetCurrentHour(22); // inside the 18h -> 9h window
+  TEST_ASSERT_TRUE(h.manager.IsEcoWindowActive());
+  TEST_ASSERT_EQUAL_FLOAT(40.0f * ECO_NIGHT_TARGET_PERCENTAGE / 100.0f,
+                          h.manager.GetEffectiveTargetTemperature());
+
+  h.manager.SetCurrentHour(12); // outside
+  TEST_ASSERT_FALSE(h.manager.IsEcoWindowActive());
+  TEST_ASSERT_EQUAL_FLOAT(40.0f, h.manager.GetEffectiveTargetTemperature());
+}
+
+void test_eco_window_ignored_in_performance_mode(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.SetOperatingMode(OperatingMode::PERFORMANCE);
+  h.manager.SetCurrentHour(22);
+
+  TEST_ASSERT_FALSE(h.manager.IsEcoWindowActive());
+  TEST_ASSERT_EQUAL_FLOAT(40.0f, h.manager.GetEffectiveTargetTemperature());
+}
+
+void test_eco_window_handles_non_wrapping_range(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetOperatingMode(OperatingMode::ECO);
+  h.manager.GetParams().eco_start_hour = 9;
+  h.manager.GetParams().eco_end_hour   = 18;
+
+  h.manager.SetCurrentHour(12);
+  TEST_ASSERT_TRUE(h.manager.IsEcoWindowActive());
+
+  h.manager.SetCurrentHour(22);
+  TEST_ASSERT_FALSE(h.manager.IsEcoWindowActive());
+}
+
+// --- Phase transitions ------------------------------------------------------
+
+void test_reset_control_clears_both_sources(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Tick(30.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
+
+  h.manager.ResetControl();
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+}
 
 int main(int argc, char **argv)
 {
   UNITY_BEGIN();
 
-  // Cold start boost
-  RUN_TEST(test_boost_triggers_immediately_on_large_error);
-  RUN_TEST(test_boost_not_triggered_for_small_error);
+  // Interlocks
+  RUN_TEST(test_no_heating_without_fan);
+  RUN_TEST(test_no_heating_when_reading_is_stale);
+  RUN_TEST(test_safety_cutoff_stops_both_sources);
+  RUN_TEST(test_sensor_fault_stops_both_sources);
 
-  // Fine regulation
-  RUN_TEST(test_fine_regulation_electric_stays_off);
+  // Electric trim
+  RUN_TEST(test_electric_turns_on_beyond_its_band);
+  RUN_TEST(test_electric_stays_off_inside_its_band);
+  RUN_TEST(test_electric_respects_minimum_on_time);
+  RUN_TEST(test_electric_respects_minimum_off_time);
+  RUN_TEST(test_predictive_shutoff_ignores_sensor_noise);
+  RUN_TEST(test_predictive_shutoff_fires_on_genuine_rise);
 
-  // Anti-short-cycle
-  RUN_TEST(test_anti_short_cycle_blocks_boost_after_exit);
-  RUN_TEST(test_boost_allowed_after_toffmin_elapsed);
-  RUN_TEST(test_anti_short_cycle_boost_minimum_on_time);
+  // Hydraulic base heat
+  RUN_TEST(test_hydraulic_turns_on_beyond_its_wider_band);
+  RUN_TEST(test_small_error_is_trimmed_by_electric_alone);
+  RUN_TEST(test_hydraulic_respects_its_long_minimum_on_time);
+  RUN_TEST(test_hydraulic_stays_off_when_module_is_offline);
+  RUN_TEST(test_hydraulic_stays_off_when_disabled_in_menu);
+  RUN_TEST(test_electric_stays_off_when_disabled_in_menu);
+  RUN_TEST(test_both_disabled_reports_off);
 
-  // Safety cutoff
-  RUN_TEST(test_safety_cutoff_forces_all_off);
-  RUN_TEST(test_safety_does_not_fire_at_exact_limit);
-  RUN_TEST(test_sensor_fault_forces_all_off);
+  // Setpoint and ECO
+  RUN_TEST(test_target_is_clamped_to_menu_range);
+  RUN_TEST(test_setpoint_change_preserves_anti_short_cycle);
+  RUN_TEST(test_eco_window_reduces_setpoint_overnight);
+  RUN_TEST(test_eco_window_ignored_in_performance_mode);
+  RUN_TEST(test_eco_window_handles_non_wrapping_range);
 
-  // Fan interlock
-  RUN_TEST(test_fan_interlock_blocks_all_heating);
-  RUN_TEST(test_fan_restored_allows_boost);
-
-  // ELECTRIC_ONLY mode
-  RUN_TEST(test_electric_only_hydro_always_zero);
-  RUN_TEST(test_electric_only_turns_on_when_error_exceeds_band);
-  RUN_TEST(test_electric_only_stays_off_when_error_below_band);
-  RUN_TEST(test_electric_only_turns_off_when_setpoint_reached);
-  RUN_TEST(test_electric_only_predictive_shutoff_ignores_noise);
-  RUN_TEST(test_electric_only_predictive_shutoff_fires_on_genuine_rise);
-  RUN_TEST(test_electric_only_anti_short_cycle_observed);
-
-  // Hydraulic disabled mid-BOOST
-  RUN_TEST(test_hydro_disabled_during_boost_drops_hydro_to_zero);
-  RUN_TEST(test_hydro_disabled_during_boost_electric_continues);
-  RUN_TEST(test_hydro_disabled_anti_short_cycle_timers_preserved);
-
-  // Hydraulic re-enabled: bumpless
-  RUN_TEST(test_hydro_reenabled_hydro_does_not_jump_to_full);
-  RUN_TEST(test_hydro_reenabled_after_boost_bumpless_not_zero);
-
-  // Falling temperature triggers BOOST
-  RUN_TEST(test_boost_triggers_when_temperature_falling_with_error);
-  RUN_TEST(test_boost_not_triggered_when_temperature_barely_falling);
-
-  // PID behaviour during BOOST
-  RUN_TEST(test_integral_frozen_during_boost);
-  RUN_TEST(test_boost_exits_only_when_error_below_e_bas);
-  RUN_TEST(test_boost_does_not_exit_early_while_below_setpoint);
-
-  // SetIntegral / bumpless mechanics
-  RUN_TEST(test_set_integral_bumpless_resume_from_boost);
-  RUN_TEST(test_set_integral_value_is_clamped);
-  RUN_TEST(test_set_integral_within_bounds);
+  // Phase transitions
+  RUN_TEST(test_reset_control_clears_both_sources);
 
   return UNITY_END();
 }

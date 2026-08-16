@@ -3,9 +3,8 @@
 
 Dryer::Dryer()
     : electric_heater_(),
-      hydraulic_heater_(),
       air_damper_(),
-      temperature_manager_(&electric_heater_, &hydraulic_heater_),
+      temperature_manager_(&electric_heater_),
       humidity_manager_(&air_damper_),
       session_manager_(&temperature_manager_, &humidity_manager_),
       inlet_temperature_(0.0f),
@@ -105,11 +104,6 @@ void Dryer::SetOperatingMode(OperatingMode mode)
 float Dryer::GetHeaterOutput() const
 {
   return electric_heater_.GetOutput();
-}
-
-float Dryer::GetCirculatorOutput() const
-{
-  return hydraulic_heater_.GetOutput();
 }
 
 void Dryer::RestoreSession(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s)

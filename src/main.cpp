@@ -165,27 +165,11 @@ static void UpdateSensors()
                      (now - g_sensors.inlet_updated_ms) < SENSOR_TIMEOUT_MS;
 
   TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
-  if (inlet_fresh != temperature_manager->GetElectricEnabled())
-  {
-    temperature_manager->SetElectricEnabled(inlet_fresh);
-    if (!inlet_fresh)
-    {
-      Logger::Error("Inlet probe silent for %lu ms — heating disabled", SENSOR_TIMEOUT_MS);
-    }
-    else
-    {
-      Logger::Info("Inlet probe back online — heating re-enabled");
-    }
-  }
+  temperature_manager->SetHeatingPermitted(inlet_fresh);
 
   // The hydraulic module is optional at runtime: losing it degrades to
   // electric-only rather than stopping the session.
-  if (g_sensors.hydraulic_available != temperature_manager->GetHydraulicAvailable())
-  {
-    temperature_manager->SetHydraulicAvailable(g_sensors.hydraulic_available);
-    Logger::Warning("Hydraulic module %s",
-                    g_sensors.hydraulic_available ? "online" : "offline — electric only");
-  }
+  temperature_manager->SetHydraulicOnline(g_sensors.hydraulic_available);
 
   if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
@@ -247,9 +231,8 @@ static void UpdateOutputs()
   bool fan_state = dryer.GetFanOutput() > 0.0f;
   bool damper_state = dryer.GetDamperOutput();
 
-  // Hand the hydraulic command to Core 1, which owns bus A.
-  // TODO(v4): becomes a plain on/off request once TemperatureManager drops the PID.
-  g_hydraulic_request = dryer.GetCirculatorOutput() > 0.05f;
+  // Hand the hydraulic on/off request to the core that owns the module's bus.
+  g_hydraulic_request = dryer.GetHydraulicOn();
 
   if (heater_state != last_heater)
   {

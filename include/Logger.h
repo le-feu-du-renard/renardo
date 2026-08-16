@@ -1,6 +1,8 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
+#ifdef ARDUINO
+
 #include <Arduino.h>
 #include <ArduinoLog.h>
 #include <pico/mutex.h>
@@ -35,5 +37,25 @@ public:
 private:
   static mutex_t mutex_;
 };
+
+#else // !ARDUINO
+
+// Native test build: the domain classes log freely, and the unit tests compile
+// them as-is. Logging compiles away to nothing so no ArduinoLog, no Serial and
+// no pico mutex are needed on the host.
+class Logger
+{
+public:
+  static void Init(int = 0) {}
+  static void SetLevel(int) {}
+  static void Flush() {}
+
+  template<class... Args> static void Debug(const char*, Args...) {}
+  template<class... Args> static void Info(const char*, Args...) {}
+  template<class... Args> static void Warning(const char*, Args...) {}
+  template<class... Args> static void Error(const char*, Args...) {}
+};
+
+#endif // ARDUINO
 
 #endif // LOGGER_H

@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include "ElectricHeater.h"
-#include "HydraulicHeater.h"
 #include "TemperatureManager.h"
 #include "HumidityManager.h"
 #include "AirDamper.h"
@@ -56,10 +55,10 @@ public:
   bool IsEcoWindowActive() const { return temperature_manager_.IsEcoWindowActive(); }
 
   // Outputs
-  float GetHeaterOutput()     const;  // electric 0.0/1.0
-  float GetCirculatorOutput() const;  // hydraulic 0-100%
-  float GetFanOutput()        const { return session_manager_.IsFanActive() ? 1.0f : 0.0f; }
-  bool  GetDamperOutput()     const { return air_damper_.IsOpen(); }
+  float GetHeaterOutput()   const;  // electric 0.0/1.0
+  bool  GetHydraulicOn()    const { return temperature_manager_.GetHydraulicOn(); }
+  float GetFanOutput()      const { return session_manager_.IsFanActive() ? 1.0f : 0.0f; }
+  bool  GetDamperOutput()   const { return air_damper_.IsOpen(); }
 
   // Manager access
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
@@ -71,7 +70,6 @@ public:
 
 private:
   ElectricHeater     electric_heater_;
-  HydraulicHeater    hydraulic_heater_;
   AirDamper          air_damper_;
   TemperatureManager temperature_manager_;
   HumidityManager    humidity_manager_;

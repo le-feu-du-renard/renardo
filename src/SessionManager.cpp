@@ -45,9 +45,8 @@ void SessionManager::Stop()
   current_phase_   = DryerPhase::kStop;
   cooldown_end_ms_ = millis() + (uint32_t)FAN_COOLDOWN_DURATION_S * 1000UL;
 
-  // Turn off heaters immediately
-  temperature_manager_->GetElectricHeater()->SetPower(0.0f);
-  temperature_manager_->GetHydraulicHeater()->SetPower(0.0f);
+  // Turn off both heat sources immediately
+  temperature_manager_->AllOff();
 
   // Disable humidity control and close damper
   humidity_manager_->SetTargetHumidity(0.0f);

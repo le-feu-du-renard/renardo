@@ -112,124 +112,77 @@
 #define ELECTRIC_ENABLED false
 #endif
 
-// ===== PID Parameters (hydraulic controller) =====
+// ===== Heating Control Parameters =====
 //
-// One PID drives the hydraulic source (0–100%). The electric source is
-// controlled separately by a state machine (see CTRL_ parameters below).
+// Two independent on/off sources share the same measured air temperature:
 //
-// The system has significant inertia (large dryer volume, slow thermal response)
-// so all gains should remain moderate — avoid aggressive tuning.
+//   Hydraulic — base heat. The remote module holds a fixed water setpoint and
+//     is commanded on/off. Its three-way valve is far too slow to modulate, so
+//     it runs on a wide hysteresis band with long minimum on/off times.
+//   Electric — fine trim. Narrow hysteresis with predictive shutoff, closing
+//     the last degree that the hydraulic cannot resolve.
 //
-// Kp — Proportional gain
-//   Effect: immediate reaction to the temperature error (setpoint − measured).
-//   u_p = Kp × error.
-//   Increase if the response is too slow.
-//   Decrease if the output oscillates.
-//   Starting point: 15.0  →  try range [5.0 – 25.0]
-#define HYDRAULIC_KP 15.0f
+// CTRL_BANDE_HYDRO must stay well above CTRL_BANDE_ELEC so a large error
+// engages both sources while a small one is trimmed by the electric alone.
 
-// Ki — Integral gain
-//   Effect: eliminates the steady-state offset that Kp alone cannot correct.
-//   Keep low — the integral is frozen during BOOST and electric-only mode.
-//   Increase only if temperature stabilises below setpoint permanently.
-//   Starting point: 0.1  →  try range [0.05 – 0.3]
-#define HYDRAULIC_KI 0.1f
+// CTRL_BANDE_HYDRO — error (°C) above which the hydraulic source is requested.
+//   Raise if the hydraulic engages for gaps the electric could close alone.
+//   Starting point: 1.5°C
+#define CTRL_BANDE_HYDRO 1.5f
 
-// Kd — Derivative gain
-//   Effect: anticipates the error trend (rate of change), helps brake before overshoot.
-//   Filtered by PID_DERIVATIVE_FILTER to reduce sensor noise.
-//   Starting point: 2.0  →  try range [0.5 – 5.0]
-#define HYDRAULIC_KD 2.0f
+// CTRL_HYDRO_T_ON_MIN / CTRL_HYDRO_T_OFF_MIN — minimum time (seconds) the
+//   hydraulic must stay on, respectively off, per cycle. These protect the
+//   three-way valve and the circulator, and must exceed the time the valve
+//   needs to travel and the loop to reach temperature.
+//   Starting point: 300s (5 minutes) each
+#define CTRL_HYDRO_T_ON_MIN 300.0f
+#define CTRL_HYDRO_T_OFF_MIN 300.0f
 
-// PID_INTEGRAL_MAX — Anti-windup clamp on the integral accumulator (°C·s).
-//   Max integral output contribution = Ki × PID_INTEGRAL_MAX = 0.1 × 200 = 20% of u.
-//   Reduce toward 100 if overshoot occurs after a long cold start.
-#define PID_INTEGRAL_MAX 200.0f
+// CTRL_HYDRO_HORIZON — prediction window (seconds) for hydraulic shutoff.
+//   Longer than the electric horizon: the water loop keeps giving off heat well
+//   after the circulator stops.
+//   Starting point: 180s
+#define CTRL_HYDRO_HORIZON 180.0f
 
-// PID_DERIVATIVE_FILTER — Low-pass filter coefficient for the derivative (0–1).
-//   Also used to filter the temperature derivative for ETA and prediction.
-//   Lower → more smoothing; 0.1 is conservative for 1 Hz Modbus sensor data.
-#define PID_DERIVATIVE_FILTER 0.3f
+// ===== Electric Trim Parameters =====
 
-// ===== Electric Boost State Machine Parameters =====
-//
-// The electric heater (ON/OFF) is governed by a state machine with two modes:
-//
-//   REGULATION  — hydraulic runs via PID; electric is OFF.
-//   BOOST       — electric ON, hydraulic forced to 100%.
-//
-// BOOST is triggered when the PID alone cannot close the gap fast enough;
-// it exits once the setpoint is nearly reached. An anti-short-cycle guard
-// (CTRL_T_ON_MIN / CTRL_T_OFF_MIN) protects the electric relay.
-//
-// When hydraulic is disabled by the user, the system enters ELECTRIC_ONLY mode:
-// the electric heater follows a simple ON/OFF hysteresis (CTRL_BANDE_ELEC).
-
-// CTRL_E_HAUT — error threshold (°C) that triggers BOOST immediately.
-//   Raise if the electric activates too eagerly during warm-up.
-//   Lower if the system is too slow to supplement the hydraulic when needed.
-//   Starting point: 5.0°C
-#define CTRL_E_HAUT 5.0f
-
-// CTRL_E_BAS — error threshold (°C) at which BOOST exits (hysteresis low end).
-//   Must be < CTRL_E_HAUT. Represents "close enough to setpoint" for regulation.
-//   Starting point: 0.4°C
-#define CTRL_E_BAS 0.4f
-
-// CTRL_BANDE_ELEC — hysteresis band (°C) for electric-only mode (no hydraulic).
-//   Electric turns ON when error > CTRL_BANDE_ELEC, OFF when error ≤ 0 or overshoot predicted.
+// CTRL_BANDE_ELEC — hysteresis band (°C) for the electric heater.
+//   Electric turns ON when error > CTRL_BANDE_ELEC, OFF when error ≤ 0 or an
+//   overshoot is predicted. Must stay well below CTRL_BANDE_HYDRO.
 //   Starting point: 0.5°C
 #define CTRL_BANDE_ELEC 0.5f
-
-// CTRL_T_SAT — how long (seconds) hydraulic must be saturated at ≥99% with
-//   error > CTRL_E_BAS before BOOST is triggered via the saturation condition.
-//   Increase if BOOST triggers too often during partial-load heating.
-//   Starting point: 120s
-#define CTRL_T_SAT 75.0f
-
-// CTRL_ETA_MAX — maximum acceptable estimated time-to-setpoint (seconds).
-//   If eta = error / dT_dt > CTRL_ETA_MAX and error > CTRL_E_BAS, BOOST is triggered.
-//   Starting point: 900s (15 minutes)
-#define CTRL_ETA_MAX 900.0f
-
-// CTRL_DT_PREDICT_MIN — minimum dT_dt (°C/s) required to activate predictive shutoff
-//   in ELEC_ONLY mode. Below this threshold the derivative is sensor noise
-//   (0.1°C resolution at 1 Hz gives single-tick spikes of ~0.03°C/s filtered).
-//   Starting point: 0.05°C/s
-#define CTRL_DT_PREDICT_MIN 0.05f
-
-// CTRL_DT_FALLING — temperature fall rate (°C/s) below which cond3 treats ETA as infinite.
-//   If dT_dt < -CTRL_DT_FALLING (temperature dropping noticeably) AND error > CTRL_E_BAS,
-//   BOOST triggers — even though dT_dt is not positive.
-//   Covers the case where cold hydraulic water cools the air: the PID raises power
-//   but can't overcome the heat loss without electric boost.
-//   Raise if BOOST triggers too often on minor temperature dips.
-//   Starting point: 0.01°C/s (= 0.6°C/min)
-#define CTRL_DT_FALLING 0.01f
 
 // CTRL_HORIZON — prediction window (seconds) for predictive electric shutoff.
 //   If T_measured + dT_dt × CTRL_HORIZON ≥ setpoint, the electric is cut off early
 //   to avoid overshoot due to thermal inertia.
 //   Set to the approximate time the temperature keeps rising after the relay opens.
-//   Starting point: 300s
+//   Starting point: 60s
 #define CTRL_HORIZON 60.0f
 
+// CTRL_DT_PREDICT_MIN — minimum dT_dt (°C/s) required to activate predictive shutoff.
+//   Below this threshold the derivative is sensor noise (0.1°C resolution at
+//   1 Hz gives single-tick spikes of ~0.03°C/s once filtered).
+//   Starting point: 0.05°C/s
+#define CTRL_DT_PREDICT_MIN 0.05f
+
 // CTRL_T_ON_MIN — minimum time (seconds) the electric must stay ON per cycle.
-//   Anti-short-cycle: BOOST cannot exit before this duration.
-//   Starting point: 300s (5 minutes)
+//   Starting point: 15s
 #define CTRL_T_ON_MIN 15.0f
 
 // CTRL_T_OFF_MIN — minimum time (seconds) the electric must stay OFF between cycles.
-//   Anti-short-cycle: BOOST cannot be triggered before this duration has elapsed
-//   since the electric last turned OFF.
-//   75s is a conservative protection for a contactor while still allowing the
-//   system to react within 2 minutes when the temperature continues to drop.
-//   Starting point: 75s  →  try range [60 – 300s]
+//   Conservative protection for the contactor while still allowing the system to
+//   react within a couple of minutes when the temperature keeps dropping.
+//   Starting point: 60s  →  try range [60 – 300s]
 #define CTRL_T_OFF_MIN 60.0f
 
+// ===== Derivative filter =====
+// DERIVATIVE_FILTER — low-pass coefficient (0–1) applied to dT_dt, which feeds
+//   both predictive shutoffs. Lower → more smoothing.
+#define DERIVATIVE_FILTER 0.3f
+
 // ===== Safety =====
-// Hard cutoff: if the measured temperature exceeds this value, the electric heater is
-// forced OFF immediately and the PID is reset. The hydraulic is manual and unaffected.
+// Hard cutoff: if the measured temperature exceeds this value, both heat sources
+// are forced OFF immediately.
 // Set this to ~5–10°C above the maximum expected operating setpoint.
 #define TEMPERATURE_SAFETY_MAX 50.0f // °C
 

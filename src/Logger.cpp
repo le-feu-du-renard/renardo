@@ -1,5 +1,7 @@
 #include "Logger.h"
 
+#ifdef ARDUINO
+
 mutex_t Logger::mutex_;
 
 void Logger::Init(int level)
@@ -43,3 +45,5 @@ void Logger::Flush()
 {
   Serial.flush();
 }
+
+#endif // ARDUINO

@@ -7,7 +7,7 @@ ElectricHeater::ElectricHeater()
 
 void ElectricHeater::Begin() {
   power_ = 0.0f;
-  Log.notice("Electric heater initialized");
+  Logger::Info("ElectricHeater: initialized");
 }
 
 void ElectricHeater::Update() {
