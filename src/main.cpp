@@ -11,6 +11,8 @@
 #include "OutputDriver.h"
 #include "SettingsStore.h"
 #include "TftDisplay.h"
+#include "MenuSystem.h"
+#include "MenuRenderer.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -32,6 +34,10 @@ OutputDriver damper_output(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, "damper");
 OutputDriver electric_output(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, "electric");
 InputHandler input_handler;
 TftDisplay display;
+MenuSystem menu;
+
+// Declared by MenuSystem.cpp so the ECO entries can grey themselves out.
+void MenuSetRtcAvailable(bool available);
 
 // RTC — optional module; absence disables ECO mode
 TimeManager time_manager(&i2c_bus_1);
@@ -215,6 +221,8 @@ static void UpdateInputs()
     dryer.SetOperatingMode(OperatingMode::PERFORMANCE);
   }
 
+  // START and STOP are read before the menu and act whatever is on screen:
+  // they are the safety controls, not menu entries.
   if (input_handler.IsStartPressed() && !dryer.IsRunning())
   {
     Logger::Info("START button pressed — starting session");
@@ -225,6 +233,22 @@ static void UpdateInputs()
   {
     Logger::Info("STOP button pressed — stopping session");
     dryer.Stop();
+  }
+
+  int32_t detents = input_handler.ConsumeEncoderDelta();
+  bool    clicked = input_handler.IsEncoderClicked();
+
+  if (menu.IsOpen())
+  {
+    menu.HandleRotation(detents);
+    if (clicked)
+    {
+      menu.HandleClick();
+    }
+  }
+  else if (clicked)
+  {
+    menu.Open();
   }
 }
 
@@ -266,12 +290,36 @@ static void UpdateDamperPosition()
 
 static uint32_t last_display_update = 0;
 
+// Applied whenever the menu commits a value: push the record into the live
+// managers, then persist it.
+static void OnSettingsChanged()
+{
+  dryer.ApplySettings(settings, g_rtc_available);
+  g_water_target = settings.water_target;
+  settings_store.SaveSettings(settings);
+}
+
 static void UpdateDisplay()
 {
   uint32_t now = millis();
   if (now - last_display_update < DISPLAY_UPDATE_INTERVAL)
     return;
   last_display_update = now;
+
+  // The menu owns the whole panel while it is open; the main screen has to be
+  // fully repainted once it hands the panel back.
+  static bool menu_was_open = false;
+  if (menu.IsOpen())
+  {
+    menu_was_open = true;
+    MenuRenderer::Render(display, menu);
+    return;
+  }
+  if (menu_was_open)
+  {
+    menu_was_open = false;
+    display.Invalidate();
+  }
 
   const TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
   const AirDamper *damper = dryer.GetAirDamper();
@@ -409,6 +457,11 @@ void setup()
   settings_store.Begin();
   settings_store.LoadSettings(settings);
   dryer.ApplySettings(settings, g_rtc_available);
+  g_water_target = settings.water_target;
+
+  MenuSetRtcAvailable(g_rtc_available);
+  menu.Begin(&settings);
+  menu.SetOnChange(OnSettingsChanged);
 
   SessionSnapshot session;
   if (settings_store.LoadSession(session) && session.running)
