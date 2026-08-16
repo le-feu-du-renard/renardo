@@ -170,8 +170,6 @@ void TemperatureManager::UpdateHeating(float dt)
     // Hard guard applied here AND again at output stage.
     hydraulic_heater_->SetPower(0);
 
-    float predicted = T + dT_dt_ * CTRL_HORIZON;
-
     if (!electric_on_)
     {
       if (elec_off_timer_ >= CTRL_T_OFF_MIN && error > CTRL_BANDE_ELEC)
@@ -182,11 +180,18 @@ void TemperatureManager::UpdateHeating(float dt)
     }
     else
     {
-      bool reached = (error <= 0.0f || predicted >= setpoint);
-      if (elec_on_timer_ >= CTRL_T_ON_MIN && reached)
+      // Predictive shutoff: only when dT_dt exceeds the quantization noise floor.
+      // With 0.1°C sensor resolution at 1 Hz, a single-step noise spike gives a
+      // filtered derivative of ~0.03°C/s. CTRL_DT_PREDICT_MIN filters out these
+      // transients and only fires when the temperature is genuinely rising fast
+      // enough to risk overshoot.
+      float predicted = T + dT_dt_ * CTRL_HORIZON;
+      bool will_overshoot = (dT_dt_ > CTRL_DT_PREDICT_MIN) && (predicted >= setpoint);
+      if (elec_on_timer_ >= CTRL_T_ON_MIN && (error <= 0.0f || will_overshoot))
       {
         SetElectric(false);
-        Logger::Info("TempMgr: ELEC_ONLY -> OFF (err=%F predict=%F)", error, predicted);
+        Logger::Info("TempMgr: ELEC_ONLY -> OFF (err=%F predict=%F dT=%F)",
+                     error, predicted, dT_dt_);
       }
     }
   }

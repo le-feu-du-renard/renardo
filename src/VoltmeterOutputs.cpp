@@ -2,10 +2,10 @@
 #include "config.h"
 #include "Logger.h"
 
-// PWM resolution: 12 bits (0-4095) for smooth analog output
-static constexpr uint8_t kPwmBits = 12;
-static constexpr uint16_t kPwmMax = (1u << kPwmBits) - 1; // 4095
-static constexpr uint32_t kPwmFreqHz = 50000;             // 50 kHz
+static constexpr uint8_t  kPwmBits   = 12;
+static constexpr uint16_t kPwmMax    = (1u << kPwmBits) - 1; // 4095
+static constexpr uint32_t kPwmFreqHz = 50000;
+
 
 VoltmeterOutputs::VoltmeterOutputs() {}
 
@@ -18,11 +18,12 @@ void VoltmeterOutputs::Begin()
       VOLTMETER_OUTLET_HUMIDITY_PIN,
   };
 
+  analogWriteFreq(kPwmFreqHz);
+  analogWriteResolution(kPwmBits);
+
   for (uint8_t pin : pins)
   {
     pinMode(pin, OUTPUT);
-    analogWriteFreq(kPwmFreqHz);
-    analogWriteResolution(kPwmBits);
     analogWrite(pin, 0);
   }
 
@@ -31,34 +32,30 @@ void VoltmeterOutputs::Begin()
 
 void VoltmeterOutputs::SetInletTemperature(float celsius)
 {
-  WriteDuty(VOLTMETER_INLET_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMPERATURE_MAX));
+  float ratio = constrain(celsius / VOLTMETER_TEMPERATURE_MAX, 0.0f, 1.0f);
+  WriteRatio(VOLTMETER_INLET_TEMPERATURE_PIN, ratio, VOLTMETER_V1_TEMP_IN_MIN,  VOLTMETER_V1_TEMP_IN_MAX);
 }
 
 void VoltmeterOutputs::SetInletHumidity(float percent)
 {
-  WriteDuty(VOLTMETER_INLET_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUMIDITY_MAX));
+  float ratio = constrain(percent / VOLTMETER_HUMIDITY_MAX, 0.0f, 1.0f);
+  WriteRatio(VOLTMETER_INLET_HUMIDITY_PIN,    ratio, VOLTMETER_V2_HUM_IN_MIN,   VOLTMETER_V2_HUM_IN_MAX);
 }
 
 void VoltmeterOutputs::SetOutletTemperature(float celsius)
 {
-  WriteDuty(VOLTMETER_OUTLET_TEMPERATURE_PIN, ValueToDuty(celsius, VOLTMETER_TEMPERATURE_MAX));
+  float ratio = constrain(celsius / VOLTMETER_TEMPERATURE_MAX, 0.0f, 1.0f);
+  WriteRatio(VOLTMETER_OUTLET_TEMPERATURE_PIN, ratio, VOLTMETER_V3_TEMP_OUT_MIN, VOLTMETER_V3_TEMP_OUT_MAX);
 }
 
 void VoltmeterOutputs::SetOutletHumidity(float percent)
 {
-  WriteDuty(VOLTMETER_OUTLET_HUMIDITY_PIN, ValueToDuty(percent, VOLTMETER_HUMIDITY_MAX));
+  float ratio = constrain(percent / VOLTMETER_HUMIDITY_MAX, 0.0f, 1.0f);
+  WriteRatio(VOLTMETER_OUTLET_HUMIDITY_PIN,   ratio, VOLTMETER_V4_HUM_OUT_MIN,  VOLTMETER_V4_HUM_OUT_MAX);
 }
 
-void VoltmeterOutputs::WriteDuty(uint8_t pin, float duty)
+void VoltmeterOutputs::WriteRatio(uint8_t pin, float ratio, int16_t val_min, uint16_t val_max)
 {
-  duty = constrain(duty, 0.0f, kDutyMax);
-  analogWrite(pin, static_cast<int>(duty * kPwmMax));
-}
-
-float VoltmeterOutputs::ValueToDuty(float value, float max_value)
-{
-  if (max_value <= 0.0f)
-    return 0.0f;
-  float ratio = constrain(value / max_value, 0.0f, 1.0f);
-  return ratio * kDutyMax;
+  int32_t raw = val_min + static_cast<int32_t>(ratio * (val_max - val_min));
+  analogWrite(pin, static_cast<uint16_t>(constrain(raw, 0, kPwmMax)));
 }

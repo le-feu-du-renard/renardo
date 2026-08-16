@@ -29,14 +29,8 @@ public:
   void SetOutletHumidity(float percent);
 
 private:
-  // Write a duty cycle in the range [0.0, 1.0] to the given pin.
-  static void WriteDuty(uint8_t pin, float duty);
-
-  // Map a value [0, max] to duty cycle [0, kDutyMax].
-  static float ValueToDuty(float value, float max_value);
-
-  // Maximum duty cycle: 3.0 V / 3.3 V ~0.909
-  static constexpr float kDutyMax = 3.0f / 3.3f;
+  // Write a normalised ratio [0.0, 1.0] to a channel using its calibrated raw range.
+  static void WriteRatio(uint8_t pin, float ratio, int16_t val_min, uint16_t val_max);
 };
 
 #endif // VOLTMETER_OUTPUTS_H

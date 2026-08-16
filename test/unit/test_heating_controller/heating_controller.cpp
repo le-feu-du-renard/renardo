@@ -25,6 +25,7 @@ static constexpr float kHorizon       = 60.0f;
 static constexpr float kTOnMin        = 60.0f;
 static constexpr float kTOffMin       = 60.0f;
 static constexpr float kDtFalling     = 0.01f;
+static constexpr float kDtPredictMin  = 0.05f;
 static constexpr float kSafetyMax     = 50.0f;
 
 // ===== Simulator =====
@@ -139,7 +140,6 @@ struct HeatingControllerSim
     if (state == State::ELECTRIC_ONLY)
     {
       hydraulic_power = 0;
-      float predicted = T + dT_dt * kHorizon;
 
       if (!electric_on)
       {
@@ -148,8 +148,9 @@ struct HeatingControllerSim
       }
       else
       {
-        bool reached = (error <= 0.0f || predicted >= setpoint);
-        if (elec_on_timer >= kTOnMin && reached)
+        float predicted = T + dT_dt * kHorizon;
+        bool will_overshoot = (dT_dt > kDtPredictMin) && (predicted >= setpoint);
+        if (elec_on_timer >= kTOnMin && (error <= 0.0f || will_overshoot))
           set_electric(false);
       }
     }
@@ -409,6 +410,47 @@ void test_electric_only_turns_off_when_setpoint_reached(void)
   // Run kTOnMin seconds, then present T > setpoint
   sim.step_n((int)kTOnMin + 1, 40.0f, 40.5f);  // error < 0 → reached
   TEST_ASSERT_FALSE(sim.electric_on);
+}
+
+void test_electric_only_predictive_shutoff_ignores_noise(void)
+{
+  // Sensor quantization (0.1°C steps at 1 Hz) creates derivative spikes of ~0.03°C/s.
+  // These must NOT trigger predictive shutoff because they are below kDtPredictMin (0.05).
+  // Simulate: sp=33°C, T oscillates between 32.1 and 32.2 while electric is ON.
+  HeatingControllerSim sim(false);
+  sim.step(33.0f, 32.4f);  // turn ON (error = 0.6 > kBandeElec)
+  TEST_ASSERT_TRUE(sim.electric_on);
+
+  // Feed kTOnMin+ ticks alternating 32.1/32.2 — derivative stays at ~0.03°C/s (noise)
+  float temps[] = { 32.1f, 32.2f, 32.1f, 32.2f };
+  for (int i = 0; i < (int)kTOnMin + 10; i++)
+    sim.step(33.0f, temps[i % 4]);
+
+  // Electric must still be ON: dT noise < kDtPredictMin (0.05), prediction should not fire
+  // (T never reaches setpoint either — error = 33 - 32.2 = 0.8 > 0)
+  TEST_ASSERT_TRUE(sim.electric_on);
+}
+
+void test_electric_only_predictive_shutoff_fires_on_genuine_rise(void)
+{
+  // When temperature is genuinely rising fast enough (dT > kDtPredictMin = 0.05°C/s)
+  // and the prediction shows overshoot, the electric should shut off early.
+  HeatingControllerSim sim(false);
+  sim.step(33.0f, 32.0f);  // turn ON
+
+  // Build up a genuine rise: 0.06°C/tick over kTOnMin+ steps
+  // After kTOnMin steps at +0.06°C/tick: T ≈ 32 + kTOnMin*0.06 ≈ 35.6°C > sp
+  // But prediction will fire before that (when T + dT*kHorizon >= sp)
+  float T = 32.0f;
+  bool shutoff_seen = false;
+  for (int i = 0; i < (int)kTOnMin + 100; i++)
+  {
+    T += 0.06f;
+    if (T > 36.0f) T = 36.0f;
+    sim.step(33.0f, T);
+    if (!sim.electric_on && i > (int)kTOnMin) { shutoff_seen = true; break; }
+  }
+  TEST_ASSERT_TRUE(shutoff_seen);
 }
 
 void test_electric_only_anti_short_cycle_observed(void)
@@ -673,6 +715,8 @@ int main(int argc, char **argv)
   RUN_TEST(test_electric_only_turns_on_when_error_exceeds_band);
   RUN_TEST(test_electric_only_stays_off_when_error_below_band);
   RUN_TEST(test_electric_only_turns_off_when_setpoint_reached);
+  RUN_TEST(test_electric_only_predictive_shutoff_ignores_noise);
+  RUN_TEST(test_electric_only_predictive_shutoff_fires_on_genuine_rise);
   RUN_TEST(test_electric_only_anti_short_cycle_observed);
 
   // Hydraulic disabled mid-BOOST

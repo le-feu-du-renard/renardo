@@ -102,6 +102,16 @@
 #define VOLTMETER_TEMPERATURE_MAX 60.0f // °C (inlet and outlet)
 #define VOLTMETER_HUMIDITY_MAX 100.0f   // %RH (inlet and outlet)
 
+// Voltmeter PWM calibration (raw 12-bit values, val_min may be negative to offset the zero point)
+#define VOLTMETER_V1_TEMP_IN_MIN    0
+#define VOLTMETER_V1_TEMP_IN_MAX    3050
+#define VOLTMETER_V2_HUM_IN_MIN     -100  // needle rests above zero at PWM=0, offset compensates
+#define VOLTMETER_V2_HUM_IN_MAX     2900
+#define VOLTMETER_V3_TEMP_OUT_MIN   0
+#define VOLTMETER_V3_TEMP_OUT_MAX   2990
+#define VOLTMETER_V4_HUM_OUT_MIN    0
+#define VOLTMETER_V4_HUM_OUT_MAX    2980
+
 // Heater enable defaults
 #ifndef HYDRAULIC_AVAILABLE
 #define HYDRAULIC_AVAILABLE true // overridable via build flag: -D HYDRAULIC_AVAILABLE=false
@@ -191,6 +201,12 @@
 //   If eta = error / dT_dt > CTRL_ETA_MAX and error > CTRL_E_BAS, BOOST is triggered.
 //   Starting point: 900s (15 minutes)
 #define CTRL_ETA_MAX 900.0f
+
+// CTRL_DT_PREDICT_MIN — minimum dT_dt (°C/s) required to activate predictive shutoff
+//   in ELEC_ONLY mode. Below this threshold the derivative is sensor noise
+//   (0.1°C resolution at 1 Hz gives single-tick spikes of ~0.03°C/s filtered).
+//   Starting point: 0.05°C/s
+#define CTRL_DT_PREDICT_MIN 0.05f
 
 // CTRL_DT_FALLING — temperature fall rate (°C/s) below which cond3 treats ETA as infinite.
 //   If dT_dt < -CTRL_DT_FALLING (temperature dropping noticeably) AND error > CTRL_E_BAS,
