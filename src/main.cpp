@@ -17,10 +17,11 @@
 // I2C bus (optional RTC DS1307)
 TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 
-// RS485 bus A — sensors + hydraulic module, owned exclusively by Core 1
-Rs485Bus bus_a(Serial2, RS485_A_TX_PIN, RS485_A_RX_PIN, RS485_A_DE_PIN, "A");
-ModbusSensors modbus_sensors(&bus_a);
-HydraulicRemote hydraulic_remote(&bus_a);
+// RS485 — single Modbus bus (probes @1 @2 + hydraulic module @10),
+// owned exclusively by Core 1
+Rs485Bus rs485(Serial2, RS485_TX_PIN, RS485_RX_PIN, RS485_DE_PIN, "rs485");
+ModbusSensors modbus_sensors(&rs485);
+HydraulicRemote hydraulic_remote(&rs485);
 
 // Physical I/O
 InputHandler input_handler;
@@ -34,7 +35,7 @@ Dryer dryer;
 
 // ========== CORE 1 ==========
 
-// Core 1 owns RS485 bus A exclusively: both probes and the hydraulic module.
+// Core 1 owns the RS485 bus exclusively: both probes and the hydraulic module.
 // It publishes a coherent snapshot that Core 0 reads without blocking.
 
 static SharedSensorState g_sensor_state;
@@ -53,7 +54,7 @@ void setup1()
   {
   } // Wait for Core 0 to finish setup
 
-  bus_a.Begin(MODBUS_BAUDRATE);
+  rs485.Begin(MODBUS_BAUDRATE);
   modbus_sensors.Begin();
   hydraulic_remote.Begin();
 }
@@ -110,14 +111,19 @@ static void SetupI2C()
   Logger::Info("I2C bus 1 ready (10kHz)");
 }
 
+// TODO(v4): move to OutputDriver, which will own polarity and edge detection.
+static void WriteOutput(uint8_t pin, bool active_low, bool active)
+{
+  digitalWrite(pin, (active != active_low) ? HIGH : LOW);
+}
+
 static void SetupOutputs()
 {
-  // TODO(v4): move to OutputDriver. Drive the 2N2222 stages to their idle level
-  // before switching them to OUTPUT so no load is energised at boot.
-  const uint8_t idle = OUTPUTS_ACTIVE_LOW ? HIGH : LOW;
-  digitalWrite(OUT_FAN_PIN, idle);
-  digitalWrite(OUT_DAMPER_PIN, idle);
-  digitalWrite(OUT_ELECTRIC_PIN, idle);
+  // Drive each stage to its inactive level before switching the pin to OUTPUT,
+  // so no load is energised during the boot window.
+  WriteOutput(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, false);
+  WriteOutput(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, false);
+  WriteOutput(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, false);
   pinMode(OUT_FAN_PIN, OUTPUT);
   pinMode(OUT_DAMPER_PIN, OUTPUT);
   pinMode(OUT_ELECTRIC_PIN, OUTPUT);
@@ -216,11 +222,6 @@ static void UpdateInputs()
 
 // ========== OUTPUT UPDATE ==========
 
-static void WriteOutput(uint8_t pin, bool active)
-{
-  digitalWrite(pin, (active != OUTPUTS_ACTIVE_LOW) ? HIGH : LOW);
-}
-
 static void UpdateOutputs()
 {
   static bool last_heater = false;
@@ -231,26 +232,26 @@ static void UpdateOutputs()
   bool fan_state = dryer.GetFanOutput() > 0.0f;
   bool damper_state = dryer.GetDamperOutput();
 
-  // Hand the hydraulic on/off request to the core that owns the module's bus.
+  // Hand the hydraulic on/off request to the core that owns the RS485 bus.
   g_hydraulic_request = dryer.GetHydraulicOn();
 
   if (heater_state != last_heater)
   {
-    WriteOutput(OUT_ELECTRIC_PIN, heater_state);
+    WriteOutput(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, heater_state);
     last_heater = heater_state;
     Logger::Info("Electric heater: %s", heater_state ? "ON" : "OFF");
   }
 
   if (fan_state != last_fan)
   {
-    WriteOutput(OUT_FAN_PIN, fan_state);
+    WriteOutput(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, fan_state);
     last_fan = fan_state;
     Logger::Info("Fan: %s", fan_state ? "ON" : "OFF");
   }
 
   if (damper_state != last_damper)
   {
-    WriteOutput(OUT_DAMPER_PIN, damper_state);
+    WriteOutput(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, damper_state);
     last_damper = damper_state;
     Logger::Info("Air damper: %s", damper_state ? "EXTRACTION" : "RECIRCULATION");
   }

@@ -7,11 +7,13 @@
 // Modbus RTU master over a half-duplex RS485 transceiver (MAX3485).
 //
 // ModbusMaster drives the DE/RE line through plain function pointers that take
-// no context argument. The v3 code worked around this with static callbacks
-// hard-coding a single DE pin, which made a second bus impossible. Each
-// Rs485Bus therefore claims one of kMaxBuses static trampoline slots at
-// construction, so two buses can run on two UARTs — here bus A for the sensors
-// and the hydraulic module, bus B for the LoRa module.
+// no context argument, so v3 reached the pin through static callbacks holding a
+// hard-coded macro. Each Rs485Bus instead claims one of kMaxBuses static
+// trampoline slots at construction, which keeps the pin an instance member and
+// leaves room for a second bus should one ever be added.
+//
+// The dryer runs a single bus carrying the two probes (@1, @2) and the remote
+// hydraulic module (@10).
 //
 // All calls are blocking. A bus instance must only be used from the core that
 // owns it; there is no internal locking.

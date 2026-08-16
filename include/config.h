@@ -5,47 +5,67 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// TFT display — GMT020-02-7P v1.3 (ST7789, 240x320) on SPI0, write-only (no MISO).
-// These values are mirrored into TFT_eSPI via build flags in platformio.ini;
+// ----- SPI0, shared by the TFT and the LoRa radio -----
+// Both devices sit on one bus with separate chip selects. Only the SX1262
+// drives MISO; the display is write-only. Every radio transaction must be
+// bracketed so it does not interleave with a display write.
+#define SPI0_SCK_PIN 18
+#define SPI0_MOSI_PIN 19
+#define SPI0_MISO_PIN 16
+
+// TFT display — GMT020-02-7P v1.3 (ST7789, 240x320).
+// The pins are mirrored into TFT_eSPI via build flags in platformio.ini;
 // both must be changed together.
-#define TFT_SCK_PIN 18
-#define TFT_MOSI_PIN 19
 #define TFT_CS_PIN 17
-#define TFT_DC_PIN 16
-#define TFT_RST_PIN 22
+#define TFT_DC_PIN 20
+#define TFT_RST_PIN 21
+
+// LoRa radio — DX-LR30 (SX1262, 868 MHz)
+#define LORA_NSS_PIN 13
+#define LORA_BUSY_PIN 12
+#define LORA_DIO1_PIN 11
+#define LORA_RST_PIN 10
 
 // Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups
-#define ENCODER_A_PIN 10
-#define ENCODER_B_PIN 11
-#define ENCODER_SW_PIN 12
+#define ENCODER_A_PIN 6
+#define ENCODER_B_PIN 7
+#define ENCODER_SW_PIN 9
 
 // Physical buttons (active LOW, internal pullup)
-#define BTN_START_PIN 20
-#define BTN_STOP_PIN 21
+#define BTN_START_PIN 14
+#define BTN_STOP_PIN 15
 
-// RS485 bus A — sensors + hydraulic module (UART1 / Serial2 → MAX3485)
-#define RS485_A_TX_PIN 4 // UART1 TX → MAX3485 DI
-#define RS485_A_RX_PIN 5 // UART1 RX ← MAX3485 RO
-#define RS485_A_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
+// RS485 — single Modbus bus carrying both probes and the hydraulic module
+// (UART1 / Serial2 → MAX3485)
+#define RS485_TX_PIN 4 // UART1 TX → MAX3485 DI
+#define RS485_RX_PIN 5 // UART1 RX ← MAX3485 RO
+#define RS485_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
 
-// RS485 bus B — LoRa module (UART0 / Serial1 → MAX3485)
-#define RS485_B_TX_PIN 0
-#define RS485_B_RX_PIN 1
-#define RS485_B_DE_PIN 2
+// Command outputs — 2N2222 open collector.
+//
+// Polarity is per output because it depends on how each load is wired:
+//   collector in series with a contactor coil to +24V → GPIO HIGH energises it
+//     (active HIGH), and a floating GPIO leaves the load OFF, which is what we
+//     want during the boot window before pinMode() runs;
+//   collector pulling down an input that is pulled up by the receiver → GPIO
+//     HIGH forces the line to 0V (active LOW).
+// See HARDWARE.md: the fan and the electric heater must be wired active HIGH so
+// they stay off while the MCU boots.
+#define OUT_FAN_PIN 0
+#define OUT_FAN_ACTIVE_LOW false
+#define OUT_DAMPER_PIN 1
+#define OUT_DAMPER_ACTIVE_LOW true
+#define OUT_ELECTRIC_PIN 2
+#define OUT_ELECTRIC_ACTIVE_LOW false
 
-// Command outputs — 2N2222 open collector, pulled up to the load side.
-// The transistor inverts: GPIO HIGH pulls the output line to 0V.
-#define OUT_FAN_PIN 6      // ventilation, 24V command signal
-#define OUT_DAMPER_PIN 7   // air damper (Belimo LM24A-SR), 0-10V command signal
-#define OUT_ELECTRIC_PIN 8 // electric heating, 24V command signal
-#define OUTPUTS_ACTIVE_LOW true
-
-// Air damper position feedback — Belimo 2-10V output through a divider (ADC0)
-#define DAMPER_FEEDBACK_PIN 26
+// Air damper position feedback — Belimo 2-10V output through a divider (ADC2)
+#define DAMPER_FEEDBACK_PIN 28
 
 // I2C Bus 1 — optional RTC DS1307. Absent RTC disables ECO mode.
-#define I2C_BUS_1_SDA_PIN 14
-#define I2C_BUS_1_SCL_PIN 15
+#define I2C_BUS_1_SDA_PIN 26
+#define I2C_BUS_1_SCL_PIN 27
+
+// Free for expansion: GP8, GP22
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
@@ -53,13 +73,10 @@
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600
 
-// Bus A slave addresses
+// Slave addresses on the single RS485 bus
 #define MODBUS_INLET_ADDRESS 1
 #define MODBUS_OUTLET_ADDRESS 2
 #define MODBUS_HYDRAULIC_ADDRESS 10
-
-// Bus B slave address
-#define MODBUS_LORA_ADDRESS 20
 
 // SHT30 RS485 sensor register map (function code FC03)
 #define MODBUS_REG_HUMIDITY 0x0000    // raw / MODBUS_RAW_SCALE = %RH
@@ -73,10 +90,16 @@
 #define HYDRO_REG_TANK_TEMP 0x0011   // read: storage tank temperature x10
 #define HYDRO_REG_STATUS 0x0012      // read: status bits
 
-// LoRa module register map
-#define LORA_REG_TELEMETRY 0x0000 // write: telemetry block base address
-#define LORA_REG_COMMAND 0x0100   // read: pending command block base address
-#define LORA_REG_ACK 0x0110       // write: last consumed command sequence number
+// ========== LORA ==========
+// DX-LR30 (SX1262) on SPI0, driven by RadioLib. EU 868 MHz band.
+#define LORA_FREQUENCY 868.0f     // MHz
+#define LORA_BANDWIDTH 125.0f     // kHz
+#define LORA_SPREADING_FACTOR 9
+#define LORA_CODING_RATE 7
+#define LORA_SYNC_WORD 0x34
+#define LORA_TX_POWER 14          // dBm, EU868 limit without duty-cycle tricks
+#define LORA_PREAMBLE_LENGTH 8
+#define LORA_TELEMETRY_INTERVAL_MS 60000
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms
