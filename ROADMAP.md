@@ -1,85 +1,58 @@
 # Roadmap
 
-Planned improvements for the renard'o dryer controller.
+## In Progress — v4 migration
 
----
+The `v4` branch carries the board redesign: TFT + rotary encoder interface,
+deported hydraulic module, LoRa link, and the removal of every v3 panel control.
 
-## In Progress
+### Done
 
-- [ ] Hardware validation — first full power-on test with all peripherals
+- [x] Strip the v3 hardware layer (voltmeters, MCP23017, LEDs, potentiometers,
+      selector, TM1637, SD card) and move to `rpipico`
+- [x] New pin map: shared SPI0 for TFT and radio, single RS485 bus, three
+      2N2222 command outputs, damper ADC feedback, optional RTC
+- [x] `Rs485Bus` transport, per-probe error and freshness tracking,
+      `HydraulicRemote` client for the deported module
+- [x] Sensor freshness interlock, cross-core seqlock snapshot
+- [x] Replace the circulator PID with two independent on/off sources
+- [x] `OutputDriver` with per-output polarity, damper position readback
+- [x] LittleFS persistence for settings and session progress
+- [x] Rotary encoder with a bounce-proof quadrature decoder
+- [x] Main screen on the TFT, region-based rendering, animated fan
+- [x] Configuration menu bound to the persisted settings record
+- [x] LoRa telemetry and acknowledged remote commands over SX1262
+- [x] Documentation rewritten for v4
 
----
+### Remaining before the board is usable
 
-## Short Term
+- [ ] Bring-up on real hardware, in the order given in HARDWARE.md
+- [ ] Confirm the ST7789 variant: orientation, colour inversion, offsets
+- [ ] Exercise the shared SPI bus: radio transmitting while the display refreshes
+- [ ] Measure the three outputs at the connector before wiring the loads
+- [ ] Record the damper end-stop ADC values and calibrate
+- [ ] Build the deported hydraulic module against the register map in HARDWARE.md
+- [ ] Commander side: decode the telemetry frame, send acknowledged commands
 
-### Sensors & Control
+## Open questions
 
-- [ ] Validate SHT30 Modbus readings against reference thermometer/hygrometer
-- [ ] Fine-tune PID gains (Kp/Ki/Kd) based on real thermal behaviour of the chamber
-- [ ] Validate ECO mode temperature reduction in practice
-- [ ] Validate Belimo damper binary control (0 V / 10 V switching)
+- [ ] Automatic session end? `DRYING_SESSION_DURATION` existed since the
+      beginning and was never used; the cycle loops until STOP.
+- [ ] `HumidityManager::Mode::kThreshold` is implemented but never selected —
+      expose it from the menu, or remove it.
+- [ ] `ResetControl()` fires on every phase transition, so roughly every
+      19 minutes. Worth keeping now that the hydraulic timers are 300 s?
+- [ ] Day/night water setpoint for the hydraulic module when an RTC is fitted.
 
-### Data Logging
+## Later
 
-- [ ] Validate CSV output format and SD card directory structure on real hardware
-- [ ] Test SD card hot-plug recovery (RetryInitialization path)
+- [ ] Diagnostics screen: bus state, error counters, RSSI
+- [ ] Firmware update over LoRa, or at least a version report
+- [ ] Second dryer on the same band (the device id already supports it)
 
-### Panel Interface
+## Completed in v3
 
-- [ ] Validate voltmeter calibration (duty cycle → voltage at 3.3 V rail)
-- [ ] Validate potentiometer ADC mapping (12-bit range → °C / %RH)
-- [ ] Validate all 8 indicator LEDs and button backlights (24 V / BC337 circuit)
-
----
-
-## Medium Term
-
-### Reliability
-
-- [ ] Add sensor failure detection: if a Modbus read fails for N consecutive cycles, flag it in the logs and stop the heaters
-- [ ] Add thermal runaway protection: if temperature exceeds target + safety margin, cut all heaters regardless of PID output
-- [ ] Evaluate adding a fuse on the 24 V rail for LED/button protection
-
-### Logging & Analysis
-
-- [ ] Add a post-session summary line at the end of each CSV file (total duration, average temperature, average humidity)
-- [ ] Build a simple Python script to plot CSV session data
-
-### Configuration
-
-- [ ] Consider exposing phase durations as potentiometer-adjustable at startup (hold START during boot)
-
----
-
-## Future
-
-### Connectivity (WiFi — Pico W)
-
-- [ ] WiFi access point mode for log file retrieval without SD card removal
-- [ ] Simple web interface showing live sensor data and current phase
-- [ ] OTA firmware update
-
-### Hardware Evolution
-
-- [ ] Evaluate adding a second fan for forced air circulation (independent of extraction fan)
-- [ ] Evaluate adding a dehumidifier module on a spare relay
-
----
-
-## Completed
-
-- [x] Migrate all sensors to Modbus RS485 (SHT30) — removed DHT22 / DS18B20
-- [x] Replace OLED + menu system with physical panel interface
-- [x] Replace proportional air damper (DAC 0-10V) with binary damper (BC337 transistor)
-- [x] Add MCP23017 I2C expander for 8× 24 V indicator LEDs
-- [x] Add 4× panel voltmeters (PWM + RC, 0-3 V)
-- [x] Add START/STOP buttons with 24 V integrated LED
-- [x] Add temperature + humidity potentiometers (ADC)
-- [x] Add ECO/PERFORMANCE physical mode selector
-- [x] Simplify session to fixed 3-phase cycle (Init → Brassage → Extraction)
-- [x] Remove program/cycle/preset system
-- [x] SD card persistence for session state (PersistentStateManager, state.bin)
-- [x] All configuration as compile-time constants in config.h
-- [x] Migrate all Serial.print to Logger (ArduinoLog wrapper)
-- [x] Establish coding guidelines (2-space indent, Allman braces, English comments)
-- [x] Hardware watchdog (8 s timeout)
+- [x] Hybrid heating with predictive electric shutoff and anti-short-cycle guards
+- [x] Three-phase drying sequence with humidity-driven transitions
+- [x] RS485 SHT30 probes on a dedicated core
+- [x] Session persistence across reboots
+- [x] Watchdog and glitch-free relay state at boot

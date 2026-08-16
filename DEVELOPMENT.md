@@ -11,7 +11,7 @@ Technical reference for building, uploading, and debugging the renard'o dryer co
 
 ### Hardware
 
-- Raspberry Pi Pico W connected via USB
+- Raspberry Pi Pico H connected via USB
 - Serial terminal for log output (included with PlatformIO)
 
 ---
@@ -30,7 +30,7 @@ Environments defined in `platformio.ini`:
 
 | Environment | Target | Use |
 |-------------|--------|-----|
-| `pico_w` | Raspberry Pi Pico W | Main firmware |
+| `pico` | Raspberry Pi Pico H | Main firmware |
 | `native` | Host machine (x86/x64) | Unit tests only |
 
 ---
@@ -43,17 +43,20 @@ Environments defined in `platformio.ini`:
 2. Upload firmware:
 
 ```bash
-pio run -t upload -e pico_w
+pio run -t upload -e pico
 ```
 
 ### Normal upload
 
 ```bash
 # Upload and open serial monitor
-pio run -t upload -t monitor -e pico_w
+pio run -t upload -t monitor -e pico
 ```
 
-> There is no filesystem to upload — the SD card is used for session logs only, and all configuration is in `config.h`.
+> Settings live in a LittleFS partition on internal flash, not in the firmware
+> image, so they survive a re-flash. `config.h` only supplies factory defaults.
+> To wipe them, use Système → Réinit. usine in the menu, or erase the flash
+> entirely with a `flash_nuke.uf2`.
 
 ---
 
@@ -70,9 +73,9 @@ pio device monitor -b 115200
 Log output uses [ArduinoLog](https://github.com/thijse/Arduino-Log) via the `Logger` wrapper:
 
 ```
-[INFO ] SessionMonitor: SD card initialized successfully
-[WARN ] Inlet sensor read failed (errors=1)
-[ERROR] PersistentStateManager: cannot open /state.bin for write
+[INFO ] SettingsStore: LittleFS mounted
+[WARN ] ModbusSensors: read failed @1 (error 0xE2, count 1)
+[ERROR] Inlet probe silent for 10000 ms — heating disabled
 ```
 
 ### Log levels
@@ -101,31 +104,44 @@ Tests run on the host machine without hardware:
 # Run all tests
 pio test -vvv -e native
 
-# Run a specific test file
-pio test -e native -f test_pid
+# Run a specific suite
+pio test -e native -f "unit/test_heating_controller"
 ```
 
-Test files live in `test/`. The Unity framework is used.
+Suites live in `test/unit/`, one directory per binary, using Unity.
+
+Tests compile the **real** production sources rather than a copy of the logic:
+each suite has a `production_impl.cpp` that includes the `.cpp` files under
+test. `test/unit/support/Arduino.h` supplies a shim with a clock the tests drive
+explicitly, and `Logger` compiles to no-ops when `ARDUINO` is undefined.
+
+That matters: the v3 suite re-implemented the control logic in the test file,
+and its copy had already drifted from `config.h` — it was passing against logic
+the firmware no longer ran. Anything hardware-free belongs in a class the tests
+can compile, which is why the display model, the menu and the LoRa wire format
+are all separated from their hardware.
 
 ---
 
 ## Configuration
 
-All hardware parameters are in `include/config.h`. Change a value and rebuild — no reflashing of a filesystem needed.
-
-Key sections:
+`include/config.h` holds the pin map and the **factory defaults**. Anything
+reachable from the menu is persisted in LittleFS and overrides the default at
+boot, so changing a constant only affects a board whose settings were never
+saved, or one reset from Système → Réinit. usine.
 
 | Section | What it controls |
 |---------|-----------------|
 | Pin assignments | GPIO numbers for every peripheral |
-| I2C addresses | MCP23017, RTC |
-| LED pin mapping | Which GPA bit drives which indicator |
-| Voltmeter channel mapping | Which GPIO drives which voltmeter |
-| Modbus register map | SHT30 register addresses and scale |
-| Phase durations | Init / Brassage / Extraction timings |
-| PID gains | Hydraulic and electric PID parameters |
-| Potentiometer ranges | ADC → physical unit mapping |
-| Voltmeter ranges | Full-scale value per channel |
+| Modbus register map | probe and hydraulic-module addresses and registers |
+| LoRa | frequency, SF, power, telemetry interval, device id |
+| Output polarity | `OUT_*_ACTIVE_LOW`, one per output |
+| Damper calibration | end-stop ADC defaults and tolerance |
+| Phase durations | Init / Brassage / Extraction defaults |
+| Control parameters | hysteresis bands, horizons, anti-short-cycle timers |
+
+> The TFT pins are duplicated in the `TFT_eSPI` build flags in
+> `platformio.ini`. Change both together.
 
 ---
 
@@ -142,17 +158,33 @@ Key sections:
 - Verify baud rate: 115200
 - Re-open monitor after upload completes
 
-### SD card not detected
+### Display blank or corrupted
 
-- Verify FAT32 format
-- Check SPI wiring (GPIO 2/3/4/5)
-- Inspect log: `SessionMonitor: SD card initialization failed`
+- Check the TFT pins in `platformio.ini` match `config.h`
+- Inverted colours or an offset image is the usual ST7789 variant question —
+  try `TFT_INVERSION_ON` or a column/row offset
+- Corruption appearing when the radio transmits points at the shared SPI bus;
+  see HARDWARE.md
 
 ### Sensors not responding
 
-- Check RS485 wiring (GPIO 8/9) and DE pin (GPIO 6)
-- Verify Modbus addresses match `MODBUS_INLET_ADDRESS` / `MODBUS_OUTLET_ADDRESS` in `config.h`
+- Check RS485 wiring (GPIO 4/5) and the DE pin (GPIO 3)
+- Verify Modbus addresses match `MODBUS_INLET_ADDRESS` / `MODBUS_OUTLET_ADDRESS`
 - Check baud rate: 9600
+- A silent inlet probe blocks all heating after `SENSOR_TIMEOUT_MS` and shows
+  `SONDE` in the status bar — that is the interlock working, not a bug
+
+### Heating never starts
+
+Work through the interlocks in order: the fan has to be running, the inlet
+probe fresh, the source enabled in the menu, and for the hydraulic, the module
+answering on RS485. The periodic `TempMgr:` log line reports which sources are
+in play.
+
+### An output is on at boot
+
+Polarity. The fan and the electric heating must be wired active HIGH so a
+floating GPIO leaves them off during the boot window — see HARDWARE.md.
 
 ### Watchdog resets
 

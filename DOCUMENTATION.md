@@ -1,199 +1,234 @@
-# Technical Documentation — renard'o Dryer Controller
+# Technical Documentation — renard'o Dryer Controller (v4)
 
 ## Table of Contents
 
 - [Drying Sequence](#drying-sequence)
-- [PID Temperature Control](#pid-temperature-control)
-- [Operating Modes](#operating-modes)
-- [Humidity Control](#humidity-control)
-- [Session Persistence](#session-persistence)
-- [Data Logging](#data-logging)
+- [Temperature Control](#temperature-control)
+- [Safety Interlocks](#safety-interlocks)
+- [Humidity and Air Damper](#humidity-and-air-damper)
+- [Operator Interface](#operator-interface)
+- [ECO Mode](#eco-mode)
+- [Persistence](#persistence)
+- [Remote Link](#remote-link)
 
 ---
 
 ## Drying Sequence
 
-The controller runs a fixed three-phase cycle. Durations are defined in `config.h`. The humidity target is set by the user via the humidity potentiometer.
+A fixed three-phase cycle. Durations are configurable from the menu and
+persisted; `config.h` only supplies the factory defaults.
 
 ```
 Init ──► Brassage ──► Extraction ──► Brassage ──► Extraction ──► ...
  (×1)        (×∞ loop)
 ```
 
+The cycle loops until STOP is pressed — there is no automatic end.
+
 ### Phase: Init
 
-- **Purpose:** Bring the chamber up to target temperature before starting the cycle.
-- **Exit condition:** Inlet temperature ≥ target, OR `INIT_PHASE_DURATION` seconds elapsed (whichever comes first).
-- **Heaters:** Hydraulic at full power, electric follows PID.
-- **Humidity:** If inlet humidity ≥ user target during init, the damper opens for `EXTRACTION_DAMPER_OPEN_DURATION` seconds, then closes and init continues. If less than `EXTRACTION_DAMPER_OPEN_DURATION` seconds remain in init when humidity is reached, the controller transitions directly to the Extraction phase.
+- **Purpose:** bring the chamber up to target temperature before cycling.
+- **Exit:** inlet temperature ≥ target, or the Init duration elapses.
+- **Damper:** closed. If inlet humidity reaches the target during Init, the
+  damper opens for the configured extraction window, then closes and Init
+  continues. If less than that window remains, the controller goes straight to
+  Extraction.
 
 ### Phase: Brassage
 
-- **Purpose:** Homogenise temperature and humidity throughout the chamber.
-- **Exit condition:** Inlet humidity ≥ user target (early transition to Extraction), OR `BRASSAGE_PHASE_DURATION` seconds elapsed (timeout).
-- **Air damper:** Closed (recirculation), unless humidity triggers early extraction.
+- **Purpose:** homogenise temperature and humidity through the chamber.
+- **Exit:** inlet humidity ≥ target (early transition), or the Brassage
+  duration elapses.
+- **Damper:** closed (recirculation).
 
 ### Phase: Extraction
 
-- **Purpose:** Evacuate accumulated moisture from the chamber.
-- **Exit condition:** `EXTRACTION_PHASE_DURATION` seconds elapsed (always runs to completion to remove maximum moisture).
-- **Air damper:** Opens when humidity exceeds user target + 5 %RH deadband; closes when humidity drops to user target.
+- **Purpose:** evacuate accumulated moisture.
+- **Exit:** always runs its full duration.
+- **Damper:** open.
+
+Every phase transition calls `TemperatureManager::ResetControl()`, which clears
+both sources and their anti-short-cycle timers.
 
 ---
 
-## PID Temperature Control
+## Temperature Control
 
-Two independent PID controllers regulate the heating system.
+Two **independent on/off sources** share the same measured inlet temperature.
+There is no PID: the remote hydraulic module only accepts a state and a fixed
+water setpoint, and its three-way valve is far too slow to be modulated, so
+there is nothing left for a continuous output to act on.
 
-### Hydraulic Heater (primary)
+### Hydraulic — base heat
 
-- **Output:** 0–100 % circulator power (proportional)
-- **Characteristics:** High thermal inertia — slow but energy-efficient
-- **Tuning:** Strong damping (Kd) to handle slow thermal response
+Wide hysteresis, slow cycling. The module holds a fixed water temperature set
+from the menu; the dryer only decides when it runs.
+
+| Condition | Effect |
+|---|---|
+| error > `CTRL_BANDE_HYDRO` (1.5 °C) and OFF for ≥ `CTRL_HYDRO_T_OFF_MIN` | turn ON |
+| error ≤ 0, or overshoot predicted, and ON for ≥ `CTRL_HYDRO_T_ON_MIN` | turn OFF |
+
+The long minimum on/off times (300 s each) protect the valve and the
+circulator, and must exceed the time the valve needs to travel.
+
+### Electric — fine trim
+
+Narrow hysteresis, fast cycling, closing the last fraction of a degree the
+hydraulic cannot resolve.
+
+| Condition | Effect |
+|---|---|
+| error > `CTRL_BANDE_ELEC` (0.5 °C) and OFF for ≥ `CTRL_T_OFF_MIN` | turn ON |
+| error ≤ 0, or overshoot predicted, and ON for ≥ `CTRL_T_ON_MIN` | turn OFF |
+
+Because `CTRL_BANDE_HYDRO` sits well above `CTRL_BANDE_ELEC`, a large error
+engages both sources while a small one is trimmed by the electric alone.
+
+### Predictive shutoff
+
+Both sources cut out early when the temperature is climbing fast enough to
+sail past the setpoint on inertia alone:
 
 ```
-hydraulic_output = PID(target, inlet_temperature, dt)
-circulator_power = hydraulic_output  // 0–100%
+T + dT_dt × horizon ≥ setpoint   →   turn off
 ```
 
-### Electric Heater (supplement)
+This only applies when `dT_dt > CTRL_DT_PREDICT_MIN` (0.05 °C/s). The probes
+report in 0.1 °C steps, and a single quantisation step produces a filtered
+derivative around 0.03 °C/s — without that gate, sensor noise alone would cut
+the heating short. The hydraulic uses a longer horizon than the electric,
+because the water loop keeps giving off heat well after the circulator stops.
 
-- **Output:** Binary ON/OFF (threshold: PID output > 0.5)
-- **Characteristics:** Fast response, high power consumption
-- **Disabled in ECO mode**
+### Reported state
 
-```
-electric_output = PID(target, inlet_temperature, dt)
-heater_state = electric_output > 0.5 ? ON : OFF
-```
-
-### Default PID Parameters
-
-| Parameter | Hydraulic | Electric |
-|-----------|-----------|---------|
-| Kp | 5.0 | 10.0 |
-| Ki | 0.1 | 0.2 |
-| Kd | 2.0 | 1.0 |
-| Integral max (anti-windup) | 50.0 | 50.0 |
-| Derivative filter | 0.1 | 0.1 |
-
-All values are defined in `config.h` and take effect at compile time.
-
-### Tuning Guide
-
-**System too slow / never reaches target** → increase Kp
-
-**System oscillates / overshoots** → decrease Kp, or increase Kd
-
-**Stable offset below target** (e.g. settles at 39 °C instead of 40 °C) → increase Ki
-
-**Integral windup after hours of operation** → decrease `pid_integral_max` or Ki
-
-**Noisy derivative output** → decrease `pid_derivative_filter` (more filtering)
-
-Adjust one parameter at a time. Observe for at least 10 minutes before the next change (the integral term is slow).
+`ControlState` describes which sources are usable, not a mode being switched
+between: `HYDRAULIC_ELECTRIC`, `HYDRAULIC_ONLY`, `ELECTRIC_ONLY`, or `OFF`.
 
 ---
 
-## Operating Modes
+## Safety Interlocks
 
-Selected via physical switch on GPIO 22. Applies immediately each control cycle — no reboot needed.
+Four independent conditions gate heating. All must hold.
 
-Both heaters (hydraulic and electric) are available in **all modes**.
+| Interlock | Effect when false |
+|---|---|
+| `heating_permitted_` — inlet probe fresher than `SENSOR_TIMEOUT_MS` | both sources off |
+| `fan_active_` — the fan is running | both sources off |
+| `electric_enabled_` / `hydraulic_enabled_` — menu toggles | that source off |
+| `hydraulic_online_` — the module answered within 30 s | hydraulic off |
 
-### PERFORMANCE
+Plus two hard cutoffs inside the control loop: a sensor fault (NaN, or outside
+−20…200 °C) and the measured temperature exceeding the configurable safety
+maximum.
 
-- Both heaters active at all times
-- Full target temperature at all times
+**Sensor freshness matters most.** If the probe goes silent, its last value
+would otherwise sit frozen forever while the heaters chased it. The reading
+carries a timestamp published across cores, and heating is blocked as soon as
+it goes stale. A fault is shown as `SONDE` in the status bar.
 
-### ECO
-
-ECO mode is time-aware. The switch enables the intent; the RTC clock determines whether the reduction applies.
-
-| Time window | ECO switch OFF | ECO switch ON |
-|-------------|---------------|--------------|
-| Day (09h00 – 18h00) | Full target, both heaters | Full target, both heaters |
-| Night (18h00 – 09h00) | Full target, both heaters | **85 % of target**, both heaters |
-
-- **ECO LED** is lit only when the switch is ON **and** the current time is inside the night window (18h00 → 09h00)
-- Default reduction: 85 % of target — e.g. target 40 °C → effective 34 °C at night
-- The reduction percentage is set by `ECO_NIGHT_TARGET_PERCENTAGE` in `config.h`
-- The time window boundaries are `ECO_START_HOUR` (18) and `ECO_END_HOUR` (9) in `config.h`
-
-### User scenarios
-
-**1. Lower the temperature target**
-Turn the temperature potentiometer down before starting. The reduced setpoint is active immediately in both modes. Useful when the product being dried requires a gentler temperature.
-
-**2. Daytime "flambée" — add calories before a low-energy night**
-Keep the switch on PERFORMANCE during the day to run both heaters at full target and build up heat in the thermal store. Switch to ECO in the evening. The controller will then coast through the night at the reduced target, drawing on the stored calories.
-
-**3. Anticipate an ECO night**
-Activate the ECO switch before 18h00. During the day nothing changes (full target, both heaters). At 18h00 the controller automatically switches to the reduced target — no manual action needed overnight. Flip the switch back to PERFORMANCE the next morning if needed.
+Losing the hydraulic module degrades to electric-only; it never stops a
+session.
 
 ---
 
-## Humidity Control
+## Humidity and Air Damper
 
-The air damper (Belimo LM24A-SR) is controlled as a binary open/close valve.
+The damper is strictly binary — recirculation or extraction — driven by the
+current phase. `HumidityManager` operates it in two modes: `kDisabled` (closed,
+Init and Brassage) and `kForceOpen` (Extraction and the Init sub-extraction).
 
-```
-if inlet_humidity > target + 5 %RH deadband:
-    open damper  (evacuate moisture)
-elif inlet_humidity <= target:
-    close damper (stop extraction)
-```
+Humidity does not modulate the damper; it decides **phase transitions**. The
+target is compared against the inlet reading to leave Brassage early.
 
-A 10-second cooldown is enforced between state changes to prevent hunting.
-
-During **Brassage** phase, the target is set to 0 (no control) — damper stays closed.
-During **Extraction** phase, the target is the user humidity setpoint (potentiometer).
+The Belimo's 2-10 V position feedback is read on ADC2 and used **only for
+display**, showing the vane travelling during its ~150 s stroke. Calibration is
+two-point, from the menu.
 
 ---
 
-## Session Persistence
+## Operator Interface
 
-Session state is written to `/state.bin` on the SD card via `PersistentStateManager` at key events:
+A 320×240 TFT and a rotary encoder replace every panel control of v3.
 
-| Event | What is saved |
-|-------|--------------|
-| START pressed | session_running = true, phase = Init, elapsed = 0 |
-| STOP pressed | session_running = false |
-| Every 5 minutes (while running) | current phase + elapsed times |
+### Main screen
 
-On boot, if `session_running = true` is found in `/state.bin`, the session resumes from the saved phase and elapsed time. A checksum and version number guard against corrupt data. If the SD card is unavailable, the system starts with defaults.
+| Region | Contents |
+|---|---|
+| Status bar | elapsed time (left, fixed width), phase (centred), LoRa icon |
+| Tiles | injection measurement / setpoint |
+| Hydraulic block | circulator ON/OFF, circulating and tank water temperatures |
+| Status band | fan (animated), electric heating, damper state |
 
-State file version: **9** — changing the `PersistentState` struct requires bumping `kStateVersion` in `PersistentStateManager.h`.
+Elapsed time is on the left because `HH:MM:SS` never changes width, while the
+phase name does; centring the one that moves keeps the bar from jittering.
+
+A missing reading renders as `--.-`, never as `0.0`.
+
+### Menu
+
+Rotation moves the cursor, a click enters or edits, and each page ends with an
+explicit `< Retour` — there is no long press. Booleans flip on a click. The
+cursor stops at the ends rather than wrapping.
+
+Pages: Consignes, Sources, Mode ECO, Phases, Régulation, Système.
+
+Entries that make no sense in the current configuration are greyed out and
+skipped rather than hidden, so the menu keeps the same shape whatever hardware
+is fitted.
+
+**START and STOP remain physical and always act**, whatever is on screen.
 
 ---
 
-## Data Logging
+## ECO Mode
 
-Log files are written to the SD card in CSV format.
+Reduces the setpoint to a configurable percentage during a night window.
 
-**Path:** `/sessions/YYYY/MM/YYMMXXXX.csv`
-- `YYMM` — year + month (2-digit each)
-- `XXXX` — sequential batch number within the month
+**Requires the optional RTC.** Without a wall clock the window cannot be
+evaluated, so the whole ECO submenu is greyed out and the mode is forced to
+PERFORMANCE regardless of what is stored. The window wraps around midnight when
+the start hour is later than the end hour.
 
-**Log interval:** `DATA_LOG_INTERVAL` ms (default: 60 000 ms = 1 minute)
+---
 
-**Columns:**
+## Persistence
 
-| Column | Unit | Description |
-|--------|------|-------------|
-| timestamp | datetime | Human-readable date/time from RTC |
-| inlet_temperature | °C | Air inlet temperature |
-| inlet_hr | %RH | Air inlet humidity |
-| outlet_temperature | °C | Air outlet temperature |
-| outlet_hr | %RH | Air outlet humidity |
-| fan_state | 0/1 | Fan relay state |
-| hydraulic_heater_state | 0/1 | Circulator active |
-| hydraulic_heater_power | % | Circulator power (0–100) |
-| electric_heater_state | 0/1 | Electric heater relay state |
-| air_damper_open | 0/1 | Damper open = 1, closed = 0 |
-| target_temperature | °C | Current potentiometer setpoint |
-| phase_name | string | Init / Brassage / Extraction |
-| total_elapsed_s | seconds | Time since session start |
-| phase_elapsed_s | seconds | Time since current phase start |
+LittleFS on internal flash, replacing the v3 SD card. Two independent records,
+each versioned and checksummed:
 
-If the SD card is unavailable at session start, logging is disabled for that session. The controller retries SD initialisation every 30 seconds.
+| File | Contents | Written |
+|---|---|---|
+| `/settings.bin` | everything the menu can change | on each commit |
+| `/session.bin` | phase and elapsed time | on start/stop, then every 60 s |
+
+Records are written to a temporary file and renamed over the target, so a power
+cut costs the new values rather than the previous ones. A record whose version
+or checksum does not match is discarded in favour of the factory defaults.
+
+A reboot mid-cycle resumes the session at its phase and elapsed time. Elapsed
+time is `millis()`-based, so the wall-clock gap during the outage is lost.
+
+---
+
+## Remote Link
+
+An SX1262 at 868 MHz talks to the Commander, which has the internet connection.
+Session logging happens server-side; the dryer keeps none.
+
+**Uplink:** a 43-byte telemetry frame every 60 s — both probes, both water
+temperatures, setpoints, phase, elapsed time, actuator states, damper position.
+Readings travel as signed tenths with a distinct sentinel for "no value", so a
+missing probe is not reported as a real zero.
+
+**Downlink:** START, STOP, set temperature, set humidity. Each frame carries a
+device id and a sequence number. Frames addressed to another dryer are dropped.
+The Commander repeats until acknowledged, so duplicates are normal and executed
+only once; a superseded setpoint arriving late is discarded. Sequence numbers
+wrap in a byte, handled as a signed window.
+
+A remote setpoint change goes through the same record the menu edits, so it is
+persisted and shown on screen like any other.
+
+The radio never participates in regulation: if it fails to initialise, the
+dryer logs it and carries on.
