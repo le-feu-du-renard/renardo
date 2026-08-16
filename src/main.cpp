@@ -13,6 +13,7 @@
 #include "TftDisplay.h"
 #include "MenuSystem.h"
 #include "MenuRenderer.h"
+#include "LoraLink.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -35,6 +36,7 @@ OutputDriver electric_output(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, "electri
 InputHandler input_handler;
 TftDisplay display;
 MenuSystem menu;
+LoraLink lora;
 
 // Declared by MenuSystem.cpp so the ECO entries can grey themselves out.
 void MenuSetRtcAvailable(bool available);
@@ -328,7 +330,7 @@ static void UpdateDisplay()
   model.total_elapsed_s = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
   model.phase_name      = dryer.GetPhaseName();
   model.running         = dryer.IsRunning();
-  model.lora_linked     = false; // wired up with LoraLink
+  model.lora_linked     = lora.IsLinked();
 
   model.inlet_temperature  = g_sensors.inlet_temperature;
   model.inlet_humidity     = g_sensors.inlet_humidity;
@@ -352,6 +354,85 @@ static void UpdateDisplay()
   model.sensor_fault = !temperature_manager->GetHeatingPermitted();
 
   display.RenderMain(model);
+}
+
+// ========== LORA LINK ==========
+
+// Commands arriving from the Commander. START/STOP are applied exactly like a
+// button press; setpoint changes go through the same record the menu edits, so
+// a remote change is persisted and reflected on screen like any other.
+static void ApplyRemoteCommands()
+{
+  uint8_t command = kLoraCommandNone;
+  float   argument = 0.0f;
+
+  while (lora.ConsumeCommand(command, argument))
+  {
+    switch (command)
+    {
+    case kLoraCommandStart:
+      if (!dryer.IsRunning())
+      {
+        Logger::Info("LoRa: remote START");
+        dryer.Start();
+      }
+      break;
+
+    case kLoraCommandStop:
+      if (dryer.IsRunning())
+      {
+        Logger::Info("LoRa: remote STOP");
+        dryer.Stop();
+      }
+      break;
+
+    case kLoraCommandSetTemp:
+      Logger::Info("LoRa: remote target %F C", argument);
+      settings.target_temperature = argument;
+      OnSettingsChanged();
+      break;
+
+    case kLoraCommandSetHumidity:
+      Logger::Info("LoRa: remote target %F %%RH", argument);
+      settings.target_humidity = argument;
+      OnSettingsChanged();
+      break;
+
+    default:
+      break;
+    }
+  }
+}
+
+static void UpdateLora()
+{
+  const TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
+  const AirDamper *damper = dryer.GetAirDamper();
+
+  TelemetryData data;
+  data.inlet_temperature  = g_sensors.inlet_temperature;
+  data.inlet_humidity     = g_sensors.inlet_humidity;
+  data.outlet_temperature = g_sensors.outlet_temperature;
+  data.outlet_humidity    = g_sensors.outlet_humidity;
+  data.water_temperature  = g_sensors.water_temperature;
+  data.tank_temperature   = g_sensors.tank_temperature;
+  data.target_temperature = temperature_manager->GetEffectiveTargetTemperature();
+  data.target_humidity    = dryer.GetHumidityManager()->GetTargetHumidity();
+  data.damper_position    = damper->GetPositionPercent();
+
+  data.session_elapsed_s = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
+  data.phase             = static_cast<uint8_t>(dryer.GetCurrentPhase());
+
+  data.running          = dryer.IsRunning();
+  data.fan_on           = dryer.GetFanOutput() > 0.0f;
+  data.electric_on      = temperature_manager->GetElectricOn();
+  data.hydraulic_on     = temperature_manager->GetHydraulicOn();
+  data.hydraulic_online = temperature_manager->GetHydraulicOnline();
+  data.damper_open      = damper->IsOpen();
+  data.sensor_fault     = !temperature_manager->GetHeatingPermitted();
+
+  lora.Update(data, settings.lora_telemetry_interval_ms);
+  ApplyRemoteCommands();
 }
 
 // ========== SESSION PERSISTENCE ==========
@@ -459,6 +540,10 @@ void setup()
   dryer.ApplySettings(settings, g_rtc_available);
   g_water_target = settings.water_target;
 
+  // The device id lets the Commander tell several dryers apart and makes a
+  // frame meant for another one impossible to obey.
+  lora.Begin(LORA_DEVICE_ID);
+
   MenuSetRtcAvailable(g_rtc_available);
   menu.Begin(&settings);
   menu.SetOnChange(OnSettingsChanged);
@@ -498,6 +583,7 @@ void loop()
   UpdateOutputs();
   UpdateDamperPosition();
   UpdateDisplay();
+  UpdateLora();
   UpdateSessionPersistence();
   UpdateDiagnostics();
 

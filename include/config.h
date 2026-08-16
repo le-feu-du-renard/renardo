@@ -109,6 +109,8 @@
 #define LORA_TX_POWER 14          // dBm, EU868 limit without duty-cycle tricks
 #define LORA_PREAMBLE_LENGTH 8
 #define LORA_TELEMETRY_INTERVAL_MS 60000
+// Identifies this dryer on a shared band; frames addressed elsewhere are dropped.
+#define LORA_DEVICE_ID 1
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms
