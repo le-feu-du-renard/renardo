@@ -38,7 +38,7 @@ bool Rs485Bus::Begin(uint32_t baudrate)
   digitalWrite(de_pin_, LOW); // Start in receive mode
 
   ready_ = true;
-  Logger::Info("Rs485Bus %s: ready at %lu baud (TX=%d RX=%d DE=%d)",
+  Logger::Info("Rs485Bus %s: ready at %u baud (TX=%d RX=%d DE=%d)",
                name_, baudrate, tx_pin_, rx_pin_, de_pin_);
   return true;
 }

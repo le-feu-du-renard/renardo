@@ -487,7 +487,7 @@ static void UpdateDiagnostics()
   if (now - last_heartbeat >= kHeartbeatInterval)
   {
     last_heartbeat = now;
-    Logger::Info("Heartbeat — loops=%lu uptime=%us running=%s",
+    Logger::Info("Heartbeat — loops=%u uptime=%us running=%s",
                  loop_count, now / 1000, dryer.IsRunning() ? "YES" : "NO");
   }
 

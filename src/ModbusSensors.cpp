@@ -30,7 +30,7 @@ bool ModbusSensors::Poll(uint8_t index)
     {
       reading.error_count++;
     }
-    Logger::Warning("ModbusSensors: read failed @%d (error 0x%02X, count %d)",
+    Logger::Warning("ModbusSensors: read failed @%d (error %X, count %d)",
                     addresses_[index], bus_->GetLastError(), reading.error_count);
     return false;
   }

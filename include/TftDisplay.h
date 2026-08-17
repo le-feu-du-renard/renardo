@@ -69,6 +69,10 @@ private:
   static constexpr uint32_t kAnimationIntervalMs = 80;
   static constexpr uint32_t kBlinkIntervalMs     = 500;
 
+  // Colour bars and a banner at start-up, so a wiring fault is distinguishable
+  // from a working panel that simply has nothing to display yet.
+  void ShowSplash();
+
   void DrawStatusBar(const DisplayModel &model);
   void DrawMeasurementTile(const DisplayModel &model);
   void DrawSetpointTile(const DisplayModel &model);

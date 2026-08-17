@@ -59,7 +59,7 @@ bool HydraulicRemote::Update()
     {
       error_count_++;
     }
-    Logger::Warning("HydraulicRemote: exchange failed @%d (error 0x%02X, count %d)",
+    Logger::Warning("HydraulicRemote: exchange failed @%d (error %X, count %d)",
                     MODBUS_HYDRAULIC_ADDRESS, bus_->GetLastError(), error_count_);
     return false;
   }

@@ -50,11 +50,39 @@ void TftDisplay::Begin()
 {
   tft_.init();
   tft_.setRotation(1); // landscape, 320 x 240
+
+  ShowSplash();
+
   tft_.fillScreen(UiTheme::kBackground);
   tft_.setTextColor(UiTheme::kValue, UiTheme::kPanel);
 
   force_redraw_ = true;
-  Logger::Info("TftDisplay: ST7789 ready (%dx%d landscape)", kWidth, kHeight);
+  // Note this says the initialisation sequence was *sent*, not that a panel
+  // received it: TFT_eSPI never reads anything back. The splash above is the
+  // only real evidence that the wiring works.
+  Logger::Info("TftDisplay: ST7789 init sent (%dx%d landscape)", kWidth, kHeight);
+}
+
+void TftDisplay::ShowSplash()
+{
+  // A blank main screen looks exactly like a dead panel, which makes a wiring
+  // fault impossible to tell from a working board with nothing to show. Three
+  // primaries and a banner settle it in under a second, and also reveal a
+  // swapped colour order straight away.
+  const uint16_t colours[3] = {TFT_RED, TFT_GREEN, TFT_BLUE};
+  for (uint8_t i = 0; i < 3; i++)
+  {
+    tft_.fillScreen(colours[i]);
+    delay(150);
+  }
+
+  tft_.fillScreen(TFT_BLACK);
+  tft_.setTextDatum(MC_DATUM);
+  tft_.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft_.drawString("renard'o v4", kWidth / 2, kHeight / 2 - 16, 4);
+  tft_.setTextColor(UiTheme::kLabel, TFT_BLACK);
+  tft_.drawString("320x240", kWidth / 2, kHeight / 2 + 14, 2);
+  delay(400);
 }
 
 void TftDisplay::Invalidate()
