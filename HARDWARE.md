@@ -195,10 +195,24 @@ Nothing on screen with the backlight lit means the panel is not receiving or
 not leaving reset. Check, in this order: **DC**, **RES**, **CS**, then SCL/SDA
 not swapped.
 
+Two bring-up environments help:
+
 `pio run -e pin_test -t upload -t monitor` drives each of the five signals on
 its own at 1 Hz, announcing which one, so every wire can be confirmed with a
-multimeter or an LED. Probe at the **module** end: that is what distinguishes a
-broken wire from a wrong pin.
+multimeter or an LED. It uses no libraries — it proves the wire, not the
+driver. Probe at the **module** end: that is what distinguishes a broken wire
+from a wrong pin.
+
+`pio run -e tft_test -t upload -t monitor` asks the panel to identify itself.
+The module exposes no MISO pin, but the ST7789 answers on the SDA line, which
+is bidirectional in 4-wire SPI, so `TFT_SDA_READ` turns the pin around for the
+read. An ST7789V normally reports `0x85 0x85 0x52`. A plausible ID means the
+panel is powered, out of reset and wired correctly in both directions, so
+anything still wrong is driver configuration; all zeroes or all ones means
+nothing is answering and the fault is power, reset, CS or the clock/data pair.
+Some modules put a series resistor on SDA and cannot be read at all, so a silent
+answer is suggestive rather than conclusive. The test then sweeps colours and
+draws corner markers, which also reveal orientation and any row/column offset.
 
 ## Power supply
 
