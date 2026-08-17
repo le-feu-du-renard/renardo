@@ -114,6 +114,11 @@ static uint32_t last_input_update = 0;
 static uint32_t last_session_save = 0;
 static bool     was_running = false;
 
+// The RP2040 watchdog counter is 24 bits of half-microseconds, so anything over
+// roughly 8.3 s is silently clamped — there is no such thing as a longer window
+// to lean on during a slow start-up.
+static constexpr uint32_t kRuntimeWatchdogMs = 8000;
+
 static constexpr uint32_t kMemoryCheckInterval = 30000; // 30 s
 static constexpr uint32_t kHeartbeatInterval = 10000;   // 10 s
 static uint32_t last_memory_check = 0;
@@ -518,12 +523,23 @@ void setup()
     Logger::Warning("!!! Recovered from watchdog reset !!!");
   }
 
-  // Enable 8-second watchdog
-  watchdog_enable(8000, 1);
-  Logger::Info("Watchdog enabled (8 s timeout)");
-
+  // Outputs first, whatever else happens: this drives the three command lines
+  // to their inactive level, and nothing below it is allowed to take priority.
   SetupOutputs();
   SetupAnalogInputs();
+
+  // --- Hardware probing, deliberately outside the watchdog ---
+  //
+  // Probing hardware that is not fitted blocks for seconds: RadioLib waits on
+  // BUSY when no radio answers, and the I2C and filesystem probes have their
+  // own timeouts. The RP2040 watchdog cannot be set beyond ~8.3 s, so there is
+  // no window generous enough to cover them — arming it here rebooted the board
+  // mid-setup, and since the reboot came back to the same absent hardware, it
+  // looped forever.
+  //
+  // A stage that hangs outright therefore leaves the board stopped rather than
+  // cycling. That is the better failure: the log ends on the exact stage that
+  // hung instead of scrolling past in a reboot loop.
 
   SetupI2C();
   delay(100);
@@ -544,7 +560,12 @@ void setup()
 
   // The device id lets the Commander tell several dryers apart and makes a
   // frame meant for another one impossible to obey.
+  Logger::Info("LoraLink: probing SX1262 on SPI1 (several seconds if absent)...");
   lora.Begin(LORA_DEVICE_ID);
+
+  // --- Probing done; everything below is bounded and fast ---
+  watchdog_enable(kRuntimeWatchdogMs, 1);
+  Logger::Info("Watchdog enabled (%u s)", kRuntimeWatchdogMs / 1000);
 
   MenuSetRtcAvailable(g_rtc_available);
   menu.Begin(&settings);
