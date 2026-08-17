@@ -48,6 +48,32 @@ void ReportRegister(const char *label, uint8_t command, uint8_t count)
   Serial.println();
 }
 
+// Ask the library what it actually ended up configured with, rather than
+// trusting that the -D flags reached it. If USER_SETUP_LOADED were not honoured
+// the library would silently fall back to User_Setup.h and drive a completely
+// different set of pins, which looks exactly like a dead panel.
+void ReportEffectiveSetup()
+{
+  setup_t setup;
+  tft.getSetup(setup);
+
+  Serial.println("Configuration the library is actually using:");
+  Serial.printf("  driver code : 0x%04X   (ST7789 expected)\n", setup.tft_driver);
+  Serial.printf("  panel size  : %u x %u\n", setup.tft_width, setup.tft_height);
+  Serial.printf("  MOSI        : GP%d\n", setup.pin_tft_mosi);
+  Serial.printf("  SCLK        : GP%d\n", setup.pin_tft_clk);
+  Serial.printf("  CS          : GP%d\n", setup.pin_tft_cs);
+  Serial.printf("  DC          : GP%d\n", setup.pin_tft_dc);
+  Serial.printf("  RST         : GP%d\n", setup.pin_tft_rst);
+  Serial.printf("  MISO        : GP%d   (-1 = not wired, expected)\n",
+                setup.pin_tft_miso);
+  Serial.println();
+  Serial.println("  Expected: MOSI 19, SCLK 18, CS 16, DC 17, RST 20.");
+  Serial.println("  Anything else means the build flags never reached the");
+  Serial.println("  library and it fell back to its own defaults.");
+  Serial.println();
+}
+
 void ShowPattern(uint16_t colour, const char *name)
 {
   Serial.printf("  filling %s\n", name);
@@ -70,7 +96,13 @@ void setup()
   tft.init();
   tft.setRotation(1);
 
-  Serial.println("Reading back over SDA (TFT_SDA_READ):");
+  ReportEffectiveSetup();
+
+  // Note: with CS on GP16, which is also SPI0's RX pin, TFT_SDA_READ is not
+  // trustworthy — it calls spi.end()/spi.begin() around the read, which
+  // reclaims the pin as MISO and drops CS mid-transaction. Treat a silent
+  // answer here as inconclusive; the pattern sweep is the real test.
+  Serial.println("Reading back over SDA (TFT_SDA_READ, unreliable with CS on GP16):");
   ReportRegister("display id", kCmdReadDisplayId, 3);
   ReportRegister("display status", kCmdReadDisplayStatus, 4);
   ReportRegister("power mode", kCmdReadPowerMode, 1);
