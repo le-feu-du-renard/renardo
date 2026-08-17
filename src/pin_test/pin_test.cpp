@@ -26,11 +26,11 @@ struct TestPin
 
 // Order matches the wiring table in HARDWARE.md.
 const TestPin kPins[] = {
-    {"CS ", "chip select", TFT_CS_PIN, 22},
-    {"SCL", "SPI clock",   SPI0_SCK_PIN, 24},
-    {"SDA", "SPI data",    SPI0_MOSI_PIN, 25},
-    {"DC ", "data/command", TFT_DC_PIN, 26},
-    {"RES", "reset",       TFT_RST_PIN, 27},
+    {"CS ", "chip select",  TFT_CS_PIN,    21},
+    {"DC ", "data/command", TFT_DC_PIN,    22},
+    {"SCL", "SPI clock",    SPI0_SCK_PIN,  24},
+    {"SDA", "SPI data",     SPI0_MOSI_PIN, 25},
+    {"RES", "reset",        TFT_RST_PIN,   26},
 };
 
 constexpr uint8_t kPinCount = sizeof(kPins) / sizeof(kPins[0]);

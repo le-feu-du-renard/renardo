@@ -10,15 +10,15 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 
 ## GPIO map
 
-25 of the 26 available GPIOs are used. **GP16 is free.**
+25 of the 26 available GPIOs are used. **GP21 is free.**
 
 | Function | GPIO | Notes |
 |---|---|---|
 | SPI0 SCK | 18 | display only |
 | SPI0 MOSI | 19 | display only; MISO not wired |
-| TFT CS | 17 | |
-| TFT DC | 20 | |
-| TFT RST | 21 | |
+| TFT CS | 16 | SPI0 RX pin, reused as an output |
+| TFT DC | 17 | |
+| TFT RST | 20 | |
 | SPI1 SCK | 10 | radio only |
 | SPI1 MOSI | 11 | radio only |
 | SPI1 MISO | 12 | radio only |
@@ -167,18 +167,25 @@ on — so a lit backlight proves the supply, and nothing else.
 
 The module's `SCL` and `SDA` are **SPI**, not I2C, despite the silkscreen.
 
+Listed in the order the pins appear on the module, which is **not** the order
+they appear on the Pico header — wiring positionally rather than by name is the
+easy mistake here.
+
 | Module | Pico GP | Header pin |
 |---|---|---|
 | GND | GND | 23 |
 | VCC | 3V3(OUT) | 36 |
-| CS | GP17 | 22 |
 | SCL (clock) | GP18 | 24 |
 | SDA (data) | GP19 | 25 |
-| DC | GP20 | 26 |
-| RES | GP21 | 27 |
+| RES | GP20 | 26 |
+| DC | GP17 | 22 |
+| CS | GP16 | 21 |
 
-3.3 V only. The five signals land on header pins 22–27 with GND at 23 in the
-middle.
+3.3 V only. The five signals land on header pins 21–26, with GND at 23.
+
+CS sits on GP16, which is also SPI0's RX pin. The panel never drives data back,
+so RX is idle, and TFT_eSPI re-asserts the pin as an output after `spi.begin()`
+for exactly this case.
 
 TFT_eSPI on the RP2040 does not call `spi_init()` or `gpio_set_function()`: it
 calls plain `spi.begin()` and inherits arduino-pico's default SPI0 pins, which

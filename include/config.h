@@ -13,9 +13,14 @@
 // TFT display — GMT020-02-7P v1.3 (ST7789, 240x320).
 // The pins are mirrored into TFT_eSPI via build flags in platformio.ini;
 // both must be changed together.
-#define TFT_CS_PIN 17
-#define TFT_DC_PIN 20
-#define TFT_RST_PIN 21
+//
+// CS sits on GP16, which is also SPI0's RX pin. That is deliberate and
+// supported: the panel never drives data back, so RX is idle, and TFT_eSPI
+// re-asserts the pin as an output after spi.begin() precisely for this case.
+// It puts the five signals on consecutive header pins 21-26 with GND at 23.
+#define TFT_CS_PIN 16
+#define TFT_DC_PIN 17
+#define TFT_RST_PIN 20
 
 // ----- SPI1, the LoRa radio alone -----
 // The radio deliberately does not share the display's bus. TFT_eSPI may drive
@@ -86,7 +91,7 @@
 #define I2C_BUS_1_SDA_PIN 26
 #define I2C_BUS_1_SCL_PIN 27
 
-// Free for expansion: GP16
+// Free for expansion: GP21
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
