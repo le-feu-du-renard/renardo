@@ -203,6 +203,14 @@ either. It is the single setting that stood between a blank panel and a working
 one, and nothing about the symptom points at it — a wiring fault looks exactly
 the same.
 
+### Colour order
+
+**This panel needs `TFT_RGB_ORDER=TFT_BGR`.**
+
+On the library default red rendered as blue and cyan as yellow, with green
+untouched — the signature of the red and blue channels being exchanged. The
+start-up splash shows this immediately: the first bar must be red.
+
 ### When nothing appears
 
 `TFT_eSPI::init()` writes its sequence blind and never reads back, so the log
