@@ -192,15 +192,26 @@ calls plain `spi.begin()` and inherits arduino-pico's default SPI0 pins, which
 are MISO 16, CS 17, SCK 18, MOSI 19. SCK and MOSI above match those defaults on
 purpose — moving them would need `SPI.setSCK()`/`setTX()` before `tft.init()`.
 
+### Clock polarity
+
+**This panel needs `TFT_SPI_MODE=SPI_MODE0`** — the clock idling low.
+
+TFT_eSPI defaults ST7789 to `SPI_MODE3`, with the comment "some ST7789 boards do
+not work with Mode 0". This module is the converse: on the library default it
+shows nothing whatsoever, not even corruption, and does not answer a readback
+either. It is the single setting that stood between a blank panel and a working
+one, and nothing about the symptom points at it — a wiring fault looks exactly
+the same.
+
 ### When nothing appears
 
 `TFT_eSPI::init()` writes its sequence blind and never reads back, so the log
 line only reports that the sequence was *sent*. The start-up splash — red,
 green, blue, then a banner — is the only real evidence the panel is alive.
 
-Nothing on screen with the backlight lit means the panel is not receiving or
-not leaving reset. Check, in this order: **DC**, **RES**, **CS**, then SCL/SDA
-not swapped.
+Nothing on screen with the backlight lit means the panel is not receiving, not
+leaving reset, or being clocked on the wrong edge. Check, in this order: the
+clock polarity above, then **DC**, **RES**, **CS**, then SCL/SDA not swapped.
 
 Two bring-up environments help:
 
