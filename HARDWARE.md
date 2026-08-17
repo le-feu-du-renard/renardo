@@ -161,8 +161,44 @@ forced to PERFORMANCE whatever is stored in the settings.
 `setRotation(1)`.
 
 The 7-pin connector carries no backlight control; the backlight is permanently
-on. If the panel comes up with inverted colours or an offset image, that is the
-usual ST7789 variant question — try `TFT_INVERSION_ON` or a column/row offset.
+on — so a lit backlight proves the supply, and nothing else.
+
+### Wiring
+
+The module's `SCL` and `SDA` are **SPI**, not I2C, despite the silkscreen.
+
+| Module | Pico GP | Header pin |
+|---|---|---|
+| GND | GND | 23 |
+| VCC | 3V3(OUT) | 36 |
+| CS | GP17 | 22 |
+| SCL (clock) | GP18 | 24 |
+| SDA (data) | GP19 | 25 |
+| DC | GP20 | 26 |
+| RES | GP21 | 27 |
+
+3.3 V only. The five signals land on header pins 22–27 with GND at 23 in the
+middle.
+
+TFT_eSPI on the RP2040 does not call `spi_init()` or `gpio_set_function()`: it
+calls plain `spi.begin()` and inherits arduino-pico's default SPI0 pins, which
+are MISO 16, CS 17, SCK 18, MOSI 19. SCK and MOSI above match those defaults on
+purpose — moving them would need `SPI.setSCK()`/`setTX()` before `tft.init()`.
+
+### When nothing appears
+
+`TFT_eSPI::init()` writes its sequence blind and never reads back, so the log
+line only reports that the sequence was *sent*. The start-up splash — red,
+green, blue, then a banner — is the only real evidence the panel is alive.
+
+Nothing on screen with the backlight lit means the panel is not receiving or
+not leaving reset. Check, in this order: **DC**, **RES**, **CS**, then SCL/SDA
+not swapped.
+
+`pio run -e pin_test -t upload -t monitor` drives each of the five signals on
+its own at 1 Hz, announcing which one, so every wire can be confirmed with a
+multimeter or an LED. Probe at the **module** end: that is what distinguishes a
+broken wire from a wrong pin.
 
 ## Power supply
 
