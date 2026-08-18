@@ -1,5 +1,7 @@
 #include "TimeManager.h"
 
+#include "Logger.h"
+
 TimeManager::TimeManager(TwoWire *wire)
     : wire_(wire), initialized_(false)
 {
@@ -9,96 +11,44 @@ bool TimeManager::Begin()
 {
   if (!rtc_.begin(wire_))
   {
-    Serial.println("ERROR: Couldn't find RTC DS1307");
+    Logger::Error("RTC: DS1307 not found");
     initialized_ = false;
     return false;
   }
 
-  Serial.println("RTC DS1307 initialized successfully");
+  // The chip answered, so the accessors below are usable for the rest of this
+  // function — including the ones that log the time.
+  initialized_ = true;
 
-  // Check current RTC time
   DateTime now = rtc_.now();
-  DateTime compileTime(F(__DATE__), F(__TIME__));
+  Logger::Info("RTC: current time %s", GetDateTimeString().c_str());
 
-  Serial.print("Current RTC time: ");
-  Serial.print(now.year());
-  Serial.print("-");
-  Serial.print(now.month());
-  Serial.print("-");
-  Serial.print(now.day());
-  Serial.print(" ");
-  Serial.print(now.hour());
-  Serial.print(":");
-  Serial.print(now.minute());
-  Serial.print(":");
-  Serial.println(now.second());
-
-  // Update RTC time only if it's invalid or outdated
-  bool needsUpdate = false;
-
-  // Check if year is 2000 (default reset value)
+  // Seeded with the compile time only when the chip clearly has no time of its
+  // own: a clock the user set from the menu must outlive both reboots and
+  // firmware updates, and comparing against the compile time would overwrite it
+  // on the very next boot.
+  bool needs_seed = false;
   if (now.year() < 2020)
   {
-    Serial.println("RTC time is invalid (year < 2020), updating...");
-    needsUpdate = true;
+    Logger::Warning("RTC: time never set (year < 2020), seeding from build");
+    needs_seed = true;
   }
-  // Check if RTC is behind compile time (new build)
-  else if (now.unixtime() < compileTime.unixtime())
-  {
-    Serial.println("RTC time is behind compile time, updating...");
-    needsUpdate = true;
-  }
-  // Check if RTC time is in the future compared to compile time
-  else if (now.unixtime() > compileTime.unixtime() + 86400)
-  {
-    Serial.println("RTC time is more than 1 day in the future, updating...");
-    needsUpdate = true;
-  }
-  // Check if RTC is not running (lost power)
   else if (!rtc_.isrunning())
   {
-    Serial.println("RTC oscillator not running, updating time...");
-    needsUpdate = true;
+    Logger::Warning("RTC: oscillator stopped, seeding from build");
+    needs_seed = true;
   }
 
-  if (needsUpdate)
+  if (needs_seed)
   {
-    Serial.print("Setting RTC to compile time: ");
-    Serial.print(compileTime.year());
-    Serial.print("-");
-    Serial.print(compileTime.month());
-    Serial.print("-");
-    Serial.print(compileTime.day());
-    Serial.print(" ");
-    Serial.print(compileTime.hour());
-    Serial.print(":");
-    Serial.print(compileTime.minute());
-    Serial.print(":");
-    Serial.println(compileTime.second());
+    DateTime compile_time(F(__DATE__), F(__TIME__));
+    rtc_.adjust(compile_time);
+    delay(100); // Let the I2C write complete before reading back
 
-    rtc_.adjust(compileTime);
-    delay(100); // Wait for I2C write to complete
-
-    now = rtc_.now();
-    Serial.print("RTC time updated to: ");
-    Serial.print(now.year());
-    Serial.print("-");
-    Serial.print(now.month());
-    Serial.print("-");
-    Serial.print(now.day());
-    Serial.print(" ");
-    Serial.print(now.hour());
-    Serial.print(":");
-    Serial.print(now.minute());
-    Serial.print(":");
-    Serial.println(now.second());
-  }
-  else
-  {
-    Serial.println("RTC time is valid, no update needed");
+    Logger::Info("RTC: seeded to %s — set the real time from Systeme > Date / Heure",
+                 GetDateTimeString().c_str());
   }
 
-  initialized_ = true;
   return true;
 }
 
@@ -111,7 +61,7 @@ DateTime TimeManager::GetNow()
 {
   if (!initialized_)
   {
-    Serial.println("WARNING: RTC not initialized, returning invalid DateTime");
+    Logger::Warning("RTC not initialized, returning invalid DateTime");
     return DateTime(2000, 1, 1, 0, 0, 0);
   }
   return rtc_.now();
@@ -121,13 +71,12 @@ void TimeManager::SetTime(const DateTime &dt)
 {
   if (!initialized_)
   {
-    Serial.println("ERROR: RTC not initialized");
+    Logger::Error("RTC not initialized, time not set");
     return;
   }
 
   rtc_.adjust(dt);
-  Serial.print("RTC time set to: ");
-  Serial.println(GetDateTimeString());
+  Logger::Info("RTC time set to %s", GetDateTimeString().c_str());
 }
 
 void TimeManager::SetTime(uint16_t year, uint8_t month, uint8_t day,

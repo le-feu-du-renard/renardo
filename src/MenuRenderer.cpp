@@ -101,9 +101,14 @@ void Render(TftDisplay &display, MenuSystem &menu)
       uint16_t value_color = !available ? UiTheme::kInactive
                              : (selected && editing) ? UiTheme::kWarning
                                                      : UiTheme::kSetpoint;
+
+      // An info row carries a whole timestamp rather than a number, which does
+      // not fit next to its label in the value font.
+      uint8_t value_font = (item.kind == MenuItemKind::kInfo) ? 2 : 4;
+
       canvas.setTextDatum(MR_DATUM);
       canvas.setTextColor(value_color, background);
-      canvas.drawString(value_text, width - 12, row_h / 2, 4);
+      canvas.drawString(value_text, width - 12, row_h / 2, value_font);
     }
 
     // Scroll indicator, clipped into whichever row it crosses.

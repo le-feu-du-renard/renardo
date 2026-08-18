@@ -11,8 +11,6 @@
 
 #include "MenuSystem.h"
 
-void MenuSetRtcAvailable(bool available);
-
 namespace
 {
 
@@ -21,16 +19,37 @@ int           g_change_count = 0;
 
 void CountChange() { g_change_count++; }
 
+// Stand-in for the RTC: the clock page reads it on entry and writes it back
+// only when the user validates.
+MenuClock g_fake_rtc{2026, 8, 18, 14, 32};
+int       g_clock_writes = 0;
+
+bool ReadFakeClock(MenuClock &clock)
+{
+  clock = g_fake_rtc;
+  return true;
+}
+
+void WriteFakeClock(const MenuClock &clock)
+{
+  g_fake_rtc = clock;
+  g_clock_writes++;
+}
+
 // Opens the menu with a known configuration.
 void Prepare(MenuSystem &menu, bool rtc_available)
 {
   g_test_settings.Reset();
   g_change_count = 0;
+  g_fake_rtc = MenuClock{2026, 8, 18, 14, 32};
+  g_clock_writes = 0;
   MenuSetRtcAvailable(rtc_available);
+  MenuSetClockHooks(ReadFakeClock, WriteFakeClock);
   menu.Begin(&g_test_settings);
   menu.SetOnChange(CountChange);
   menu.Open();
 }
+
 
 // Walks the cursor to the entry with the given label, returning false if it is
 // unreachable — which is itself a meaningful failure.
@@ -46,6 +65,34 @@ bool SelectLabel(MenuSystem &menu, const char *label)
     menu.HandleRotation(1);
   }
   return false;
+}
+
+// Walks into Systeme > Date / Heure, where every clock test starts.
+bool OpenClockPage(MenuSystem &menu)
+{
+  if (!SelectLabel(menu, "Systeme"))
+  {
+    return false;
+  }
+  menu.HandleClick();
+  if (!SelectLabel(menu, "Date / Heure"))
+  {
+    return false;
+  }
+  menu.HandleClick();
+  return strcmp(menu.GetCurrentPage()->title, "Date / Heure") == 0;
+}
+
+// Sets one entry of the clock page to an absolute value, by winding it to its
+// minimum first — the entries only move by steps.
+void SetClockField(MenuSystem &menu, const char *label, int32_t steps_from_min)
+{
+  menu.HandleRotation(-100); // back to the top: SelectLabel only walks forward
+  TEST_ASSERT_TRUE(SelectLabel(menu, label));
+  menu.HandleClick();          // enter edit mode
+  menu.HandleRotation(-10000); // wind down to the minimum
+  menu.HandleRotation(steps_from_min);
+  menu.HandleClick();          // commit
 }
 
 } // namespace
@@ -282,6 +329,134 @@ void test_factory_reset_restores_defaults(void)
   TEST_ASSERT_TRUE(IsRecordValid(g_test_settings, static_cast<uint16_t>(SETTINGS_VERSION)));
 }
 
+// --- Clock ------------------------------------------------------------------
+
+void test_clock_page_loads_the_rtc_on_entry(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+
+  TEST_ASSERT_TRUE(OpenClockPage(menu));
+
+  // The entries show what the RTC held when the page opened, not zeros.
+  const MenuPage *page = menu.GetCurrentPage();
+  char text[24];
+  menu.FormatItemValue(page->items[0], text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("18/08/26 14:32", text);
+
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Heure"));
+  menu.FormatItemValue(page->items[menu.GetCursor()], text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("14 h", text);
+
+  TEST_ASSERT_EQUAL_INT(0, g_clock_writes);
+}
+
+void test_editing_the_clock_does_not_touch_the_rtc_until_validated(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenClockPage(menu));
+
+  SetClockField(menu, "Heure", 7); // 0 + 7 -> 07 h
+
+  // Leaving without validating must leave the chip exactly as it was: a
+  // half-typed date is never what the user meant.
+  TEST_ASSERT_EQUAL_INT(0, g_clock_writes);
+  TEST_ASSERT_EQUAL_UINT8(14, g_fake_rtc.hour);
+
+  TEST_ASSERT_TRUE(SelectLabel(menu, "< Retour"));
+  menu.HandleClick();
+  TEST_ASSERT_EQUAL_INT(0, g_clock_writes);
+  TEST_ASSERT_EQUAL_UINT8(14, g_fake_rtc.hour);
+}
+
+void test_validating_writes_the_edited_clock_once(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenClockPage(menu));
+
+  SetClockField(menu, "Jour", 6);    // 1 + 6  -> 7
+  SetClockField(menu, "Mois", 2);    // 1 + 2  -> 3
+  SetClockField(menu, "Annee", 7);   // 2020+7 -> 2027
+  SetClockField(menu, "Heure", 21);  // 0 + 21 -> 21
+  SetClockField(menu, "Minute", 5);  // 0 + 5  -> 5
+
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Valider"));
+  menu.HandleClick();
+
+  TEST_ASSERT_EQUAL_INT(1, g_clock_writes);
+  TEST_ASSERT_EQUAL_UINT16(2027, g_fake_rtc.year);
+  TEST_ASSERT_EQUAL_UINT8(3, g_fake_rtc.month);
+  TEST_ASSERT_EQUAL_UINT8(7, g_fake_rtc.day);
+  TEST_ASSERT_EQUAL_UINT8(21, g_fake_rtc.hour);
+  TEST_ASSERT_EQUAL_UINT8(5, g_fake_rtc.minute);
+
+  // The read-only row reflects what the chip took.
+  char text[24];
+  menu.FormatItemValue(menu.GetCurrentPage()->items[0], text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("07/03/27 21:05", text);
+}
+
+void test_impossible_days_are_clamped_to_the_month(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenClockPage(menu));
+
+  // 31 February in a common year: the entry range cannot know the month, so the
+  // date is only corrected on commit.
+  SetClockField(menu, "Jour", 30);  // 1 + 30 -> 31
+  SetClockField(menu, "Mois", 1);   // 1 + 1  -> February
+  SetClockField(menu, "Annee", 6);  // 2020+6 -> 2026, common year
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Valider"));
+  menu.HandleClick();
+  TEST_ASSERT_EQUAL_UINT8(28, g_fake_rtc.day);
+
+  // The same day in a leap year keeps the 29th.
+  SetClockField(menu, "Jour", 30);
+  SetClockField(menu, "Mois", 1);
+  SetClockField(menu, "Annee", 8);  // 2028, leap year
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Valider"));
+  menu.HandleClick();
+  TEST_ASSERT_EQUAL_UINT8(29, g_fake_rtc.day);
+}
+
+void test_clock_entries_are_greyed_out_without_an_rtc(void)
+{
+  MenuSystem menu;
+  Prepare(menu, false);
+
+  // Without a clock the whole page is unreachable, exactly like ECO: the entry
+  // stays visible in Systeme so the menu keeps its shape.
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Systeme"));
+  menu.HandleClick();
+  const MenuPage *system_page = menu.GetCurrentPage();
+  for (uint8_t i = 0; i < system_page->count; i++)
+  {
+    if (strcmp(system_page->items[i].label, "Date / Heure") == 0)
+    {
+      TEST_ASSERT_FALSE(menu.IsItemSelectable(system_page->items[i]));
+    }
+  }
+}
+
+void test_the_clock_row_is_read_only(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenClockPage(menu));
+
+  // The page opens below the read-only row rather than on it, and rotating can
+  // never bring the cursor back onto it.
+  const MenuPage *page = menu.GetCurrentPage();
+  TEST_ASSERT_FALSE(menu.IsItemSelectable(page->items[0]));
+  TEST_ASSERT_TRUE(menu.GetCursor() > 0);
+
+  menu.HandleRotation(-10);
+  TEST_ASSERT_TRUE(menu.GetCursor() > 0);
+}
+
 // --- Display formatting -----------------------------------------------------
 
 void test_boolean_entries_read_as_words(void)
@@ -342,6 +517,13 @@ int main(int argc, char **argv)
   RUN_TEST(test_narrow_bindings_do_not_overflow_their_field);
   RUN_TEST(test_eco_hours_stay_within_a_day);
   RUN_TEST(test_factory_reset_restores_defaults);
+
+  RUN_TEST(test_clock_page_loads_the_rtc_on_entry);
+  RUN_TEST(test_editing_the_clock_does_not_touch_the_rtc_until_validated);
+  RUN_TEST(test_validating_writes_the_edited_clock_once);
+  RUN_TEST(test_impossible_days_are_clamped_to_the_month);
+  RUN_TEST(test_clock_entries_are_greyed_out_without_an_rtc);
+  RUN_TEST(test_the_clock_row_is_read_only);
 
   RUN_TEST(test_boolean_entries_read_as_words);
   RUN_TEST(test_fractional_steps_keep_a_decimal);

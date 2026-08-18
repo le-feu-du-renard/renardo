@@ -38,9 +38,6 @@ TftDisplay display;
 MenuSystem menu;
 LoraLink lora;
 
-// Declared by MenuSystem.cpp so the ECO entries can grey themselves out.
-void MenuSetRtcAvailable(bool available);
-
 // RTC — optional module; absence disables ECO mode
 TimeManager time_manager(&i2c_bus_1);
 static bool g_rtc_available = false;
@@ -158,7 +155,43 @@ static void SetupRTC()
   {
     Logger::Warning("RTC lost power — time may be incorrect");
   }
-  Logger::Info("RTC ready: %s", time_manager.GetDateTimeString());
+  Logger::Info("RTC ready: %s", time_manager.GetDateTimeString().c_str());
+}
+
+// --- Clock hooks for the menu ---
+//
+// The menu edits a staging copy and hands it back once the user validates, so
+// the RTC never sees a half-typed date. Passing these as functions keeps
+// RTClib out of MenuSystem, which the host tests compile as-is.
+
+static bool ReadRtcClock(MenuClock &clock)
+{
+  if (!g_rtc_available)
+  {
+    return false;
+  }
+
+  DateTime now = time_manager.GetNow();
+  clock.year   = now.year();
+  clock.month  = now.month();
+  clock.day    = now.day();
+  clock.hour   = now.hour();
+  clock.minute = now.minute();
+  return true;
+}
+
+static void WriteRtcClock(const MenuClock &clock)
+{
+  if (!g_rtc_available)
+  {
+    return;
+  }
+
+  // Seconds restart at zero: the user set the time to the minute, and carrying
+  // the old seconds over would only add an unpredictable offset.
+  time_manager.SetTime(clock.year, clock.month, clock.day,
+                       clock.hour, clock.minute, 0);
+  Logger::Info("RTC set from menu: %s", time_manager.GetDateTimeString().c_str());
 }
 
 // ========== SENSOR UPDATE ==========
@@ -557,6 +590,7 @@ void setup()
   Logger::Info("Watchdog enabled (%u s)", kRuntimeWatchdogMs / 1000);
 
   MenuSetRtcAvailable(g_rtc_available);
+  MenuSetClockHooks(ReadRtcClock, WriteRtcClock);
   menu.Begin(&settings);
   menu.SetOnChange(OnSettingsChanged);
 

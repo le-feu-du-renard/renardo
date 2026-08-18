@@ -177,6 +177,12 @@ Entries that make no sense in the current configuration are greyed out and
 skipped rather than hidden, so the menu keeps the same shape whatever hardware
 is fitted.
 
+`Système > Date / Heure` sets the RTC. Its entries edit a staging copy read from
+the chip when the page opens, and nothing is written until `Valider` — a date
+typed one field at a time would otherwise pass through impossible values. A day
+beyond the end of the chosen month is corrected on commit, not while turning the
+knob. The read-only `Horloge` row shows what the chip currently holds.
+
 **The START/STOP button remains physical and always acts**, whatever is on
 screen. A single button serves both: pressing it starts a stopped dryer and
 stops a running one. It fires once per press and is ignored while held, and a
@@ -193,6 +199,11 @@ Reduces the setpoint to a configurable percentage during a night window.
 evaluated, so the whole ECO submenu is greyed out and the mode is forced to
 PERFORMANCE regardless of what is stored. The window wraps around midnight when
 the start hour is later than the end hour.
+
+The clock itself is set from `Système > Date / Heure`. Firmware only seeds the
+RTC with its build time when the chip has clearly never been set (year before
+2020) or its oscillator has stopped: a time set by hand survives both reboots
+and firmware updates, which it would not if every flash reset it.
 
 ---
 

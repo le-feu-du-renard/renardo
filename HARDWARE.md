@@ -289,6 +289,11 @@ DS1307 on I2C1, address 0x68. Probed at startup.
 without a wall clock, so the whole ECO submenu is greyed out and the mode is
 forced to PERFORMANCE whatever is stored in the settings.
 
+The clock is set from the menu, `Système > Date / Heure` — no reflash needed,
+and reflashing no longer resets it. Firmware seeds the chip from its build time
+only when the RTC has never been set or its backup cell is dead, so a stopped
+clock coming back at the build date means the battery needs replacing.
+
 ## Display
 
 **GMT020-02-7P v1.3**, ST7789, 240×320, used in **landscape (320×240)** via

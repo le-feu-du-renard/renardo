@@ -27,6 +27,21 @@ enum class MenuItemKind : uint8_t
 
 struct MenuPage;
 
+// Wall clock snapshot exchanged with whoever owns the RTC.
+struct MenuClock
+{
+  uint16_t year;
+  uint8_t  month;
+  uint8_t  day;
+  uint8_t  hour;
+  uint8_t  minute;
+};
+
+// Declared here rather than ad hoc in each .cpp: the menu stays unaware of
+// RTClib, which is what keeps it compiling in the host tests.
+void MenuSetRtcAvailable(bool available);
+void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &));
+
 struct MenuItem
 {
   const char      *label;
@@ -50,6 +65,13 @@ struct MenuItem
   bool (*is_available)();
 
   void (*action)();
+
+  // Fired when a submenu is entered, for a page whose values come from
+  // somewhere other than the settings record and have to be read in first.
+  void (*on_enter)();
+
+  // Text of a read-only kInfo row, produced on demand by the page that owns it.
+  const char *(*text)();
 };
 
 struct MenuPage
@@ -130,6 +152,7 @@ private:
   const MenuPage *CurrentPage() const { return stack_[depth_]; }
   uint8_t         Cursor() const { return cursor_stack_[depth_]; }
 
+  uint8_t FirstSelectableIndex(const MenuPage *page) const;
   void MoveCursor(int32_t detents);
   void AdjustValue(int32_t detents);
   void Activate();

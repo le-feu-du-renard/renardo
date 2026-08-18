@@ -10,7 +10,23 @@
 static DryerSettings *g_settings = nullptr;
 static bool           g_rtc_available = false;
 
+// The wall clock lives in the RTC, not in the settings record, so the clock
+// page edits a staging copy and hands it back through these hooks. Function
+// pointers rather than a TimeManager reference: RTClib must not reach this
+// file, or the host tests stop building.
+static bool (*g_clock_read)(MenuClock &) = nullptr;
+static void (*g_clock_write)(const MenuClock &) = nullptr;
+
+static MenuClock g_clock_edit{2026, 1, 1, 0, 0};  // bound to the page entries
+static MenuClock g_clock_shown{2026, 1, 1, 0, 0}; // last read, shown as-is
+
 void MenuSetRtcAvailable(bool available) { g_rtc_available = available; }
+
+void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &))
+{
+  g_clock_read = read;
+  g_clock_write = write;
+}
 
 namespace
 {
@@ -28,7 +44,8 @@ MenuItem g_source_items[3];
 MenuItem g_eco_items[5];
 MenuItem g_phase_items[5];
 MenuItem g_control_items[10];
-MenuItem g_system_items[4];
+MenuItem g_clock_items[8];
+MenuItem g_system_items[5];
 MenuItem g_root_items[7];
 
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
@@ -36,7 +53,8 @@ MenuPage g_source_page{"Sources", g_source_items, 3};
 MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Phases", g_phase_items, 5};
 MenuPage g_control_page{"Regulation", g_control_items, 10};
-MenuPage g_system_page{"Systeme", g_system_items, 4};
+MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
+MenuPage g_system_page{"Systeme", g_system_items, 5};
 MenuPage g_root_page{"Menu", g_root_items, 7};
 
 MenuItem MakeValue(const char *label, MenuValueType type, void *binding,
@@ -73,13 +91,25 @@ MenuItem MakeToggle(const char *label, bool *binding,
 }
 
 MenuItem MakeSubmenu(const char *label, const MenuPage *page,
-                     bool (*available)() = AlwaysAvailable)
+                     bool (*available)() = AlwaysAvailable,
+                     void (*on_enter)() = nullptr)
 {
   MenuItem item{};
   item.label        = label;
   item.kind         = MenuItemKind::kSubmenu;
   item.submenu      = page;
   item.is_available = available;
+  item.on_enter     = on_enter;
+  return item;
+}
+
+MenuItem MakeInfo(const char *label, const char *(*text)())
+{
+  MenuItem item{};
+  item.label        = label;
+  item.kind         = MenuItemKind::kInfo;
+  item.text         = text;
+  item.is_available = AlwaysAvailable;
   return item;
 }
 
@@ -92,14 +122,75 @@ MenuItem MakeBack()
   return item;
 }
 
-MenuItem MakeAction(const char *label, void (*action)())
+MenuItem MakeAction(const char *label, void (*action)(),
+                    bool (*available)() = AlwaysAvailable)
 {
   MenuItem item{};
   item.label        = label;
   item.kind         = MenuItemKind::kAction;
   item.action       = action;
-  item.is_available = AlwaysAvailable;
+  item.is_available = available;
   return item;
+}
+
+uint8_t DaysInMonth(uint16_t year, uint8_t month)
+{
+  static const uint8_t kDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12)
+  {
+    return 31;
+  }
+  if (month == 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)))
+  {
+    return 29;
+  }
+  return kDays[month - 1];
+}
+
+// Entering the clock page reads the RTC once: the entries then edit a copy, so
+// a half-finished date never reaches the chip.
+void LoadClockFromRtc()
+{
+  MenuClock clock{2026, 1, 1, 0, 0};
+  if (g_clock_read != nullptr)
+  {
+    // A failed read leaves the fallback in place rather than zeros, which would
+    // show as month 0 on screen.
+    g_clock_read(clock);
+  }
+  g_clock_shown = clock;
+  g_clock_edit  = clock;
+}
+
+const char *ClockText()
+{
+  static char text[16];
+  snprintf(text, sizeof(text), "%02u/%02u/%02u %02u:%02u",
+           g_clock_shown.day, g_clock_shown.month,
+           static_cast<unsigned>(g_clock_shown.year % 100),
+           g_clock_shown.hour, g_clock_shown.minute);
+  return text;
+}
+
+void ApplyClockToRtc()
+{
+  // The day is clamped here rather than while editing: its bound depends on the
+  // month, and moving a value under the user's fingers as they turn the knob
+  // past February is worse than correcting an impossible date once, on commit.
+  uint8_t last_day = DaysInMonth(g_clock_edit.year, g_clock_edit.month);
+  if (g_clock_edit.day > last_day)
+  {
+    g_clock_edit.day = last_day;
+  }
+
+  if (g_clock_write != nullptr)
+  {
+    g_clock_write(g_clock_edit);
+  }
+
+  // Read back, so the Horloge row shows what the RTC actually took.
+  LoadClockFromRtc();
+  Logger::Info("Menu: clock set to %s", ClockText());
 }
 
 void ResetToFactoryDefaults()
@@ -196,14 +287,33 @@ void MenuSystem::Begin(DryerSettings *settings)
                                  &s.safety_max, 30.0f, 70.0f, 1.0f, " C");
   g_control_items[9] = MakeBack();
 
+  // These entries edit the staging copy, not the RTC: nothing reaches the chip
+  // until "Valider". Like the ECO page, they all depend on the clock and are
+  // greyed out together when no RTC answered at boot.
+  g_clock_items[0] = MakeInfo("Horloge", ClockText);
+  g_clock_items[1] = MakeValue("Jour", MenuValueType::kUint8, &g_clock_edit.day,
+                               1.0f, 31.0f, 1.0f, "", RtcPresent);
+  g_clock_items[2] = MakeValue("Mois", MenuValueType::kUint8, &g_clock_edit.month,
+                               1.0f, 12.0f, 1.0f, "", RtcPresent);
+  g_clock_items[3] = MakeValue("Annee", MenuValueType::kUint16, &g_clock_edit.year,
+                               2020.0f, 2099.0f, 1.0f, "", RtcPresent);
+  g_clock_items[4] = MakeValue("Heure", MenuValueType::kUint8, &g_clock_edit.hour,
+                               0.0f, 23.0f, 1.0f, " h", RtcPresent);
+  g_clock_items[5] = MakeValue("Minute", MenuValueType::kUint8, &g_clock_edit.minute,
+                               0.0f, 59.0f, 1.0f, " min", RtcPresent);
+  g_clock_items[6] = MakeAction("Valider", ApplyClockToRtc, RtcPresent);
+  g_clock_items[7] = MakeBack();
+
   // These bind to uint16_t fields: the width has to match the declaration
   // exactly, or WriteBinding would scribble past the end of the field.
   g_system_items[0] = MakeValue("Registre ferme", MenuValueType::kUint16,
                                 &s.damper_raw_closed, 0.0f, 4095.0f, 10.0f, "");
   g_system_items[1] = MakeValue("Registre ouvert", MenuValueType::kUint16,
                                 &s.damper_raw_open, 0.0f, 4095.0f, 10.0f, "");
-  g_system_items[2] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
-  g_system_items[3] = MakeBack();
+  g_system_items[2] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,
+                                  LoadClockFromRtc);
+  g_system_items[3] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
+  g_system_items[4] = MakeBack();
 
   g_root_items[0] = MakeSubmenu("Consignes", &g_setpoint_page);
   g_root_items[1] = MakeSubmenu("Sources", &g_source_page);
@@ -252,6 +362,21 @@ bool MenuSystem::IsItemSelectable(const MenuItem &item) const
     return false;
   }
   return item.is_available == nullptr || item.is_available();
+}
+
+uint8_t MenuSystem::FirstSelectableIndex(const MenuPage *page) const
+{
+  if (page != nullptr)
+  {
+    for (uint8_t i = 0; i < page->count; i++)
+    {
+      if (IsItemSelectable(page->items[i]))
+      {
+        return i;
+      }
+    }
+  }
+  return 0;
 }
 
 void MenuSystem::MoveCursor(int32_t detents)
@@ -341,9 +466,18 @@ void MenuSystem::Activate()
     {
       depth_++;
       stack_[depth_] = item.submenu;
-      cursor_stack_[depth_] = 0;
+      // Not necessarily row 0: a page can open on a read-only row, and the
+      // cursor must never rest on something a click cannot act upon.
+      cursor_stack_[depth_] = FirstSelectableIndex(item.submenu);
       scroll_ = 0;
       dirty_ = true;
+
+      // After the page is on the stack, so the hook can fill the values the
+      // page is about to show.
+      if (item.on_enter != nullptr)
+      {
+        item.on_enter();
+      }
     }
     break;
 
@@ -493,6 +627,13 @@ void MenuSystem::FormatItemValue(const MenuItem &item, char *out, size_t length)
   {
   case MenuItemKind::kSubmenu:
     snprintf(out, length, ">");
+    break;
+
+  case MenuItemKind::kInfo:
+    if (item.text != nullptr)
+    {
+      snprintf(out, length, "%s", item.text());
+    }
     break;
 
   case MenuItemKind::kValue:
