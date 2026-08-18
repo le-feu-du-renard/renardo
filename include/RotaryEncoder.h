@@ -13,7 +13,8 @@
 class RotaryEncoder
 {
 public:
-  RotaryEncoder(uint8_t pin_a, uint8_t pin_b, uint8_t pin_sw);
+  RotaryEncoder(uint8_t pin_a, uint8_t pin_b, uint8_t pin_sw,
+                bool reversed = false);
 
   void Begin();
 
@@ -30,6 +31,7 @@ private:
   uint8_t pin_a_;
   uint8_t pin_b_;
   uint8_t pin_sw_;
+  bool    reversed_;
 
   QuadratureDecoder decoder_;
   volatile int32_t  delta_;

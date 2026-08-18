@@ -3,7 +3,7 @@
 #include "Logger.h"
 
 InputHandler::InputHandler()
-    : encoder_(ENCODER_A_PIN, ENCODER_B_PIN, ENCODER_SW_PIN),
+    : encoder_(ENCODER_A_PIN, ENCODER_B_PIN, ENCODER_SW_PIN, ENCODER_REVERSED),
       button_raw_prev_(false),
       button_pending_(false),
       button_consumed_(false),

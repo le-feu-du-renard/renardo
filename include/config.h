@@ -39,14 +39,26 @@
 // LoRa radio — DX-LR30 (SX1262, 868 MHz). NSS is driven in software, so it is
 // not tied to the SPI1 hardware chip-select pins.
 #define LORA_NSS_PIN 13
-#define LORA_BUSY_PIN 8
+#define LORA_BUSY_PIN 9
 #define LORA_DIO1_PIN 15
 #define LORA_RST_PIN 22
 
-// Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups
+// Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups.
+//
+// SW is on GP8 rather than GP9 so the three signals plus a ground land on four
+// consecutive header pins, 8 to 11: one flat connector, nothing to enjamb. BUSY
+// took GP9 in exchange, which costs the radio nothing — RadioLib only reads it
+// as a plain input, unlike SPI1 MISO whose pin choice is fixed by the RP2040.
 #define ENCODER_A_PIN 6
 #define ENCODER_B_PIN 7
-#define ENCODER_SW_PIN 9
+#define ENCODER_SW_PIN 8
+
+// Turning the knob clockwise must count up. Which of the two quadrature pads a
+// maker calls "A" is not standardised, so a reversed knob is a property of the
+// part, not a wiring fault — hence a flag rather than a swap of the two pins
+// above, which would leave config.h disagreeing with the silkscreen and with
+// HARDWARE.md. Flip it if encoder_test reports CCW while you turn right.
+#define ENCODER_REVERSED true
 
 // Single START/STOP button (active LOW, internal pullup).
 // One press starts a stopped dryer, the next stops a running one.
@@ -70,8 +82,13 @@
 // they stay off while the MCU boots.
 #define OUT_FAN_PIN 0
 #define OUT_FAN_ACTIVE_LOW false
+// The damper module drives its relay through a BC337, an NPN in common
+// emitter: the stage inverts, so GPIO HIGH now commands extraction and a
+// floating GPIO (the RP2040 pads idle as inputs with a pull-down) leaves the
+// relay released — recirculation, the safe state, during the whole boot window.
+// Checked end to end with the damper_test environment.
 #define OUT_DAMPER_PIN 1
-#define OUT_DAMPER_ACTIVE_LOW true
+#define OUT_DAMPER_ACTIVE_LOW false
 #define OUT_ELECTRIC_PIN 2
 #define OUT_ELECTRIC_ACTIVE_LOW false
 

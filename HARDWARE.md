@@ -23,18 +23,18 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 | SPI1 MOSI | 11 | radio only |
 | SPI1 MISO | 12 | radio only |
 | LoRa NSS | 13 | driven in software |
-| LoRa BUSY | 8 | mandatory on SX126x |
+| LoRa BUSY | 9 | mandatory on SX126x |
 | LoRa DIO1 | 15 | RX interrupt |
 | LoRa RST | 22 | |
 | Encoder A | 6 | EC11, internal pull-up |
 | Encoder B | 7 | EC11, internal pull-up |
-| Encoder SW | 9 | EC11, internal pull-up |
+| Encoder SW | 8 | EC11, internal pull-up |
 | START/STOP button | 14 | active LOW, internal pull-up, toggles the session |
 | RS485 DE/RE | 3 | HIGH = transmit |
 | RS485 TX | 4 | UART1 → MAX3485 DI |
 | RS485 RX | 5 | UART1 ← MAX3485 RO |
 | Fan command | 0 | 2N2222, **active HIGH** |
-| Damper command | 1 | 2N2222, **active LOW** |
+| Damper command | 1 | BC337 driving the damper module, **active HIGH** |
 | Electric heating command | 2 | 2N2222, **active HIGH** |
 | Damper position feedback | 28 | ADC2 |
 | I2C1 SDA | 26 | optional RTC |
@@ -64,9 +64,10 @@ in software by RadioLib, so it is free of the hardware chip-select constraint.
 
 ## Command outputs
 
-The three outputs are **2N2222 NPN transistors in open collector** — note this
-is a small-signal bipolar (800 mA max), not a MOSFET. They switch a control
-signal, never a load directly.
+The three outputs are **small-signal NPN transistors in open collector** —
+2N2222 for the fan and the electric heating, **BC337** on the damper module.
+Note these are bipolars (800 mA max), not MOSFETs: they switch a control signal,
+never a load directly.
 
 - Base fed through ~1 kΩ from the GPIO, emitter to the common ground.
 - A free-wheeling diode is required if a coil is driven directly.
@@ -82,11 +83,18 @@ produces.
 |---|---|---|---|
 | Fan | contactor coil between +24 V and the collector | active HIGH | no current → **off** |
 | Electric heating | contactor coil between +24 V and the collector | active HIGH | no current → **off** |
-| Damper | collector pulls down the Belimo command input, which the actuator pulls up | active LOW | line high → recirculation |
+| Damper | BC337 in common emitter driving the damper module's relay | active HIGH | base at 0 V → relay released → **recirculation** |
 
 Wiring the fan or the electric heating active LOW would energise them during the
 whole boot window. Polarity is declared per output in `config.h`
 (`OUT_*_ACTIVE_LOW`), not globally.
+
+The damper went from active LOW to active HIGH when its command moved onto the
+BC337 module: the stage inverts, so the level that releases the relay is now the
+low one — which is also the level an undriven RP2040 pad sits at, its pull-down
+being enabled by default. `damper_test` reads that resting level back before it
+drives anything, which is the one measurement that proves the damper does not
+travel on every reset.
 
 ## Air damper
 
@@ -361,6 +369,74 @@ nothing is answering and the fault is power, reset, CS or the clock/data pair.
 Some modules put a series resistor on SDA and cannot be read at all, so a silent
 answer is suggestive rather than conclusive. The test then sweeps colours and
 draws corner markers, which also reveal orientation and any row/column offset.
+
+## Rotary encoder
+
+**EC11**, quadrature plus push switch. Since v4 it is the only way to change a
+setpoint: the two old buttons became a single START/STOP, everything else lives
+in the menu.
+
+### Wiring
+
+EC11 boards are silkscreened in at least three ways for the same three signals.
+Wire by function, not by position:
+
+| Signal | Also labelled | Pico GP | Header pin |
+|---|---|---|---|
+| A | S1, CLK | GP6 | 9 |
+| B | S2, DT | GP7 | 10 |
+| SW | Key | GP8 | 11 |
+| GND | C, common | GND | 8 |
+| + | VCC, breakouts only | 3V3(OUT) | 36 |
+
+On the bare component, ground is the **middle** pin of the three-pin side plus
+the second pin of the switch; a breakout routes both to its `GND` pad, so one
+wire does it.
+
+A and B are interchangeable — swapping them only reverses the direction. Which
+pad a maker calls "A" is not standardised, so a knob that counts down when
+turned clockwise is a property of the part, not a wiring fault: set
+`ENCODER_REVERSED` in [include/config.h](include/config.h) rather than crossing
+the two wires, so the pin map keeps matching the silkscreen. `encoder_test`
+applies the same flag and prints its state, so the test and the firmware always
+agree on which way is up.
+
+All three lines are `INPUT_PULLUP` and read active LOW, so a bare EC11 needs no
+external resistor and no supply at all; a breakout's own pull-ups simply sit in
+parallel with the internal ones. **3.3 V only** — GP6, GP7 and GP8 are not
+5 V tolerant.
+
+The three signals plus a ground land on **four consecutive header pins, 8 to
+11**, so the encoder takes one flat connector with nothing to enjamb. That is
+why SW is on GP8 and not GP9: the radio's BUSY line was moved to GP9 in
+exchange, which costs it nothing — RadioLib only reads BUSY as a plain input,
+whereas SPI1's own pins cannot be moved freely.
+
+### Decoding
+
+An EC11 emits one full Gray-code cycle per detent, so
+`QuadratureDecoder::kCountsPerDetent` is 4. Sampling happens in a pin-change
+interrupt on both lines, so no rotation is lost while the display is being
+redrawn, and impossible transitions — both lines appearing to move at once,
+which is what bounce looks like — are dropped rather than counted.
+
+### Bring-up
+
+`pio run -e encoder_test -t upload -t monitor` reports every edge and every
+detent, using the production decoder, plus the raw edge counts the firmware
+hides. Four checks, in order:
+
+1. **At rest, silent.** A detent reported with nobody touching the knob means a
+   line is floating — the common is not actually on GND.
+2. **One detent clockwise → `CW`, position +1, 4 edges.** `CCW` means A and B
+   are swapped; fix it at the connector rather than in `config.h`, so the pin
+   map keeps matching the silkscreen.
+3. **Ten detents each way → position back to 0.** A drift means detents are
+   being dropped or doubled; the summary's *edges per detent* says which. Well
+   above 4.00 with a rising bounce count is a noisy encoder — 10 nF from A to
+   GND and from B to GND fixes it.
+4. **One press → exactly one `CLICK`.** Two per press is switch bounce; the
+   30 ms debounce in `RotaryEncoder` covers a normal EC11.
 
 ## Power supply
 

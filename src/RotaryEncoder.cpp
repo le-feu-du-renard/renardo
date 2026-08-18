@@ -3,10 +3,12 @@
 
 RotaryEncoder *RotaryEncoder::instance_ = nullptr;
 
-RotaryEncoder::RotaryEncoder(uint8_t pin_a, uint8_t pin_b, uint8_t pin_sw)
+RotaryEncoder::RotaryEncoder(uint8_t pin_a, uint8_t pin_b, uint8_t pin_sw,
+                             bool reversed)
     : pin_a_(pin_a),
       pin_b_(pin_b),
       pin_sw_(pin_sw),
+      reversed_(reversed),
       delta_(0),
       sw_raw_prev_(false),
       sw_pending_(false),
@@ -32,7 +34,8 @@ void RotaryEncoder::Begin()
   attachInterrupt(digitalPinToInterrupt(pin_a_), InterruptTrampoline, CHANGE);
   attachInterrupt(digitalPinToInterrupt(pin_b_), InterruptTrampoline, CHANGE);
 
-  Logger::Info("RotaryEncoder: A=GP%d B=GP%d SW=GP%d", pin_a_, pin_b_, pin_sw_);
+  Logger::Info("RotaryEncoder: A=GP%d B=GP%d SW=GP%d%s", pin_a_, pin_b_, pin_sw_,
+               reversed_ ? " (reversed)" : "");
 }
 
 void RotaryEncoder::HandleInterrupt()
@@ -41,7 +44,10 @@ void RotaryEncoder::HandleInterrupt()
                                   digitalRead(pin_b_) == HIGH);
   if (movement != 0)
   {
-    delta_ += movement;
+    // Reversing here rather than in the decoder keeps the decoder a pure
+    // description of quadrature, and its unit tests independent of the part
+    // that happens to be fitted.
+    delta_ += reversed_ ? -movement : movement;
   }
 }
 
