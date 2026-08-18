@@ -38,6 +38,16 @@ public:
   // or any other screen has taken over the panel.
   void Invalidate();
 
+  // Rewrites the splash's bottom line with the start-up stage in progress. A
+  // stage that hangs — the radio probe above all — then names itself on the
+  // panel instead of only in the serial log. No-op once the splash is over.
+  void ShowBootStage(const char *stage);
+
+  // Holds the splash for the rest of its minimum on-screen time, then retires
+  // it. Nothing is cleared: the first RenderMain repaints the whole panel, so
+  // the splash gives way to the interface with no black frame between them.
+  void EndSplash();
+
   TFT_eSPI &GetTft() { return tft_; }
 
   // Panel geometry in landscape.
@@ -55,6 +65,9 @@ private:
   bool     blink_state_;
   uint32_t last_blink_ms_;
 
+  uint32_t splash_started_ms_;
+  bool     splash_active_;
+
   // Region geometry
   static constexpr int16_t kStatusY = 0;
   static constexpr int16_t kStatusH = 28;
@@ -69,9 +82,18 @@ private:
   static constexpr uint32_t kAnimationIntervalMs = 80;
   static constexpr uint32_t kBlinkIntervalMs     = 500;
 
-  // Colour bars and a banner at start-up, so a wiring fault is distinguishable
-  // from a working panel that simply has nothing to display yet.
+  // One still screen at start-up, held until the interface's first frame, so a
+  // wiring fault is distinguishable from a working panel that simply has
+  // nothing to display yet. Drawn once and never redrawn: only the stage line
+  // moves, everything else stays put for as long as the boot takes.
   void ShowSplash();
+
+  // Splash geometry and timing. The floor only ever comes into play when the
+  // whole boot is fast — a radio that answers makes setup short enough for the
+  // splash to flash by otherwise.
+  static constexpr uint32_t kSplashMinMs = 1500;
+  static constexpr int16_t  kSplashStageY = kHeight - 26;
+  static constexpr int16_t  kSplashStageH = 18;
 
   void DrawStatusBar(const DisplayModel &model);
   void DrawMeasurementTile(const DisplayModel &model);

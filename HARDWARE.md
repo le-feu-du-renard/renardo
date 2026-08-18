@@ -348,13 +348,17 @@ the same.
 
 On the library default red rendered as blue and cyan as yellow, with green
 untouched — the signature of the red and blue channels being exchanged. The
-start-up splash shows this immediately: the first bar must be red.
+start-up splash is plain text and no longer shows this; to check the channel
+order, run `pio run -e tft_test -t upload -t monitor`, which sweeps colour
+patterns.
 
 ### When nothing appears
 
 `TFT_eSPI::init()` writes its sequence blind and never reads back, so the log
-line only reports that the sequence was *sent*. The start-up splash — red,
-green, blue, then a banner — is the only real evidence the panel is alive.
+line only reports that the sequence was *sent*. The start-up splash — the
+"SECHOIR PAYSAN" banner, held on screen for the whole of setup with the stage in
+progress on its bottom line — is the only real evidence the panel is alive. A
+stage name still on screen minutes later names the step that hung.
 
 Nothing on screen with the backlight lit means the panel is not receiving, not
 leaving reset, or being clocked on the wrong edge. Check, in this order: the

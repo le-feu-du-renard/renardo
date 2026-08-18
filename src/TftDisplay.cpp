@@ -44,16 +44,20 @@ TftDisplay::TftDisplay()
       fan_angle_deg_(0.0f),
       last_animation_ms_(0),
       blink_state_(false),
-      last_blink_ms_(0) {}
+      last_blink_ms_(0),
+      splash_started_ms_(0),
+      splash_active_(false) {}
 
 void TftDisplay::Begin()
 {
   tft_.init();
   tft_.setRotation(1); // landscape, 320 x 240
 
+  // Nothing clears the splash here: it has to survive the rest of setup, where
+  // the radio probe alone can block for several seconds. EndSplash() retires it
+  // once the board is ready, and the first RenderMain repaints over it.
   ShowSplash();
 
-  tft_.fillScreen(UiTheme::kBackground);
   tft_.setTextColor(UiTheme::kValue, UiTheme::kPanel);
 
   force_redraw_ = true;
@@ -66,23 +70,46 @@ void TftDisplay::Begin()
 void TftDisplay::ShowSplash()
 {
   // A blank main screen looks exactly like a dead panel, which makes a wiring
-  // fault impossible to tell from a working board with nothing to show. Three
-  // primaries and a banner settle it in under a second, and also reveal a
-  // swapped colour order straight away.
-  const uint16_t colours[3] = {TFT_RED, TFT_GREEN, TFT_BLUE};
-  for (uint8_t i = 0; i < 3; i++)
+  // fault impossible to tell from a working board with nothing to show.
+  //
+  // The built-in fonts carry ASCII 32..127 and nothing else, so these strings
+  // are deliberately unaccented: a "é" is two UTF-8 bytes and would come out as
+  // two stray glyphs.
+  tft_.fillScreen(UiTheme::kBackground);
+  tft_.setTextDatum(MC_DATUM);
+  tft_.setTextColor(UiTheme::kValue, UiTheme::kBackground);
+  tft_.drawString("SECHOIR PAYSAN", kWidth / 2, kHeight / 2 - 12, 4);
+  tft_.setTextColor(UiTheme::kLabel, UiTheme::kBackground);
+  tft_.drawString("par la Forge", kWidth / 2, kHeight / 2 + 16, 2);
+
+  splash_started_ms_ = millis();
+  splash_active_ = true;
+}
+
+void TftDisplay::ShowBootStage(const char *stage)
+{
+  if (!splash_active_)
   {
-    tft_.fillScreen(colours[i]);
-    delay(150);
+    return;
   }
 
-  tft_.fillScreen(TFT_BLACK);
+  // The band is cleared first: drawString's background only covers the width of
+  // the new string, so a shorter stage name would leave the tail of the
+  // previous one behind it.
+  tft_.fillRect(0, kSplashStageY, kWidth, kSplashStageH, UiTheme::kBackground);
   tft_.setTextDatum(MC_DATUM);
-  tft_.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft_.drawString("renard'o v4", kWidth / 2, kHeight / 2 - 16, 4);
-  tft_.setTextColor(UiTheme::kLabel, TFT_BLACK);
-  tft_.drawString("320x240", kWidth / 2, kHeight / 2 + 14, 2);
-  delay(400);
+  tft_.setTextColor(UiTheme::kLabel, UiTheme::kBackground);
+  tft_.drawString(stage, kWidth / 2, kSplashStageY + kSplashStageH / 2, 2);
+}
+
+void TftDisplay::EndSplash()
+{
+  uint32_t elapsed = millis() - splash_started_ms_;
+  if (elapsed < kSplashMinMs)
+  {
+    delay(kSplashMinMs - elapsed);
+  }
+  splash_active_ = false;
 }
 
 void TftDisplay::Invalidate()

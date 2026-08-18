@@ -550,6 +550,12 @@ void setup()
   SetupOutputs();
   SetupAnalogInputs();
 
+  // The panel comes up before anything that can block, so the splash covers the
+  // whole start-up: it only needs SPI0, and every probe below it takes long
+  // enough to be worth announcing. Each stage is written to the splash as well
+  // as to the log, so a board that hangs says where on its own screen.
+  display.Begin();
+
   // --- Hardware probing, deliberately outside the watchdog ---
   //
   // Probing hardware that is not fitted blocks for seconds: RadioLib waits on
@@ -563,18 +569,20 @@ void setup()
   // cycling. That is the better failure: the log ends on the exact stage that
   // hung instead of scrolling past in a reboot loop.
 
+  display.ShowBootStage("horloge...");
   SetupI2C();
   delay(100);
 
   SetupRTC();
   delay(50);
 
+  display.ShowBootStage("regulation...");
   dryer.Begin();
   input_handler.Begin();
-  display.Begin();
 
   // Settings must be applied before any session is restored, so the restored
   // cycle runs with the phase durations the user actually configured.
+  display.ShowBootStage("reglages...");
   settings_store.Begin();
   settings_store.LoadSettings(settings);
   dryer.ApplySettings(settings, g_rtc_available);
@@ -583,6 +591,7 @@ void setup()
   // The device id lets the Commander tell several dryers apart and makes a
   // frame meant for another one impossible to obey.
   Logger::Info("LoraLink: probing SX1262 on SPI1 (several seconds if absent)...");
+  display.ShowBootStage("radio LoRa...");
   lora.Begin(LORA_DEVICE_ID);
 
   // --- Probing done; everything below is bounded and fast ---
@@ -612,6 +621,13 @@ void setup()
   UpdateOutputs();
 
   Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
+
+  // The first loop() iteration renders the main screen immediately, so the
+  // splash hands over to the interface directly. The wait here is bounded by
+  // kSplashMinMs, well inside the watchdog window armed above.
+  display.ShowBootStage("pret");
+  display.EndSplash();
+
   g_core0_ready = true; // Signal Core 1 to start Modbus initialization
 }
 
