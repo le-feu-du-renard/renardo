@@ -32,6 +32,18 @@ Environments defined in `platformio.ini`:
 |-------------|--------|-----|
 | `pico` | Raspberry Pi Pico H | Main firmware |
 | `native` | Host machine (x86/x64) | Unit tests only |
+| `pin_test` | Raspberry Pi Pico H | Display wiring, one signal at a time |
+| `tft_test` | Raspberry Pi Pico H | Panel identification and test patterns |
+| `encoder_test` | Raspberry Pi Pico H | Encoder edges, detents and click |
+| `rs485_test` | Raspberry Pi Pico H | Modbus probes, address and baud sweeps |
+| `damper_test` | Raspberry Pi Pico H | Damper command, relay and position feedback |
+
+The bring-up sketches live in [bringup/](bringup/), outside `src/`, so the
+firmware build needs no exclusion list and nothing that only exists to be
+uploaded by hand sits among the production sources. Each one has its own `main`
+and pulls in the handful of production files it exercises, named in its
+`build_src_filter`. What each proves, and how to read what it prints, is in
+[HARDWARE.md](HARDWARE.md) beside the part it tests.
 
 ---
 
