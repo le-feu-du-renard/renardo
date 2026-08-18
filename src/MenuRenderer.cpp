@@ -1,8 +1,31 @@
 #include "MenuRenderer.h"
 #include "UiTheme.h"
+#include "fonts/MonoFonts.h"
 
 namespace MenuRenderer
 {
+
+namespace
+{
+
+// The hint bar is the answer to a mismatch between the design mock-up and this
+// machine. The mock-up navigates with five keys — MENU, up, down, OK, RETOUR —
+// and spells them out along the bottom of every menu screen. The dryer has one
+// rotary encoder with a click, so the band says what the knob does instead.
+const char *HintFor(const MenuItem &item, bool editing)
+{
+  if (editing)
+  {
+    return "TOURNER regler - CLIC valider";
+  }
+  if (item.kind == MenuItemKind::kValue)
+  {
+    return "TOURNER naviguer - CLIC modifier";
+  }
+  return "TOURNER naviguer - CLIC ouvrir";
+}
+
+} // namespace
 
 void Render(TftDisplay &display, MenuSystem &menu)
 {
@@ -19,10 +42,11 @@ void Render(TftDisplay &display, MenuSystem &menu)
 
   TFT_eSPI &tft = display.GetTft();
   const int16_t width   = TftDisplay::kWidth;
-  const int16_t height  = TftDisplay::kHeight;
-  const int16_t header  = 30;
+  const int16_t header  = 24;
+  const int16_t hint_y  = TftDisplay::kHintY;
+  const int16_t hint_h  = TftDisplay::kHintH;
   const uint8_t rows    = MenuSystem::VisibleRows();
-  const int16_t row_h   = (height - header) / rows;
+  const int16_t row_h   = (hint_y - header) / rows;
   const uint8_t scroll  = menu.GetScroll();
   const uint8_t cursor  = menu.GetCursor();
   const bool    editing = menu.IsEditing();
@@ -36,16 +60,24 @@ void Render(TftDisplay &display, MenuSystem &menu)
     TFT_eSprite canvas(&tft);
     if (canvas.createSprite(width, header) != nullptr)
     {
-      canvas.fillSprite(UiTheme::kPanel);
-      canvas.setTextDatum(ML_DATUM);
-      canvas.setTextColor(UiTheme::kSetpoint, UiTheme::kPanel);
-      canvas.drawString(page->title, 8, header / 2, 4);
+      canvas.fillSprite(UiTheme::kPanelSunken);
+      canvas.drawFastHLine(0, header - 1, width, UiTheme::kBorder);
+
+      canvas.setFreeFont(&Mono14B);
+      canvas.setTextColor(UiTheme::kAccent);
+      canvas.setTextDatum(TL_DATUM);
+      canvas.drawString(page->title, 8,
+                        UiLayout::CapTop((header - 1) / 2, kMono14BBaseline,
+                                         kMono14BCapHeight));
 
       if (editing)
       {
-        canvas.setTextDatum(MR_DATUM);
-        canvas.setTextColor(UiTheme::kWarning, UiTheme::kPanel);
-        canvas.drawString("EDITION", width - 8, header / 2, 2);
+        canvas.setFreeFont(&Mono12B);
+        canvas.setTextColor(UiTheme::kWarn);
+        canvas.setTextDatum(TR_DATUM);
+        canvas.drawString("EDITION", width - 8,
+                          UiLayout::CapTop((header - 1) / 2, kMono12BBaseline,
+                                           kMono12BCapHeight));
       }
 
       canvas.pushSprite(0, 0);
@@ -64,12 +96,12 @@ void Render(TftDisplay &display, MenuSystem &menu)
     {
       continue;
     }
+    canvas.fillSprite(UiTheme::kBackground);
 
     if (index >= page->count)
     {
       // Blank the leftover rows of a short page, otherwise the previous page
       // shows through underneath.
-      canvas.fillSprite(UiTheme::kBackground);
       canvas.pushSprite(0, y);
       canvas.deleteSprite();
       continue;
@@ -79,42 +111,51 @@ void Render(TftDisplay &display, MenuSystem &menu)
     bool selected  = (index == cursor);
     bool available = menu.IsItemSelectable(item);
 
-    // While editing, the selected row keeps a quieter background so the
-    // highlighted value is what stands out, not the row itself.
-    uint16_t background = UiTheme::kBackground;
+    // The cursor is a filled, outlined pill rather than a solid bar across the
+    // screen: it is the same shape as the cards on the dashboard, so the two
+    // screens read as one interface.
     if (selected)
     {
-      background = editing ? UiTheme::kPanel : UiTheme::kBorder;
+      canvas.fillRoundRect(4, 1, width - 8, row_h - 2, 4, UiTheme::kAccentDim);
+      canvas.drawRoundRect(4, 1, width - 8, row_h - 2, 4, UiTheme::kAccent);
     }
-    canvas.fillSprite(background);
 
-    uint16_t text_color = !available ? UiTheme::kInactive
-                          : (selected ? UiTheme::kValue : UiTheme::kLabel);
+    uint16_t text_color = !available ? UiTheme::kMuted
+                          : (selected ? UiTheme::kText : UiTheme::kMuted);
 
-    canvas.setTextDatum(ML_DATUM);
-    canvas.setTextColor(text_color, background);
-    canvas.drawString(item.label, 10, row_h / 2, 4);
+    // The selected row is set in the bold cut, so it stands out even for a
+    // reader who cannot pick the highlight out at a distance. The two cuts were
+    // generated at the same size and so share a cell, which is what lets one
+    // baseline calculation serve both and keeps the rows from shifting by a
+    // pixel as the cursor passes over them.
+    canvas.setFreeFont(selected ? &Mono14B : &Mono14);
+    canvas.setTextColor(text_color);
+    canvas.setTextDatum(TL_DATUM);
+    canvas.drawString(item.label, 12,
+                      UiLayout::CapTop(row_h / 2, kMono14Baseline,
+                                       kMono14CapHeight));
 
     menu.FormatItemValue(item, value_text, sizeof(value_text));
     if (value_text[0] != '\0')
     {
-      uint16_t value_color = !available ? UiTheme::kInactive
-                             : (selected && editing) ? UiTheme::kWarning
-                                                     : UiTheme::kSetpoint;
+      // Amber while editing, so the row being changed is unmistakable; the
+      // accent otherwise, matching the live figures on the dashboard.
+      uint16_t value_color = !available ? UiTheme::kMuted
+                             : (selected && editing) ? UiTheme::kWarn
+                                                     : UiTheme::kAccent;
 
-      // An info row carries a whole timestamp rather than a number, which does
-      // not fit next to its label in the value font.
-      uint8_t value_font = (item.kind == MenuItemKind::kInfo) ? 2 : 4;
-
-      canvas.setTextDatum(MR_DATUM);
-      canvas.setTextColor(value_color, background);
-      canvas.drawString(value_text, width - 12, row_h / 2, value_font);
+      canvas.setFreeFont(&Mono14B);
+      canvas.setTextColor(value_color);
+      canvas.setTextDatum(TR_DATUM);
+      canvas.drawString(value_text, width - 14,
+                        UiLayout::CapTop(row_h / 2, kMono14BBaseline,
+                                         kMono14BCapHeight));
     }
 
     // Scroll indicator, clipped into whichever row it crosses.
     if (page->count > rows)
     {
-      int16_t track_h = height - header;
+      int16_t track_h = hint_y - header;
       int16_t thumb_h = (track_h * rows) / page->count;
       int16_t thumb_y = header + (track_h * scroll) / page->count;
       int16_t local_y = thumb_y - y;
@@ -132,6 +173,37 @@ void Render(TftDisplay &display, MenuSystem &menu)
 
     canvas.pushSprite(0, y);
     canvas.deleteSprite();
+  }
+
+  // The band between the last row and the hint bar, left over when the rows do
+  // not divide the height exactly. Cleared so a taller previous page cannot
+  // leave a stripe behind.
+  {
+    int16_t used = header + rows * row_h;
+    if (used < hint_y)
+    {
+      tft.fillRect(0, used, width, hint_y - used, UiTheme::kBackground);
+    }
+  }
+
+  {
+    TFT_eSprite canvas(&tft);
+    if (canvas.createSprite(width, hint_h) != nullptr)
+    {
+      canvas.fillSprite(UiTheme::kPanelSunken);
+      canvas.drawFastHLine(0, 0, width, UiTheme::kBorder);
+
+      const MenuItem &item = page->items[cursor < page->count ? cursor : 0];
+      canvas.setFreeFont(&Mono12B);
+      canvas.setTextColor(UiTheme::kMuted);
+      canvas.setTextDatum(TC_DATUM);
+      canvas.drawString(HintFor(item, editing), width / 2,
+                        UiLayout::CapTop(hint_h / 2, kMono12BBaseline,
+                                         kMono12BCapHeight));
+
+      canvas.pushSprite(0, hint_y);
+      canvas.deleteSprite();
+    }
   }
 }
 

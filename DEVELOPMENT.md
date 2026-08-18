@@ -135,6 +135,28 @@ are all separated from their hardware.
 
 ---
 
+## Screen fonts
+
+The interface's typefaces live in `include/fonts/` as generated `GFXfont`
+headers. They are committed, so **the firmware builds without Python** and the
+tool below is only needed to change the type.
+
+```bash
+python3 tools/make_gfx_font.py           # regenerate every cut
+python3 tools/make_gfx_font.py --proof   # and write tools/font-proof.png
+```
+
+The script rasterises `~/Library/Fonts/HackNerdFontMono-*.ttf` with Pillow. It
+needs the font installed and `python3 -m pip install Pillow`. Check the proof
+sheet after changing a size: below about 10 px the glyphs break up, and the
+failure is a mangled `N`, not an error.
+
+`-D LOAD_GFXFF=1` in `platformio.ini` is what makes TFT_eSPI accept them. The
+built-in fonts stay loaded — the splash screen draws with them, because it has
+to be able to report that everything loaded after it failed.
+
+---
+
 ## Configuration
 
 `include/config.h` holds the pin map and the **factory defaults**. Anything

@@ -11,6 +11,7 @@
 #include "OutputDriver.h"
 #include "SettingsStore.h"
 #include "TftDisplay.h"
+#include "UiTheme.h"
 #include "MenuSystem.h"
 #include "MenuRenderer.h"
 #include "LoraLink.h"
@@ -353,6 +354,47 @@ static void OnSettingsChanged()
   settings_store.SaveSettings(settings);
 }
 
+// DisplayModel::phase carries a DryerPhase, and TftDisplay indexes its table of
+// phase names and colours with it. The renderer is deliberately unaware of
+// SessionManager — this is the seam where the two meet, so this is where the
+// correspondence is pinned down.
+static_assert(static_cast<uint8_t>(DryerPhase::kStop) == 0, "phase table order");
+static_assert(static_cast<uint8_t>(DryerPhase::kInit) == 1, "phase table order");
+static_assert(static_cast<uint8_t>(DryerPhase::kBrassage) == 2, "phase table order");
+static_assert(static_cast<uint8_t>(DryerPhase::kExtraction) == 3, "phase table order");
+
+// How far the running phase has gone against its configured duration, 0..1, or
+// NAN when nothing is running.
+//
+// An estimate rather than a countdown: brassage and extraction both end on a
+// humidity threshold when the crop dries faster than the clock allows, so the
+// bar can reach the end and the phase change before it, or the phase change
+// while the bar is part way. It answers "is this phase well along", which is
+// what the operator glancing at the screen actually wants to know.
+static float PhaseProgress()
+{
+  SessionManager *session = dryer.GetSessionManager();
+  const PhaseDurations &durations = session->GetDurations();
+
+  uint32_t total = 0;
+  switch (session->GetCurrentPhase())
+  {
+    case DryerPhase::kInit:       total = durations.init; break;
+    case DryerPhase::kBrassage:   total = durations.brassage; break;
+    case DryerPhase::kExtraction: total = durations.extraction; break;
+    default:                      return NAN;
+  }
+
+  if (total == 0)
+  {
+    return NAN;
+  }
+
+  float ratio = static_cast<float>(session->GetPhaseElapsedTime()) /
+                static_cast<float>(total);
+  return ratio > 1.0f ? 1.0f : ratio;
+}
+
 static void UpdateDisplay()
 {
   uint32_t now = millis();
@@ -380,9 +422,10 @@ static void UpdateDisplay()
 
   DisplayModel model;
   model.total_elapsed_s = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
-  model.phase_name      = dryer.GetPhaseName();
+  model.phase           = static_cast<uint8_t>(dryer.GetSessionManager()->GetCurrentPhase());
+  model.phase_progress  = PhaseProgress();
   model.running         = dryer.IsRunning();
-  model.lora_linked     = lora.IsLinked();
+  model.lora_bars       = UiTheme::LoraBars(lora.GetRssi(), lora.IsLinked());
 
   model.inlet_temperature  = g_sensors.inlet_temperature;
   model.inlet_humidity     = g_sensors.inlet_humidity;

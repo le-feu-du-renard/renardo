@@ -24,13 +24,20 @@ void DrawFan(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
 void DrawLightning(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                    uint16_t color);
 
-// Pump symbol: a circle with an impeller triangle — the circulator.
-void DrawPump(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-              uint16_t color);
+// A register: a square duct with a vane pivoting inside it, upright when the
+// register is shut and swung flat when it is wide open, so the opening is
+// legible as a shape before the percentage next to it is read.
+//
+// `opening` is a percentage; NAN draws the duct with no vane at all, which is
+// how a register with no usable feedback tells itself apart from a shut one.
+void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
+                float opening, uint16_t frame_color, uint16_t vane_color);
 
-// Antenna with radiating chevrons — the LoRa link.
-void DrawAntenna(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-                 uint16_t color);
+// Four bars of increasing height — LoRa signal strength. `bars` of them are
+// filled with `color`, the rest outlined in `dim_color`; zero bars means the
+// link is down and the whole icon is dim.
+void DrawSignalBars(TFT_eSprite &canvas, int16_t left, int16_t bottom,
+                    uint8_t bars, uint16_t color, uint16_t dim_color);
 
 // Diagonal bar across an icon: the function exists but is unavailable or
 // switched off. Drawn over whatever icon was just rendered.

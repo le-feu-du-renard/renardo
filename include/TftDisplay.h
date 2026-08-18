@@ -8,15 +8,20 @@
 
 // Main screen on the GMT020-02-7P (ST7789 240x320), used in landscape.
 //
-// Layout, 320 x 240:
-//   status bar   y   0..27   elapsed time left at fixed width, phase centred,
-//                            LoRa icon right
-//   tiles        y  28..115  measurement | setpoint, split at x = 160
-//   hydraulic    y 116..167  circulator state and the two water temperatures
-//   status band  y 168..239  fan, electric, and the two registers' openings
+// Laid out from the design mock-up in design_handoff_sechoir_tft, transposed
+// from CSS to drawing primitives. Six horizontal bands, 320 x 240:
 //
-// Elapsed time sits on the left because HH:MM:SS never changes width, while the
-// phase name does — centring the one that moves keeps the bar from jittering.
+//   progress   y   0..  3   phase progress, full width, phase-coloured
+//   header     y   4.. 23   phase pill left, clock centred, LoRa bars right
+//   cards      y  32..107   INJECTION (with gauges) | CONSIGNE
+//   strip      y 112..145   hydraulic state, circuit water, tank water
+//   devices    y 150..221   fan | electric | extraction | recycling
+//   hint       y 226..239   empty, or the sensor alarm
+//
+// The clock is centred and the phase name is pinned left, the opposite of what
+// the layout used to do: with a monospace font the clock never changes width,
+// so it is now the one that can be centred without the bar jittering, and the
+// phase reads better next to its own coloured dot.
 //
 // Rendering is region-based: each frame is compared against the previous model
 // and only the regions whose contents changed are redrawn, each through a
@@ -54,6 +59,11 @@ public:
   static constexpr int16_t kWidth  = 320;
   static constexpr int16_t kHeight = 240;
 
+  // The hint bar at the foot of the screen belongs to whichever screen is up,
+  // so the menu draws its own into the same band.
+  static constexpr int16_t kHintY = 226;
+  static constexpr int16_t kHintH = 14;
+
 private:
   TFT_eSPI tft_;
 
@@ -68,16 +78,59 @@ private:
   uint32_t splash_started_ms_;
   bool     splash_active_;
 
-  // Region geometry
-  static constexpr int16_t kStatusY = 0;
-  static constexpr int16_t kStatusH = 28;
-  static constexpr int16_t kTileY   = 28;
-  static constexpr int16_t kTileH   = 88;
-  static constexpr int16_t kTileW   = 160;
-  static constexpr int16_t kHydroY  = 116;
-  static constexpr int16_t kHydroH  = 52;
-  static constexpr int16_t kBandY   = 168;
-  static constexpr int16_t kBandH   = 72;
+  // --- Region geometry ---
+  //
+  // Transposed from the mock-up's flexbox: a 6 px margin round the content and
+  // 4 px gutters between cells, with the cell widths that leaves.
+
+  static constexpr int16_t kMargin = 6;
+  static constexpr int16_t kGutter = 4;
+
+  static constexpr int16_t kProgressY = 0;
+  static constexpr int16_t kProgressH = 4;
+
+  static constexpr int16_t kHeaderY = 4;
+  static constexpr int16_t kHeaderH = 20;
+
+  static constexpr int16_t kCardY = 32;
+  static constexpr int16_t kCardH = 76;
+  // The measurement card is the wider of the two: it carries four figures and
+  // two gauges against the setpoint card's two figures.
+  static constexpr int16_t kInletX  = kMargin;
+  static constexpr int16_t kInletW  = 172;
+  static constexpr int16_t kTargetX = kInletX + kInletW + kGutter;
+  static constexpr int16_t kTargetW = kWidth - kMargin - kTargetX;
+
+  // 34 rather than the mock-up's 30: the type is a step larger than the design
+  // called for, and a caption over a value needs the extra four pixels not to
+  // read as one crowded block.
+  static constexpr int16_t kStripY = 112;
+  static constexpr int16_t kStripH = 34;
+  static constexpr int16_t kStripCells = 3;
+  static constexpr int16_t kStripCellW =
+      (kWidth - 2 * kMargin - (kStripCells - 1) * kGutter) / kStripCells;
+
+  static constexpr int16_t kDeviceY = 150;
+  static constexpr int16_t kDeviceH = 72;
+  static constexpr int16_t kDeviceCells = 4;
+  static constexpr int16_t kDeviceCellW =
+      (kWidth - 2 * kMargin - (kDeviceCells - 1) * kGutter) / kDeviceCells;
+
+  // Inside a card: text starts here, and the same inset is the top of the
+  // caption line.
+  static constexpr int16_t kPad = 8;
+
+  // Card contents, card-relative. Both cards centre their label on one line and
+  // their figures on the other; the two cards set their figures at different
+  // sizes, so sharing an optical centre rather than a top edge is what makes
+  // the readings look level side by side.
+  static constexpr int16_t kCardLabelY  = 20;
+  static constexpr int16_t kFigureCenterY = 50;
+
+  // Glyph cells each figure is allowed. A temperature is always "nn.n~" or
+  // "--.-~"; a humidity is right-aligned inside the width of "100%".
+  static constexpr int16_t kFigureCells  = 5;
+  static constexpr int16_t kPercentCells = 4;
 
   static constexpr uint32_t kAnimationIntervalMs = 80;
   static constexpr uint32_t kBlinkIntervalMs     = 500;
@@ -95,55 +148,49 @@ private:
   static constexpr int16_t  kSplashStageY = kHeight - 26;
   static constexpr int16_t  kSplashStageH = 18;
 
-  void DrawStatusBar(const DisplayModel &model);
-  void DrawMeasurementTile(const DisplayModel &model);
-  void DrawSetpointTile(const DisplayModel &model);
-  void DrawHydraulicBlock(const DisplayModel &model);
-  void DrawStatusBand(const DisplayModel &model);
+  void DrawProgressBar(const DisplayModel &model);
+  void DrawHeader(const DisplayModel &model);
+  void DrawInletCard(const DisplayModel &model);
+  void DrawTargetCard(const DisplayModel &model);
+  void DrawStrip(const DisplayModel &model);
+  void DrawDevices(const DisplayModel &model);
+  void DrawHintBar(const DisplayModel &model);
 
-  // Animation frames repaint only the fan disc, not the whole band: redrawing
+  // Animation frames repaint only the fan disc, not the whole row: redrawing
   // 320x72 at 12 fps would churn 46 KB of heap per frame and hold the shared
   // SPI bus far longer than the radio can tolerate.
   void DrawFanIcon(const DisplayModel &model);
 
-  // Fan disc position, band-relative and as its own little canvas.
-  static constexpr int16_t kFanCx   = 40;
-  static constexpr int16_t kFanCy   = 26;
-  static constexpr int16_t kFanR    = 18;
+  // Fan disc position within the first device cell, and as its own canvas.
+  static constexpr int16_t kIconCy  = 22; // cell-relative centre of every icon
+  static constexpr int16_t kFanR    = 12;
   static constexpr int16_t kFanBox  = 2 * kFanR + 4;
 
-  // Electric heating column, band-relative.
-  static constexpr int16_t kHeatCx  = 120;
+  // One device cell: icon, caption, and a state word under it. `pill_color`
+  // carries the meaning — green running, amber transient, red stopped, grey
+  // switched off — so the caller decides what the state means and this only
+  // lays it out.
+  void DrawDeviceCell(TFT_eSprite &canvas, int16_t x, const char *label,
+                      const char *state, uint16_t pill_color);
 
-  // Register panel: two stacked rows, each "LABEL [bar] nn%".
-  //
-  // The two registers are asymmetric, so both openings are on screen at once and
-  // as numbers — which one leads the other is the useful reading, and a bar
-  // alone cannot be compared to a second bar precisely enough. The bar stays
-  // beside each number for a glance, and is drawn permanently rather than only
-  // during travel: an opening with no bar would look like a missing reading.
-  //
-  // 150 px wide, which is what is left once the fan and the electric heating
-  // have their 80 px columns.
-  static constexpr int16_t kRegX      = 164; // left edge, labels start here
-  static constexpr int16_t kRegRight  = 314; // right edge, percentages end here
-  static constexpr int16_t kRegBarX   = 234;
-  static constexpr int16_t kRegBarW   = 40;
-  static constexpr int16_t kRegBarH   = 8;
-  static constexpr int16_t kRegRow1Cy = 22;  // band-relative row centres
-  static constexpr int16_t kRegRow2Cy = 50;
+  // One strip cell: caption above, value below.
+  void DrawStripCell(TFT_eSprite &canvas, int16_t x, const char *label,
+                     const char *value, uint16_t value_color);
 
-  // One register's row. `should_be_open` is where the single command wants this
-  // register to end up, which is what colours the label and the bar.
-  void DrawRegisterRow(TFT_eSprite &canvas, int16_t cy, const char *label,
-                       float position, bool moving, bool should_be_open);
+  // A card's temperature and humidity, centred as one block of fixed width.
+  void DrawFigurePair(TFT_eSprite &canvas, int16_t card_width,
+                      const GFXfont *font, int16_t advance, int16_t baseline,
+                      int16_t cap_height, uint16_t color, float temperature,
+                      float humidity);
 
   // Change detection, one predicate per region.
-  bool StatusBarChanged(const DisplayModel &model) const;
-  bool MeasurementChanged(const DisplayModel &model) const;
-  bool SetpointChanged(const DisplayModel &model) const;
-  bool HydraulicChanged(const DisplayModel &model) const;
-  bool BandChanged(const DisplayModel &model) const;
+  bool ProgressChanged(const DisplayModel &model) const;
+  bool HeaderChanged(const DisplayModel &model) const;
+  bool InletChanged(const DisplayModel &model) const;
+  bool TargetChanged(const DisplayModel &model) const;
+  bool StripChanged(const DisplayModel &model) const;
+  bool DevicesChanged(const DisplayModel &model) const;
+  bool HintChanged(const DisplayModel &model) const;
 };
 
 #endif // TFT_DISPLAY_H

@@ -12,11 +12,25 @@
 // dependencies.
 struct DisplayModel
 {
-  // --- Status bar ---
-  uint32_t    total_elapsed_s;
-  const char *phase_name;
-  bool        running;
-  bool        lora_linked;
+  // --- Progress bar and header ---
+  uint32_t total_elapsed_s;
+
+  // DryerPhase, held as its underlying type so this header stays independent of
+  // SessionManager. The renderer maps it to a screen label and a colour: naming
+  // the phase and colouring it are one decision, and a string could not carry
+  // the second half of it.
+  uint8_t phase;
+
+  // How far the current phase has run against its configured duration, 0..1,
+  // NAN when nothing is running.
+  //
+  // An estimate, not a countdown: brassage and extraction can both end early on
+  // a humidity threshold rather than on the clock, so the bar says "this phase
+  // is well along", never "this many minutes remain".
+  float phase_progress;
+
+  bool    running;
+  uint8_t lora_bars;        // 0..4, zero when the link is down
 
   // --- Measurement and setpoint tiles ---
   float inlet_temperature;
@@ -51,9 +65,10 @@ struct DisplayModel
 
   DisplayModel()
       : total_elapsed_s(0),
-        phase_name("ARRET"),
+        phase(0),
+        phase_progress(NAN),
         running(false),
-        lora_linked(false),
+        lora_bars(0),
         inlet_temperature(NAN),
         inlet_humidity(NAN),
         target_temperature(NAN),

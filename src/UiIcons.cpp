@@ -59,35 +59,48 @@ void DrawLightning(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                       cx - w * 0.1f, cy - h * 0.15f, color);
 }
 
-void DrawPump(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-              uint16_t color)
+void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
+                float opening, uint16_t frame_color, uint16_t vane_color)
 {
-  canvas.drawCircle(cx, cy, radius, color);
-  canvas.drawCircle(cx, cy, radius - 1, color);
+  canvas.drawRect(cx - radius, cy - radius, 2 * radius, 2 * radius, frame_color);
 
-  // Impeller: a triangle pointing along the flow.
-  Point a = Polar(cx, cy, radius * 0.62f, 0.0f);
-  Point b = Polar(cx, cy, radius * 0.62f, 130.0f);
-  Point c = Polar(cx, cy, radius * 0.62f, 230.0f);
-  canvas.fillTriangle(a.x, a.y, b.x, b.y, c.x, c.y, color);
+  // No feedback: an empty duct. Drawing a vane at some default angle would be
+  // asserting a position nothing has measured, and a shut register is exactly
+  // what an operator would read it as.
+  if (isnan(opening))
+  {
+    return;
+  }
+
+  // Shut is upright, wide open is flat: the vane sweeps a quarter turn, and the
+  // eye reads the angle long before it reads the percentage beside it.
+  float clamped = opening < 0.0f ? 0.0f : (opening > 100.0f ? 100.0f : opening);
+  float angle   = clamped * 0.9f; // 0..100 % over 0..90 degrees
+
+  float span = radius - 2;
+  Point a = Polar(cx, cy, span, angle);
+  Point b = Polar(cx, cy, span, angle + 180.0f);
+
+  // Two parallel lines rather than one, so the vane keeps its weight against
+  // the frame at every angle; a single-pixel diagonal all but disappears.
+  canvas.drawLine(a.x, a.y, b.x, b.y, vane_color);
+  canvas.drawLine(a.x + 1, a.y, b.x + 1, b.y, vane_color);
 }
 
-void DrawAntenna(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-                 uint16_t color)
+void DrawSignalBars(TFT_eSprite &canvas, int16_t left, int16_t bottom,
+                    uint8_t bars, uint16_t color, uint16_t dim_color)
 {
-  // Mast and base.
-  canvas.drawFastVLine(cx, cy - radius * 0.2f, radius * 1.2f, color);
-  canvas.drawFastHLine(cx - radius * 0.4f, cy + radius, radius * 0.8f, color);
+  // Four bars 3 px wide on a 4 px pitch, climbing 3, 5, 8, 10 px, as the design
+  // mock-up has them.
+  static const int16_t kHeights[4] = {3, 5, 8, 10};
 
-  // Two chevrons each side, suggesting radiation.
-  for (uint8_t ring = 1; ring <= 2; ring++)
+  for (uint8_t index = 0; index < 4; index++)
   {
-    int16_t spread = radius * 0.35f * ring;
-    int16_t height = radius * 0.45f * ring;
-    canvas.drawLine(cx - spread, cy - radius * 0.2f - height,
-                    cx - spread * 0.4f, cy - radius * 0.2f, color);
-    canvas.drawLine(cx + spread, cy - radius * 0.2f - height,
-                    cx + spread * 0.4f, cy - radius * 0.2f, color);
+    int16_t x = left + index * 4;
+    int16_t h = kHeights[index];
+    // Unfilled bars stay drawn rather than blank: four positions always visible
+    // is what makes three of them lit mean "three out of four".
+    canvas.fillRect(x, bottom - h, 3, h, index < bars ? color : dim_color);
   }
 }
 

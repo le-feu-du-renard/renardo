@@ -146,7 +146,10 @@ private:
   uint8_t         cursor_stack_[kMaxDepth];
   uint8_t         depth_;
 
-  static constexpr uint8_t kVisibleRows = 5;
+  // Seven rows of 28 px fill the band between the header and the hint bar. The
+  // root page has exactly seven entries, so the whole of it is on screen at
+  // once and the most-used page never scrolls.
+  static constexpr uint8_t kVisibleRows = 7;
   uint8_t scroll_;
 
   const MenuPage *CurrentPage() const { return stack_[depth_]; }
