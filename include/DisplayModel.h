@@ -36,9 +36,15 @@ struct DisplayModel
   bool fan_cooling;         // post-stop cooldown: icon blinks
   bool electric_on;
   bool electric_enabled;
-  bool damper_open;         // true = extraction, false = recirculation
-  float damper_position;    // %, NAN when there is no usable feedback
-  bool damper_moving;
+  bool damper_open;         // commanded air path: true = extraction
+  // Measured opening of each register, %, NAN when there is no usable feedback.
+  // Both are shown at once: the two registers are asymmetric, so one figure
+  // would not describe the other, and comparing them is how a jammed vane or a
+  // dead feedback wire becomes visible at a glance.
+  float extraction_position;
+  bool  extraction_moving;
+  float recycling_position;
+  bool  recycling_moving;
 
   // --- Alarms ---
   bool sensor_fault;        // inlet probe stale, heating blocked
@@ -62,8 +68,10 @@ struct DisplayModel
         electric_on(false),
         electric_enabled(false),
         damper_open(false),
-        damper_position(NAN),
-        damper_moving(false),
+        extraction_position(NAN),
+        extraction_moving(false),
+        recycling_position(NAN),
+        recycling_moving(false),
         sensor_fault(false) {}
 };
 

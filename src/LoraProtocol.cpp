@@ -22,6 +22,32 @@ int16_t LoraEncodeValue(float value)
   return static_cast<int16_t>(scaled < 0 ? scaled - 0.5f : scaled + 0.5f);
 }
 
+uint8_t LoraEncodePosition(float percent)
+{
+  if (isnan(percent))
+  {
+    return kLoraNoPosition;
+  }
+
+  // Clamp rather than cast straight through: a feedback reading slightly past
+  // its calibrated end stop would otherwise wrap into a small opening, and
+  // anything at or above 255 would land on the "no feedback" sentinel.
+  if (percent <= 0.0f)
+  {
+    return 0;
+  }
+  if (percent >= 100.0f)
+  {
+    return 100;
+  }
+  return static_cast<uint8_t>(percent + 0.5f);
+}
+
+float LoraDecodePosition(uint8_t raw)
+{
+  return raw == kLoraNoPosition ? NAN : static_cast<float>(raw);
+}
+
 float LoraDecodeValue(int16_t raw)
 {
   if (raw == kLoraInvalidValue)

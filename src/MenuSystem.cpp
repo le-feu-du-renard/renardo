@@ -45,7 +45,8 @@ MenuItem g_eco_items[5];
 MenuItem g_phase_items[5];
 MenuItem g_control_items[10];
 MenuItem g_clock_items[8];
-MenuItem g_system_items[5];
+MenuItem g_system_items[4];
+MenuItem g_damper_items[5];
 MenuItem g_root_items[7];
 
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
@@ -54,7 +55,8 @@ MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Phases", g_phase_items, 5};
 MenuPage g_control_page{"Regulation", g_control_items, 10};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
-MenuPage g_system_page{"Systeme", g_system_items, 5};
+MenuPage g_damper_page{"Registres", g_damper_items, 5};
+MenuPage g_system_page{"Systeme", g_system_items, 4};
 MenuPage g_root_page{"Menu", g_root_items, 7};
 
 MenuItem MakeValue(const char *label, MenuValueType type, void *binding,
@@ -304,16 +306,27 @@ void MenuSystem::Begin(DryerSettings *settings)
   g_clock_items[6] = MakeAction("Valider", ApplyClockToRtc, RtcPresent);
   g_clock_items[7] = MakeBack();
 
+  // One end-stop pair per register: extraction and recycling are asymmetric, so
+  // calibrating one says nothing about the other. Each is captured by driving
+  // that register to the stop and reading the raw value off this page.
+  //
   // These bind to uint16_t fields: the width has to match the declaration
   // exactly, or WriteBinding would scribble past the end of the field.
-  g_system_items[0] = MakeValue("Registre ferme", MenuValueType::kUint16,
-                                &s.damper_raw_closed, 0.0f, 4095.0f, 10.0f, "");
-  g_system_items[1] = MakeValue("Registre ouvert", MenuValueType::kUint16,
-                                &s.damper_raw_open, 0.0f, 4095.0f, 10.0f, "");
-  g_system_items[2] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,
+  g_damper_items[0] = MakeValue("Extrac. ferme", MenuValueType::kUint16,
+                                &s.extraction_raw_closed, 0.0f, 4095.0f, 10.0f, "");
+  g_damper_items[1] = MakeValue("Extrac. ouvert", MenuValueType::kUint16,
+                                &s.extraction_raw_open, 0.0f, 4095.0f, 10.0f, "");
+  g_damper_items[2] = MakeValue("Recycl. ferme", MenuValueType::kUint16,
+                                &s.recycling_raw_closed, 0.0f, 4095.0f, 10.0f, "");
+  g_damper_items[3] = MakeValue("Recycl. ouvert", MenuValueType::kUint16,
+                                &s.recycling_raw_open, 0.0f, 4095.0f, 10.0f, "");
+  g_damper_items[4] = MakeBack();
+
+  g_system_items[0] = MakeSubmenu("Registres", &g_damper_page);
+  g_system_items[1] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,
                                   LoadClockFromRtc);
-  g_system_items[3] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
-  g_system_items[4] = MakeBack();
+  g_system_items[2] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
+  g_system_items[3] = MakeBack();
 
   g_root_items[0] = MakeSubmenu("Consignes", &g_setpoint_page);
   g_root_items[1] = MakeSubmenu("Sources", &g_source_page);

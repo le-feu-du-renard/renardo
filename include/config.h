@@ -92,23 +92,105 @@
 #define OUT_ELECTRIC_PIN 2
 #define OUT_ELECTRIC_ACTIVE_LOW false
 
-// Air damper position feedback — Belimo 2-10V output through a divider (ADC2)
-#define DAMPER_FEEDBACK_PIN 28
-// Raw 12-bit ADC values at each end stop. The actuator's feedback starts at 2V,
-// not 0V, so the closed position is well above zero. Both are overwritten by
-// the two-point calibration in the menu.
-#define DAMPER_RAW_CLOSED_DEFAULT 820
-#define DAMPER_RAW_OPEN_DEFAULT 4000
+// Air damper position feedback — one ADC channel per register.
+//
+// This version has two registers, extraction and recycling, and they are
+// **asymmetric**: different vane geometry, so different travel, so each needs
+// its own two-point calibration. They share the single command above because
+// they are complementary — air is either extracted or recycled, never both — so
+// one relay drives both actuators, one of them wired to travel the other way.
+//
+// Both feedbacks go through the same divider: R1 = 10k to the Belimo U output,
+// R2 = 3.3k to ground, ratio 3.3/13.3 = 0.2481, which puts the actuator's 10.10V
+// end at 2.51V and keeps 800mV clear of the 3.3V rail. That headroom is the
+// reason for 3.3k over the 4.7k first considered: at 0.3197 the same 10.10V
+// would land at 3.23V, 89 counts from clipping, and a clipped reading is
+// indistinguishable from a register genuinely sitting at its stop. damper_test
+// warns when a cycle's highest sample comes within 400 counts of full scale. A
+// 100nF from each tap to ground feeds the ADC's sample-and-hold and keeps mains
+// hum off a field wire.
+
+//
+// These two pins are not a free choice. The Pico exposes exactly three ADC
+// channels — GP26, GP27, GP28 — because ADC3 is wired to the VSYS divider on
+// the board and never reaches the header. Two feedbacks plus the RTC's I2C do
+// not fit in three pins, which is why the RTC moved off GP26/GP27 and onto
+// I2C0 below. Nothing else can be moved here instead: the ADC channels are tied
+// to these GPIOs in the silicon.
+#define DAMPER_EXTRACTION_FEEDBACK_PIN 26 // ADC0
+#define DAMPER_RECYCLING_FEEDBACK_PIN 27  // ADC1
+
+// Set to 1 once the recycling register's feedback is actually wired.
+//
+// Until then GP27 is a floating input, and floating inputs are not merely
+// useless: they read wandering noise that the screen would show as a live
+// opening, and they present a high impedance to a multiplexed ADC. So the pin
+// is simply never sampled. That leaves DamperFeedback with no sample at all,
+// which it already reports as "no position" — the screen shows dashes, the LoRa
+// uplink sends its no-feedback sentinel, and nothing anywhere invents a number.
+// Preprocessor-valued rather than bool: it guards #if blocks.
+#define DAMPER_RECYCLING_FITTED 0
+
+// Raw 12-bit ADC values at each end stop, the starting point for both
+// registers. Measured on the extraction register and confirmed against a meter
+// at the same node.
+//
+// **The feedback runs backwards**: this actuator puts out 10.10V with the
+// register shut and 2.00V with it open, so the closed value is the *higher*
+// one. That is a property of the linkage, not a fault, and needs no inverting
+// flag — GetPositionPercent() derives its span as open minus closed, which is
+// simply negative here, and the guard against a degenerate span is written
+// signed for exactly this case. Enter the pair the wrong way round, though, and
+// the screen reports every opening inside out.
+//
+// Through the divider those two voltages predict 616 and 3110; the bench reads
+// 630 and 3104, and the meter reads 0.49V at the tap where the ADC reports
+// 0.508V. Both ends now agree on one ratio — 0.2438 open, 0.2477 shut, against
+// 0.2481 designed — which is precisely what was missing while this was broken.
+// The travel, 2474 counts, is 0.7% off theory, and 991 counts remain before the
+// ADC clips.
+//
+// Getting here took two false starts, both worth recording because both are
+// easy to repeat. The first bench run gave 1392 and 3845, from a fixed 150s hold
+// rather than from the reading going quiet: one end had arrived, the other was
+// still creeping, and comparing a mid-travel sample against an end-stop voltage
+// manufactures an offset that does not exist. damper_test now waits for a
+// settled reading and will not call anything an end stop until it stops moving.
+// The second was a genuine wiring fault on the prototype, which made the divider
+// measure 0.280 instead of 0.248 with both resistors confirmed correct.
+//
+// Both were caught by the same test, which is the one worth keeping: a divider
+// has exactly one ratio. Whenever two calibration points disagree about it, at
+// least one of them is not where it claims to be — and no amount of software
+// compensation is the answer.
+//
+// The two registers being asymmetric, these only describe both of them until
+// the first calibration; each register then keeps its own pair, captured from
+// the menu by driving it to each end stop. The menu values are persisted and
+// are what the firmware actually runs on — these defaults only cover a dryer
+// that has never been calibrated.
+#define DAMPER_RAW_CLOSED_DEFAULT 3104
+#define DAMPER_RAW_OPEN_DEFAULT 630
 // Below this span the calibration is treated as invalid (feedback wire absent).
 #define DAMPER_CALIBRATION_MIN_SPAN 200
 // Distance from the commanded end stop (%) under which travel is complete.
 #define DAMPER_POSITION_TOLERANCE 5.0f
 
-// I2C Bus 1 — optional RTC DS1307. Absent RTC disables ECO mode.
-#define I2C_BUS_1_SDA_PIN 26
-#define I2C_BUS_1_SCL_PIN 27
+// RTC DS1307 on I2C0 — optional, an absent RTC disables ECO mode.
+//
+// On I2C0 rather than I2C1, and on these pins rather than GP26/GP27, because the
+// two damper feedbacks need the ADC channels those carry. GP28 is I2C0 SDA and
+// GP21 is I2C0 SCL: RP2040 datasheet Table 2 "GPIO Functions", column F3, whose
+// I2C pattern is periodic modulo 4 across GP0-GP29 (0 -> I2C0 SDA, 1 -> I2C0
+// SCL, 2 -> I2C1 SDA, 3 -> I2C1 SCL). The Wire library validates both against
+// that same table and would refuse the bus outright if either were wrong.
+#define RTC_I2C_SDA_PIN 28
+#define RTC_I2C_SCL_PIN 21
 
-// Free for expansion: GP21
+// No GPIO left for expansion: GP21, the last spare, went to I2C0 SCL when the
+// second register arrived. Freeing one more means giving up a function — the
+// cheapest is TFT_RST (TFT_eSPI accepts -1 and resets the panel in software),
+// which would return GP20.
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)

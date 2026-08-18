@@ -36,9 +36,10 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 | Fan command | 0 | 2N2222, **active HIGH** |
 | Damper command | 1 | BC337 driving the damper module, **active HIGH** |
 | Electric heating command | 2 | 2N2222, **active HIGH** |
-| Damper position feedback | 28 | ADC2 |
-| I2C1 SDA | 26 | optional RTC |
-| I2C1 SCL | 27 | optional RTC |
+| Extraction register feedback | 26 | ADC0 |
+| Recycling register feedback | 27 | ADC1 |
+| I2C0 SDA | 28 | optional RTC |
+| I2C0 SCL | 21 | optional RTC |
 
 Pin assignments live in [include/config.h](include/config.h). The TFT pins are
 **duplicated** into the `TFT_eSPI` build flags in
@@ -98,29 +99,123 @@ travel on every reset.
 
 ## Air damper
 
-Belimo **LM24A-SR**, driven purely on/off: recirculation or extraction, never a
-percentage. Travel takes about 150 s each way.
+**Two** Belimo **LM24A-SR** registers, extraction and recycling, driven purely
+on/off: recirculation or extraction, never a percentage. Travel takes about
+150 s each way.
 
-Its 2-10 V position feedback goes through a divider to 0-3.3 V on ADC2. **It
-feeds the display only** — no control logic depends on it. Since the feedback
-starts at 2 V rather than 0 V, calibration is two-point, captured from the menu
-by driving the damper to each end stop (Système → Registre fermé / ouvert).
+The two are **complementary** — air is either extracted or recycled, never both
+— so a single command drives both actuators, one of them wired to travel the
+other way. That is why there is one `OUT_DAMPER_PIN` and not two.
+
+They are also **asymmetric**: different vane geometry, different travel, so each
+keeps its own two-point calibration and reports its own opening. Both 2-10 V
+feedbacks go through their own divider to 0-3.3 V, on ADC0 and ADC1. **They feed
+the display only** — no control logic depends on either. Calibration is captured
+from the menu by driving each register to its end stops
+(Système → Registres → Extrac. / Recycl. fermé / ouvert).
 
 A disconnected feedback wire yields a degenerate calibration span, which the
-firmware detects and reports as "no position" rather than as 0 %.
+firmware detects and reports as "no position" rather than as 0 %. One dead wire
+does not mask the other register: they are evaluated independently.
+
+### The feedback runs backwards
+
+Measured at the actuator, the extraction register puts out **10.10 V shut and
+2.00 V open** — the opposite of the intuitive direction, and a property of the
+linkage rather than a fault. So its *closed* calibration value is the **higher**
+raw reading. No inverting flag exists or is needed: the span is taken as open
+minus closed and is simply negative, which the arithmetic and the degenerate-span
+guard both carry correctly. Enter the pair the wrong way round in the menu,
+however, and every opening on screen is reported inside out while looking
+entirely plausible.
+
+### A first measurement that was wrong, and how it showed
+
+An early bench run recorded 1392 and 3845 as the extraction register's end
+stops. Both were wrong, in a way worth writing down because it is easy to
+repeat: they came from a fixed 150 s hold rather than from the reading actually
+going quiet. One end had arrived; the other was still creeping when the command
+switched. Comparing a mid-travel sample against an end-stop voltage manufactures
+an offset that does not exist, and a long investigation went looking for a ground
+fault that was never there — the divider's foot measured 85 mV, which was fine.
+
+What gave it away was arithmetic, not instinct. Against the measured 2.00 V and
+10.10 V, those two raw values imply divider ratios of **0.561 and 0.307**, and a
+divider has only one ratio. Whenever two calibration points disagree about the
+ratio, at least one of them is not where it claims to be.
+
+`damper_test` now decides arrival from the reading going quiet — 20 s inside a
+±15 count band — and prints `SETTLED` when it does. A cycle that ends without
+settling says so explicitly. **Never write down a value that has not settled.**
+
+### Calibration, and the two false starts before it
+
+The extraction register reads **3104 shut, 630 open**, confirmed against a meter
+at the same node (0.49 V where the ADC reports 0.508 V). Travel is 2474 counts,
+0.7 % off theory, with 991 counts left before the ADC clips.
+
+What makes those numbers trustworthy is that both ends now agree on **one
+ratio** — 0.2438 open, 0.2477 shut, against 0.2481 designed. Two earlier
+attempts did not, and each failed differently:
+
+1. **Readings taken on a moving vane.** A fixed 150 s hold is not proof of
+   arrival. One end had settled, the other was still creeping, and comparing a
+   mid-travel sample against an end-stop voltage manufactures an offset that
+   does not exist — it sent a whole day after a ground fault that was never
+   there. `damper_test` now decides arrival from the reading going quiet, 20 s
+   inside a ±15 count band, and prints `SETTLED`. **Never write down a value
+   that has not settled.**
+2. **A wiring fault on the prototype**, which made the divider measure 0.280
+   with both resistors confirmed correct.
+
+Both were caught by the same check, and it is the one to keep: **a divider has
+exactly one ratio.** Whenever two calibration points disagree about it, at least
+one of them is not where it claims to be. Software compensation is never the
+answer.
+
+A note on the resistors, since they cost two rounds: both are 5-band and both
+were first read from the wrong end. 3.3 k is orange-orange-black-brown-brown and
+gives itself away reversed, because orange is not a tolerance colour. 10 k is
+brown-black-black-red-brown and does **not** — reversed it decodes cleanly as
+120 R, brown tolerance and all. Only a measurement rules that out. Read
+resistance with an ohmmeter, not with your eyes.
+
+### The recycling register is not wired yet
+
+`DAMPER_RECYCLING_FITTED` in `config.h` is `0`, so GP27 is never sampled. A
+floating input is not a harmless zero: it reads wandering noise that the screen
+would present as a live opening, and it presents a high impedance to a
+multiplexed ADC. Unsampled, `DamperFeedback` simply has no sample and reports no
+position — dashes on the main screen, the no-feedback sentinel over LoRa.
+
+Set it to `1` when the wire is landed. In `damper_test`, `2` samples the channel
+without rebuilding.
 
 ### Testing the damper
 
 `pio run -e damper_test -t upload -t monitor` switches the command every 30 s
-and prints the raw ADC and the position beside it, driving the production
-`OutputDriver` and `AirDamper` so the polarity and the percentage are the
-firmware's own. It reports the command pin's resting level before `pinMode()`
-runs, and flags a feedback that never moved during a cycle.
+and prints the raw ADC and the opening of **each** register beside it, driving
+the production `OutputDriver`, `AirDamper` and `DamperFeedback` so the polarity
+and the percentages are the firmware's own. It reports the command pin's resting
+level before `pinMode()` runs, and flags per register a feedback that never
+moved during a cycle.
 
-The 30 s period is deliberately shorter than the ~150 s travel: it exercises the
-command and the feedback, not the end stops. Press `l` for a 180 s cycle when
-the end-stop values are what you want to record; `o`, `c` and `t` drive it by
-hand, `a` stops the automatic switching.
+The reading that matters is the pair: the two openings must **mirror** each
+other, one climbing while the other falls. Both climbing together means an
+actuator wired the same way round as its partner instead of the opposite way —
+a fault that leaves the screen plausible and the air path wrong.
+
+The cycle is 150 s, the actuator's own travel time, so each half ends with the
+vane against a stop and the raw column resting on the value the calibration
+wants. Press `s` for a 30 s cycle when only the relay and the wiring are in
+question; `o`, `c` and `t` drive it by hand, `a` stops the automatic switching.
+
+`1` and `2` drop a channel from the sampling. Use them while only one register
+is wired: the RP2040 multiplexes one converter across the ADC channels and its
+sample-and-hold carries charge between conversions, so an unwired pin — which
+presents a very high impedance and never settles — can bias the reading of a
+perfectly good neighbour sampled straight after it. The test probes both
+channels at start-up and names any that sits on a rail.
 
 ## RS485 bus
 
@@ -471,9 +566,10 @@ transmission does not brown out the display.
    Button: one press starts, the next stops — check it never double-fires.
 4. Outputs one at a time, **measuring at the connector before wiring the loads**
    — this is where a polarity mistake is caught.
-5. Damper: `damper_test` first — it checks the resting level, the relay and the
-   feedback in one pass — then a full travel on the `l` cycle to record the two
-   end-stop values, and calibrate from the menu.
+5. Registers: `damper_test` first — it checks the resting level, the relay and
+   both feedbacks in one pass, and says whether the two openings mirror each
+   other — then a full travel on the `l` cycle to record each register's two
+   end-stop values, and calibrate both from the menu.
 6. RS485: `rs485_test` first, then the probes in the firmware, then the
    hydraulic module.
 7. Radio, with the display refreshing at the same time. The buses are

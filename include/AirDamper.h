@@ -3,49 +3,43 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "DamperFeedback.h"
 
-// Air damper (Belimo LM24A-SR) — commanded on/off, with position readback.
+// The air path — two Belimo LM24A-SR registers driven by one command.
 //
-// The command is strictly binary: recirculation (closed) or extraction (open).
-// The actuator's 2-10V feedback output is read on an ADC and used only to show
-// the real position while the vane travels, which takes about 150 s each way.
-// Nothing in the control logic depends on it.
+// The command is strictly binary: recirculation or extraction. The two registers
+// are **complementary**, since air is either extracted or recycled and never
+// both, so a single relay drives both actuators with one of them wired to travel
+// the other way. That complementarity is applied here, in Open() and Close(),
+// and nowhere else — v3's mistake was inverting the damper in two separate
+// places, which made the real direction impossible to follow.
 //
-// The class stays hardware-free: main.cpp samples the ADC and pushes the raw
-// value in through SetRawPosition(), the same way it writes the command pin.
+// The registers are **asymmetric** in geometry, so each carries its own
+// calibration and reports its own opening: see DamperFeedback. The control logic
+// depends on none of it — the readback exists to be displayed.
 class AirDamper
 {
 public:
   AirDamper();
 
-  void Open();   // extraction
-  void Close();  // recirculation
+  void Open();   // extraction: extraction register opens, recycling closes
+  void Close();  // recirculation: the other way round
   bool IsOpen() const { return is_open_; }
 
-  // Latest raw ADC sample from the actuator's feedback output.
-  void     SetRawPosition(uint16_t raw);
-  uint16_t GetRawPosition() const { return raw_position_; }
+  // The two registers, each with its own calibration, sample and opening.
+  DamperFeedback       &Extraction()       { return extraction_; }
+  const DamperFeedback &Extraction() const { return extraction_; }
+  DamperFeedback       &Recycling()        { return recycling_; }
+  const DamperFeedback &Recycling() const  { return recycling_; }
 
-  // Two-point calibration, set from the menu by driving the damper to each
-  // end stop and capturing the raw value there.
-  void SetCalibration(uint16_t raw_closed, uint16_t raw_open);
-  uint16_t GetRawClosed() const { return raw_closed_; }
-  uint16_t GetRawOpen() const { return raw_open_; }
-
-  // Measured position, 0 % = recirculation, 100 % = extraction.
-  // Returns NAN while no sample has been taken or if the calibration is unusable.
-  float GetPositionPercent() const;
-
-  // True while the measured position has not yet reached the commanded end.
-  // Used to show a travel bar on the main screen and nothing else.
+  // True while either register is still travelling. Both are driven by the same
+  // relay, so they move together and stop within a few seconds of each other.
   bool IsMoving() const;
 
 private:
-  bool     is_open_;
-  uint16_t raw_position_;
-  bool     has_sample_;
-  uint16_t raw_closed_;
-  uint16_t raw_open_;
+  bool           is_open_;
+  DamperFeedback extraction_;
+  DamperFeedback recycling_;
 };
 
 #endif // AIR_DAMPER_H

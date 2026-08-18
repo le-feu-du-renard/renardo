@@ -47,6 +47,64 @@ void test_out_of_range_values_are_clamped_not_wrapped(void)
   TEST_ASSERT_NOT_EQUAL(kLoraInvalidValue, LoraEncodeValue(-100000.0f));
 }
 
+// --- Register openings ------------------------------------------------------
+
+void test_openings_round_trip_as_whole_percents(void)
+{
+  TEST_ASSERT_EQUAL_UINT8(0, LoraEncodePosition(0.0f));
+  TEST_ASSERT_EQUAL_UINT8(100, LoraEncodePosition(100.0f));
+  TEST_ASSERT_EQUAL_UINT8(42, LoraEncodePosition(41.7f));
+  TEST_ASSERT_EQUAL_FLOAT(42.0f, LoraDecodePosition(42));
+}
+
+void test_absent_feedback_is_distinguishable_from_a_closed_register(void)
+{
+  // 0 % means the register is shut; no feedback at all is a different fact, and
+  // the server has to be able to tell them apart.
+  uint8_t encoded = LoraEncodePosition(NAN);
+  TEST_ASSERT_EQUAL_UINT8(kLoraNoPosition, encoded);
+  TEST_ASSERT_TRUE(isnan(LoraDecodePosition(encoded)));
+  TEST_ASSERT_NOT_EQUAL(kLoraNoPosition, LoraEncodePosition(0.0f));
+}
+
+void test_opening_past_its_end_stop_cannot_wrap_onto_the_sentinel(void)
+{
+  // A feedback drifting past its calibrated stop must clamp. Casting straight
+  // through would turn 255 % into the "no feedback" sentinel and a large
+  // reading into a small one.
+  TEST_ASSERT_EQUAL_UINT8(100, LoraEncodePosition(110.3f));
+  TEST_ASSERT_EQUAL_UINT8(100, LoraEncodePosition(300.0f));
+  TEST_ASSERT_EQUAL_UINT8(0, LoraEncodePosition(-5.0f));
+}
+
+void test_both_registers_travel_independently(void)
+{
+  // The registers are asymmetric, so one figure cannot stand for the other: a
+  // frame carrying only one would hide a register that stopped arriving.
+  TelemetryPacket packet;
+  memset(&packet, 0, sizeof(packet));
+  packet.extraction_position = LoraEncodePosition(97.0f);
+  packet.recycling_position  = LoraEncodePosition(3.0f);
+  SealTelemetry(packet);
+
+  TEST_ASSERT_TRUE(IsTelemetryValid(packet));
+  TEST_ASSERT_EQUAL_FLOAT(97.0f, LoraDecodePosition(packet.extraction_position));
+  TEST_ASSERT_EQUAL_FLOAT(3.0f, LoraDecodePosition(packet.recycling_position));
+}
+
+void test_one_dead_feedback_does_not_blank_the_other(void)
+{
+  TelemetryPacket packet;
+  memset(&packet, 0, sizeof(packet));
+  packet.extraction_position = LoraEncodePosition(64.0f);
+  packet.recycling_position  = LoraEncodePosition(NAN);
+  SealTelemetry(packet);
+
+  TEST_ASSERT_TRUE(IsTelemetryValid(packet));
+  TEST_ASSERT_EQUAL_FLOAT(64.0f, LoraDecodePosition(packet.extraction_position));
+  TEST_ASSERT_TRUE(isnan(LoraDecodePosition(packet.recycling_position)));
+}
+
 // --- Framing ----------------------------------------------------------------
 
 void test_sealed_telemetry_validates(void)
@@ -190,6 +248,12 @@ int main(int argc, char **argv)
   RUN_TEST(test_negative_values_survive);
   RUN_TEST(test_missing_reading_is_distinguishable_from_zero);
   RUN_TEST(test_out_of_range_values_are_clamped_not_wrapped);
+
+  RUN_TEST(test_openings_round_trip_as_whole_percents);
+  RUN_TEST(test_absent_feedback_is_distinguishable_from_a_closed_register);
+  RUN_TEST(test_opening_past_its_end_stop_cannot_wrap_onto_the_sentinel);
+  RUN_TEST(test_both_registers_travel_independently);
+  RUN_TEST(test_one_dead_feedback_does_not_blank_the_other);
 
   RUN_TEST(test_sealed_telemetry_validates);
   RUN_TEST(test_corrupt_telemetry_is_rejected);

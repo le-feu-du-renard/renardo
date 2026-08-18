@@ -287,13 +287,21 @@ void test_narrow_bindings_do_not_overflow_their_field(void)
   // would run past the field and corrupt its neighbour in the record.
   TEST_ASSERT_TRUE(SelectLabel(menu, "Systeme"));
   menu.HandleClick();
-  TEST_ASSERT_TRUE(SelectLabel(menu, "Registre ouvert"));
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Registres"));
+  menu.HandleClick();
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Extrac. ouvert"));
   menu.HandleClick();
   menu.HandleRotation(10000);
 
-  TEST_ASSERT_EQUAL_UINT16(4095, g_test_settings.damper_raw_open);
-  // The neighbouring field must be untouched.
-  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_CLOSED_DEFAULT, g_test_settings.damper_raw_closed);
+  TEST_ASSERT_EQUAL_UINT16(4095, g_test_settings.extraction_raw_open);
+  // The neighbouring fields must be untouched — the four calibration values sit
+  // side by side, so an over-wide binding would land on one of them first.
+  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_CLOSED_DEFAULT,
+                           g_test_settings.extraction_raw_closed);
+  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_CLOSED_DEFAULT,
+                           g_test_settings.recycling_raw_closed);
+  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_OPEN_DEFAULT,
+                           g_test_settings.recycling_raw_open);
   TEST_ASSERT_EQUAL_UINT32(LORA_TELEMETRY_INTERVAL_MS,
                            g_test_settings.lora_telemetry_interval_ms);
 }

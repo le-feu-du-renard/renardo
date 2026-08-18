@@ -17,7 +17,7 @@ class TimeManager
 public:
   /**
    * @brief Construct a new Time Manager object
-   * @param wire Pointer to the I2C bus to use (should be i2c_bus_1)
+   * @param wire Pointer to the I2C bus to use (should be rtc_i2c)
    */
   TimeManager(TwoWire *wire);
 

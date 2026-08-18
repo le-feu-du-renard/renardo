@@ -20,8 +20,9 @@
 
 // ========== GLOBAL OBJECTS ==========
 
-// I2C bus (optional RTC DS1307)
-TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
+// I2C bus (optional RTC DS1307). On i2c0 rather than i2c1 since the two damper
+// feedbacks took GP26/GP27, the only ADC-capable pins the Pico brings out.
+TwoWire rtc_i2c(i2c0, RTC_I2C_SDA_PIN, RTC_I2C_SCL_PIN);
 
 // RS485 — single Modbus bus (inlet probe @1 + hydraulic module @10),
 // owned exclusively by Core 1
@@ -39,7 +40,7 @@ MenuSystem menu;
 LoraLink lora;
 
 // RTC — optional module; absence disables ECO mode
-TimeManager time_manager(&i2c_bus_1);
+TimeManager time_manager(&rtc_i2c);
 static bool g_rtc_available = false;
 
 // Persistence on internal flash
@@ -120,12 +121,13 @@ static uint32_t loop_count = 0;
 
 static void SetupI2C()
 {
-  pinMode(I2C_BUS_1_SDA_PIN, INPUT_PULLUP);
-  pinMode(I2C_BUS_1_SCL_PIN, INPUT_PULLUP);
-  i2c_bus_1.begin();
-  i2c_bus_1.setClock(10000);
-  i2c_bus_1.setTimeout(1000);
-  Logger::Info("I2C bus 1 ready (10kHz)");
+  pinMode(RTC_I2C_SDA_PIN, INPUT_PULLUP);
+  pinMode(RTC_I2C_SCL_PIN, INPUT_PULLUP);
+  rtc_i2c.begin();
+  rtc_i2c.setClock(10000);
+  rtc_i2c.setTimeout(1000);
+  Logger::Info("RTC I2C ready on GP%d/GP%d (10kHz)", RTC_I2C_SDA_PIN,
+               RTC_I2C_SCL_PIN);
 }
 
 static void SetupOutputs()
@@ -138,7 +140,10 @@ static void SetupOutputs()
 static void SetupAnalogInputs()
 {
   analogReadResolution(12);
-  pinMode(DAMPER_FEEDBACK_PIN, INPUT);
+  pinMode(DAMPER_EXTRACTION_FEEDBACK_PIN, INPUT);
+#if DAMPER_RECYCLING_FITTED
+  pinMode(DAMPER_RECYCLING_FEEDBACK_PIN, INPUT);
+#endif
 }
 
 // The RTC is an optional module: probe it and degrade gracefully when absent.
@@ -301,6 +306,21 @@ static void UpdateOutputs()
 
 static uint32_t last_damper_sample = 0;
 
+// Average a few samples: the RP2040 ADC is noisy and this only feeds a
+// display, so a slow, smooth value is what we want. The averaging spans a few
+// microseconds, so it flattens converter noise and nothing else — mains hum is
+// the 100nF's job, at the divider.
+static uint16_t ReadDamperFeedback(uint8_t pin)
+{
+  constexpr uint8_t kSamples = 8;
+  uint32_t sum = 0;
+  for (uint8_t i = 0; i < kSamples; i++)
+  {
+    sum += analogRead(pin);
+  }
+  return static_cast<uint16_t>(sum / kSamples);
+}
+
 static void UpdateDamperPosition()
 {
   uint32_t now = millis();
@@ -308,15 +328,16 @@ static void UpdateDamperPosition()
     return;
   last_damper_sample = now;
 
-  // Average a few samples: the RP2040 ADC is noisy and this only feeds a
-  // display, so a slow, smooth value is what we want.
-  constexpr uint8_t kSamples = 8;
-  uint32_t sum = 0;
-  for (uint8_t i = 0; i < kSamples; i++)
-  {
-    sum += analogRead(DAMPER_FEEDBACK_PIN);
-  }
-  dryer.GetAirDamper()->SetRawPosition(static_cast<uint16_t>(sum / kSamples));
+  AirDamper *damper = dryer.GetAirDamper();
+  damper->Extraction().SetRawPosition(
+      ReadDamperFeedback(DAMPER_EXTRACTION_FEEDBACK_PIN));
+#if DAMPER_RECYCLING_FITTED
+  damper->Recycling().SetRawPosition(
+      ReadDamperFeedback(DAMPER_RECYCLING_FEEDBACK_PIN));
+#endif
+  // With the register unfitted, Recycling() never receives a sample, so it
+  // reports no position: dashes on screen, the sentinel over the air. Sampling a
+  // floating pin instead would put believable noise in both.
 }
 
 // ========== DISPLAY ==========
@@ -378,9 +399,11 @@ static void UpdateDisplay()
   model.fan_cooling       = !dryer.IsRunning() && dryer.GetFanOutput() > 0.0f;
   model.electric_on       = temperature_manager->GetElectricOn();
   model.electric_enabled  = temperature_manager->GetElectricEnabled();
-  model.damper_open       = damper->IsOpen();
-  model.damper_position   = damper->GetPositionPercent();
-  model.damper_moving     = damper->IsMoving();
+  model.damper_open          = damper->IsOpen();
+  model.extraction_position  = damper->Extraction().GetPositionPercent();
+  model.extraction_moving    = damper->Extraction().IsMoving();
+  model.recycling_position   = damper->Recycling().GetPositionPercent();
+  model.recycling_moving     = damper->Recycling().IsMoving();
 
   model.sensor_fault = !temperature_manager->GetHeatingPermitted();
 
@@ -447,7 +470,8 @@ static void UpdateLora()
   data.tank_temperature   = g_sensors.tank_temperature;
   data.target_temperature = temperature_manager->GetEffectiveTargetTemperature();
   data.target_humidity    = dryer.GetHumidityManager()->GetTargetHumidity();
-  data.damper_position    = damper->GetPositionPercent();
+  data.extraction_position = damper->Extraction().GetPositionPercent();
+  data.recycling_position  = damper->Recycling().GetPositionPercent();
 
   data.session_elapsed_s = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
   data.phase             = static_cast<uint8_t>(dryer.GetCurrentPhase());

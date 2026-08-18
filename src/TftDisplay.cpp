@@ -228,8 +228,13 @@ bool TftDisplay::BandChanged(const DisplayModel &model) const
          model.electric_on != previous_.electric_on ||
          model.electric_enabled != previous_.electric_enabled ||
          model.damper_open != previous_.damper_open ||
-         model.damper_moving != previous_.damper_moving ||
-         ValueChanged(model.damper_position, previous_.damper_position, 2.0f);
+         model.extraction_moving != previous_.extraction_moving ||
+         model.recycling_moving != previous_.recycling_moving ||
+         // The openings are printed as whole percents now, so the band has to
+         // repaint on every step of the last digit — one repaint per 1.5 s over
+         // the actuator's 150 s travel, which the band can well afford.
+         ValueChanged(model.extraction_position, previous_.extraction_position, 0.5f) ||
+         ValueChanged(model.recycling_position, previous_.recycling_position, 0.5f);
 }
 
 // --- Regions ----------------------------------------------------------------
@@ -420,37 +425,70 @@ void TftDisplay::DrawStatusBand(const DisplayModel &model)
   // --- Electric heating
   uint16_t heat_color = !model.electric_enabled ? UiTheme::kInactive
                         : (model.electric_on ? UiTheme::kHeat : UiTheme::kInactive);
-  UiIcons::DrawLightning(canvas, 140, icon_y, 18, heat_color);
+  UiIcons::DrawLightning(canvas, kHeatCx, icon_y, 18, heat_color);
   if (!model.electric_enabled)
   {
-    UiIcons::DrawSlash(canvas, 140, icon_y, 18, UiTheme::kInactive);
+    UiIcons::DrawSlash(canvas, kHeatCx, icon_y, 18, UiTheme::kInactive);
   }
   canvas.setTextColor(UiTheme::kLabel, UiTheme::kPanel);
-  canvas.drawString("CHAUFFAGE", 140, kBandH - 22, 2);
+  canvas.drawString("CHAUFFAGE", kHeatCx, kBandH - 22, 2);
 
-  // --- Air damper: named state, never a percentage. The measured position only
-  // appears as a travel bar while the vane is still moving.
-  uint16_t damper_color = model.damper_open ? UiTheme::kActive : UiTheme::kWater;
-  UiIcons::DrawDamper(canvas, 250, icon_y, 18, damper_color, model.damper_open);
-  canvas.setTextColor(UiTheme::kLabel, UiTheme::kPanel);
-  canvas.drawString(model.damper_open ? "EXTRACTION" : "RECIRCULATION",
-                    250, kBandH - 22, 2);
-
-  if (model.damper_moving && !isnan(model.damper_position))
-  {
-    const int16_t bar_x = 196;
-    const int16_t bar_w = 108;
-    const int16_t bar_y = kBandH - 8;
-    canvas.drawRect(bar_x, bar_y, bar_w, 5, UiTheme::kBorder);
-    int16_t filled = static_cast<int16_t>((model.damper_position / 100.0f) * (bar_w - 2));
-    if (filled > 0)
-    {
-      canvas.fillRect(bar_x + 1, bar_y + 1, filled, 3, UiTheme::kWarning);
-    }
-  }
+  // --- The two registers, one row each.
+  //
+  // The commanded air path is not printed as a word any more: it is the row
+  // whose label is lit. Extraction and recycling are complementary, so exactly
+  // one of them is lit at any time, and the two bars show how far each actually
+  // is — which is where an actuator that never arrives gives itself away.
+  DrawRegisterRow(canvas, kRegRow1Cy, "EXTRACT.", model.extraction_position,
+                  model.extraction_moving, model.damper_open);
+  DrawRegisterRow(canvas, kRegRow2Cy, "RECYCL.", model.recycling_position,
+                  model.recycling_moving, !model.damper_open);
 
   canvas.pushSprite(0, kBandY);
   canvas.deleteSprite();
+}
+
+void TftDisplay::DrawRegisterRow(TFT_eSprite &canvas, int16_t cy, const char *label,
+                                 float position, bool moving, bool should_be_open)
+{
+  // Lit while this is the register the command wants open, dim otherwise. Green
+  // rather than white so it reads as "this is the air path in use", matching the
+  // fan's own active colour.
+  canvas.setTextDatum(ML_DATUM);
+  canvas.setTextColor(should_be_open ? UiTheme::kActive : UiTheme::kLabel,
+                      UiTheme::kPanel);
+  canvas.drawString(label, kRegX, cy, 2);
+
+  // Yellow while travelling, matching the degraded/transient colour used
+  // everywhere else; then the steady colour of whichever path this register is.
+  uint16_t fill = moving ? UiTheme::kWarning
+                         : (should_be_open ? UiTheme::kActive : UiTheme::kWater);
+
+  int16_t bar_y = cy - kRegBarH / 2;
+  canvas.drawRect(kRegBarX, bar_y, kRegBarW, kRegBarH, UiTheme::kBorder);
+
+  char text[8];
+  if (isnan(position))
+  {
+    // No usable feedback: an empty bar and dashes, never a 0 % that would read
+    // as a closed register.
+    snprintf(text, sizeof(text), "--%%");
+    canvas.setTextColor(UiTheme::kInactive, UiTheme::kPanel);
+  }
+  else
+  {
+    int16_t filled = static_cast<int16_t>((position / 100.0f) * (kRegBarW - 2));
+    if (filled > 0)
+    {
+      canvas.fillRect(kRegBarX + 1, bar_y + 1, filled, kRegBarH - 2, fill);
+    }
+    snprintf(text, sizeof(text), "%d%%", static_cast<int>(position + 0.5f));
+    canvas.setTextColor(UiTheme::kValue, UiTheme::kPanel);
+  }
+
+  canvas.setTextDatum(MR_DATUM);
+  canvas.drawString(text, kRegRight, cy, 2);
+  canvas.setTextDatum(TC_DATUM);
 }
 
 void TftDisplay::DrawFanIcon(const DisplayModel &model)

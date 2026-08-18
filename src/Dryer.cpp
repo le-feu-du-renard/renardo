@@ -138,7 +138,10 @@ void Dryer::ApplySettings(const DryerSettings &settings, bool rtc_available)
   durations.extraction             = settings.extraction_phase_duration;
   durations.extraction_damper_open = settings.extraction_damper_open_duration;
 
-  air_damper_.SetCalibration(settings.damper_raw_closed, settings.damper_raw_open);
+  air_damper_.Extraction().SetCalibration(settings.extraction_raw_closed,
+                                          settings.extraction_raw_open);
+  air_damper_.Recycling().SetCalibration(settings.recycling_raw_closed,
+                                         settings.recycling_raw_open);
 }
 
 void Dryer::CaptureSettings(DryerSettings &settings) const
@@ -172,8 +175,10 @@ void Dryer::CaptureSettings(DryerSettings &settings) const
   settings.extraction_phase_duration       = durations.extraction;
   settings.extraction_damper_open_duration = durations.extraction_damper_open;
 
-  settings.damper_raw_closed = air_damper_.GetRawClosed();
-  settings.damper_raw_open   = air_damper_.GetRawOpen();
+  settings.extraction_raw_closed = air_damper_.Extraction().GetRawClosed();
+  settings.extraction_raw_open   = air_damper_.Extraction().GetRawOpen();
+  settings.recycling_raw_closed  = air_damper_.Recycling().GetRawClosed();
+  settings.recycling_raw_open    = air_damper_.Recycling().GetRawOpen();
 }
 
 void Dryer::CaptureSession(SessionSnapshot &session) const

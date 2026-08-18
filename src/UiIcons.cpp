@@ -72,24 +72,6 @@ void DrawPump(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
   canvas.fillTriangle(a.x, a.y, b.x, b.y, c.x, c.y, color);
 }
 
-void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-                uint16_t color, bool open)
-{
-  // Duct walls.
-  canvas.drawFastVLine(cx - radius, cy - radius, radius * 2, color);
-  canvas.drawFastVLine(cx + radius, cy - radius, radius * 2, color);
-
-  // Three louvres: flat across the duct when shut, tilted open when extracting.
-  float tilt = open ? 55.0f : 0.0f;
-  for (int8_t i = -1; i <= 1; i++)
-  {
-    int16_t y = cy + i * (radius * 0.7f);
-    Point left  = Polar(cx, y, radius * 0.85f, 270.0f + tilt);
-    Point right = Polar(cx, y, radius * 0.85f, 90.0f + tilt);
-    canvas.drawLine(left.x, left.y, right.x, right.y, color);
-  }
-}
-
 void DrawAntenna(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                  uint16_t color)
 {

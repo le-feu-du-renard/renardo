@@ -13,7 +13,7 @@
 //                            LoRa icon right
 //   tiles        y  28..115  measurement | setpoint, split at x = 160
 //   hydraulic    y 116..167  circulator state and the two water temperatures
-//   status band  y 168..239  fan, electric, damper
+//   status band  y 168..239  fan, electric, and the two registers' openings
 //
 // Elapsed time sits on the left because HH:MM:SS never changes width, while the
 // phase name does — centring the one that moves keeps the bar from jittering.
@@ -107,10 +107,36 @@ private:
   void DrawFanIcon(const DisplayModel &model);
 
   // Fan disc position, band-relative and as its own little canvas.
-  static constexpr int16_t kFanCx   = 46;
+  static constexpr int16_t kFanCx   = 40;
   static constexpr int16_t kFanCy   = 26;
   static constexpr int16_t kFanR    = 18;
   static constexpr int16_t kFanBox  = 2 * kFanR + 4;
+
+  // Electric heating column, band-relative.
+  static constexpr int16_t kHeatCx  = 120;
+
+  // Register panel: two stacked rows, each "LABEL [bar] nn%".
+  //
+  // The two registers are asymmetric, so both openings are on screen at once and
+  // as numbers — which one leads the other is the useful reading, and a bar
+  // alone cannot be compared to a second bar precisely enough. The bar stays
+  // beside each number for a glance, and is drawn permanently rather than only
+  // during travel: an opening with no bar would look like a missing reading.
+  //
+  // 150 px wide, which is what is left once the fan and the electric heating
+  // have their 80 px columns.
+  static constexpr int16_t kRegX      = 164; // left edge, labels start here
+  static constexpr int16_t kRegRight  = 314; // right edge, percentages end here
+  static constexpr int16_t kRegBarX   = 234;
+  static constexpr int16_t kRegBarW   = 40;
+  static constexpr int16_t kRegBarH   = 8;
+  static constexpr int16_t kRegRow1Cy = 22;  // band-relative row centres
+  static constexpr int16_t kRegRow2Cy = 50;
+
+  // One register's row. `should_be_open` is where the single command wants this
+  // register to end up, which is what colours the label and the bar.
+  void DrawRegisterRow(TFT_eSprite &canvas, int16_t cy, const char *label,
+                       float position, bool moving, bool should_be_open);
 
   // Change detection, one predicate per region.
   bool StatusBarChanged(const DisplayModel &model) const;

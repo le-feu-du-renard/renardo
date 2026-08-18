@@ -28,11 +28,6 @@ void DrawLightning(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
 void DrawPump(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
               uint16_t color);
 
-// Damper louvres: shut across the duct for recirculation, swung open for
-// extraction.
-void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-                uint16_t color, bool open);
-
 // Antenna with radiating chevrons — the LoRa link.
 void DrawAntenna(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                  uint16_t color);

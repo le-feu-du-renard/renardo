@@ -13,11 +13,15 @@
 // of those has to be rejected here rather than acted upon.
 
 // Version 2 dropped the outlet probe's two fields from the telemetry frame.
-// The frame is fixed-layout and byte-summed, so a shortened one cannot be read
-// by a v1 receiver at all — hence a version bump rather than zero-filled
-// fields. `IsTelemetryValid` rejects any other version, so a Commander still
-// speaking v1 goes quiet instead of decoding four bytes of the wrong quantity.
-#define LORA_PROTOCOL_VERSION 2
+// Version 3 split the single damper opening into one per register, extraction
+// and recycling, when the dryer gained a second one.
+//
+// The frame is fixed-layout and byte-summed, so a frame of a different length
+// cannot be read by an older receiver at all — hence a version bump rather than
+// zero-filled fields. `IsTelemetryValid` rejects any other version, so a
+// Commander still speaking v2 goes quiet instead of decoding the checksum as a
+// position. **The Commander has to be updated in the same breath as this.**
+#define LORA_PROTOCOL_VERSION 3
 #define LORA_TELEMETRY_MAGIC 0xD7
 #define LORA_COMMAND_MAGIC 0xD8
 
@@ -62,7 +66,12 @@ struct __attribute__((packed)) TelemetryPacket
 
   uint8_t  phase;
   uint8_t  flags;
-  uint8_t  damper_position;  // %, 0xFF when there is no usable feedback
+  // Measured opening of each register, %, kLoraNoPosition when that one has no
+  // usable feedback. Both travel: the registers are asymmetric, so one figure
+  // cannot stand for the other, and a register that stops arriving is only
+  // visible if its own opening is on the wire.
+  uint8_t  extraction_position;
+  uint8_t  recycling_position;
   uint8_t  last_command_ack; // sequence number of the last command executed
 
   uint16_t checksum;
@@ -94,7 +103,8 @@ struct TelemetryData
   float tank_temperature;
   float target_temperature;
   float target_humidity;
-  float damper_position;   // %, NAN when unknown
+  float extraction_position; // %, NAN when unknown
+  float recycling_position;  // %, NAN when unknown
 
   uint32_t session_elapsed_s;
   uint8_t  phase;
@@ -111,7 +121,7 @@ struct TelemetryData
       : inlet_temperature(NAN), inlet_humidity(NAN),
         water_temperature(NAN), tank_temperature(NAN),
         target_temperature(NAN), target_humidity(NAN),
-        damper_position(NAN),
+        extraction_position(NAN), recycling_position(NAN),
         session_elapsed_s(0), phase(0),
         running(false), fan_on(false), electric_on(false),
         hydraulic_on(false), hydraulic_online(false),
@@ -122,9 +132,20 @@ struct TelemetryData
 // probe from a real zero.
 constexpr int16_t kLoraInvalidValue = INT16_MIN;
 
+// Same idea for the openings, which are whole percents in a byte: 0 % is a
+// closed register, this is no feedback at all. 100 % being a legal reading, the
+// sentinel has to sit outside the range rather than at its top.
+constexpr uint8_t kLoraNoPosition = 0xFF;
+
 // Converts a reading to tenths, mapping NaN to kLoraInvalidValue.
 int16_t LoraEncodeValue(float value);
 float   LoraDecodeValue(int16_t raw);
+
+// Converts an opening to whole percents, mapping NaN to kLoraNoPosition and
+// clamping the rest into 0..100 so a drifting feedback can never land on the
+// sentinel and read as "no feedback".
+uint8_t LoraEncodePosition(float percent);
+float   LoraDecodePosition(uint8_t raw);
 
 // Byte sum over everything before the trailing checksum field.
 uint16_t LoraChecksum(const void *data, size_t length);
