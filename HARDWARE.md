@@ -101,6 +101,19 @@ by driving the damper to each end stop (Système → Registre fermé / ouvert).
 A disconnected feedback wire yields a degenerate calibration span, which the
 firmware detects and reports as "no position" rather than as 0 %.
 
+### Testing the damper
+
+`pio run -e damper_test -t upload -t monitor` switches the command every 30 s
+and prints the raw ADC and the position beside it, driving the production
+`OutputDriver` and `AirDamper` so the polarity and the percentage are the
+firmware's own. It reports the command pin's resting level before `pinMode()`
+runs, and flags a feedback that never moved during a cycle.
+
+The 30 s period is deliberately shorter than the ~150 s travel: it exercises the
+command and the feedback, not the end stops. Press `l` for a 180 s cycle when
+the end-stop values are what you want to record; `o`, `c` and `t` drive it by
+hand, `a` stops the automatic switching.
+
 ## RS485 bus
 
 A single MAX3485 carries every Modbus RTU slave, 9600 8N1. Core 1 owns the bus
@@ -113,6 +126,115 @@ exclusively.
 | 10 | Hydraulic module | see below |
 
 120 Ω termination at both ends of the segment.
+
+### Wiring
+
+The transceiver is a **MAX3485** — the 3.3 V part. The MAX485 of the same
+outline is a 5 V part, and its `RO` would present 5 V to GP5, which is not 5 V
+tolerant.
+
+| MAX3485 | Also marked | Pico GP | Header pin | Notes |
+|---|---|---|---|---|
+| RO (receiver out) | `TXD` | GP5 | 7 | UART1 RX |
+| DI (driver in) | `RXD` | GP4 | 6 | UART1 TX |
+| DE + RE | `EN` | GP3 | 5 | tied together, HIGH = transmit |
+| VCC | | 3V3(OUT) | 36 | 3.3 V only |
+| GND | | GND | 3 | |
+| A / B | `D+` / `D−` | — | — | to the probes' A / B, never crossed |
+
+Two silkscreen conventions exist and they are opposites. A board marked
+`DI`/`RO` names its pins from the transceiver's point of view; one marked
+`RXD`/`TXD` names them from the microcontroller's, so its `RXD` **is** `DI` and
+takes the Pico's TX. Wiring `TXD` to TX is the mistake this invites, and it
+looks exactly like a dead bus.
+
+A board that exposes a single `EN` instead of `DE` and `RE` has tied the two on
+the PCB, which is what we want — unless it grounded `RE` and brought out only
+`DE`, in which case the receiver never turns off and every transaction hears
+itself. `rs485_test` says which within a second of booting.
+
+`DE` and `RE` are tied because ModbusMaster reads the answer from the same
+stream it wrote the request to: a receiver left enabled during transmission
+feeds our own frame straight back, and the library takes it for the slave's
+reply.
+
+That fault reads as **`0xE3`, an invalid CRC** — not as the wrong-slave error
+one would expect. The echo begins with the address and the function code that
+were just sent, so both of ModbusMaster's identity checks pass; the next byte
+is the high half of a register number where a byte count belongs, and the frame
+falls apart there. A bus that is merely silent gives `0xE2` instead, so the two
+are easy to tell apart once the mechanism is known — and impossible before.
+
+The pair carries no polarity marking worth trusting — makers label the same two
+wires A/B, D+/D−, and 485+/485− with no agreement on which is which. Reversing
+them is the single most common fault, and it looks exactly like a dead probe.
+`rs485_test` catches it before sending anything: see below.
+
+On the bench, with no 24 V around, the probes run from **VBUS (header pin 40,
+5 V)** — these SHT30 probes accept 5–30 V. Their 0 V and the Pico's ground must
+be the same, as always.
+
+### Bring-up
+
+`pio run -e rs485_test -t upload -t monitor` drives the production `Rs485Bus`,
+so a reading it prints is a reading the firmware would get. It adds what the
+bus hides: the receiver's resting level, the raw bytes, and sweeps for a probe
+whose address or baud rate is unknown.
+
+It starts by sampling GP5 as a plain input, before the UART claims it. On an
+idle pair with A above B the receiver output sits HIGH, which is the UART's
+mark state; a **reversed pair holds it LOW**, a permanent break condition. That
+one measurement separates a swapped pair from a dead probe — the two faults are
+otherwise indistinguishable, since both simply time out. A pair with nothing
+connected floats and reads as noise, so the check means something only once a
+probe is on the wire.
+
+Then it polls the inlet probe every two seconds and, when a read fails, names
+the wire to look at rather than the error code:
+
+| Error | Means |
+|---|---|
+| `0xE2` timeout | nobody answered: power, A/B, address, baud, or DE never rose |
+| `0xE0` / `0xE1` | something answered under another identity |
+| `0xE3` bad CRC | our own echo (RE not following DE), wrong baud, wrong parity, or noise |
+| `0x02` | the probe is alive and addressed, but has no register at `0x0000` |
+
+The echo is settled without any probe attached, at start-up and on `e`: the
+test asks a question of address 247, which nothing on this bus owns, so any
+byte that comes back is necessarily our own. Nothing else separates an echo
+from a slave answering badly.
+
+It is usually **not** a whole frame. `RE` left unconnected floats near its
+threshold and the receiver flickers on and off through the transmission, so
+what returns is some contiguous slice of the request — its first two bytes, its
+last four. The test matches those slices too, which is why it recognises the
+fault on a bus whose scan otherwise looks like a dozen half-alive slaves. A
+real reply cannot be confused with one: it carries a byte count where the
+request carries the high half of a register number, so the two diverge by the
+third byte.
+
+An echo is also a piece of good news. Those bytes travelled GP4 → `DI` → the
+pair → `RO` → GP5 and came back intact, which proves in one shot that TX and RX
+are on the right pins, that the transceiver is powered, and that `DE` rises —
+the whole local chain, everything except the probe.
+
+The other keys: `s` sweeps addresses 1–32, `b` sweeps the common baud rates,
+`p` sweeps parity and stop bits, `m` walks the first sixteen registers to
+recover an unknown map, `l` listens to the pair without transmitting. The
+sweeps count only frames whose CRC holds — at the wrong baud rate bytes still
+arrive, they simply mean nothing. They build their own frames instead of using
+ModbusMaster, whose response timeout is a fixed two seconds: that alone would
+make a 32-address sweep take a minute.
+
+`p` exists because a probe set to even parity answers every single request and
+parses as pure noise: the parity bit is read as the first stop bit and every
+byte lands shifted. `Rs485Bus::Begin` opens the port as 8N1 and the whole bus
+must agree, so a probe found on another framing gets reconfigured rather than
+accommodated.
+
+Breathing on the probe is the last check: humidity must climb within seconds. A
+plausible but frozen value means the register is being read from a cache, or
+that the wrong register is being read.
 
 ### Hydraulic module (to be built)
 
@@ -255,11 +377,15 @@ transmission does not brown out the display.
 
 1. Pico alone, USB serial: check the boot log.
 2. TFT: mire, fonts, icons. Confirm orientation and colours.
-3. Encoder: detents and click, no phantom steps.
+3. Encoder: detents and click, no phantom steps — `encoder_test` first, then
+   the menu itself.
    Button: one press starts, the next stops — check it never double-fires.
 4. Outputs one at a time, **measuring at the connector before wiring the loads**
    — this is where a polarity mistake is caught.
-5. Damper feedback: full travel, record the two end-stop values, calibrate.
-6. RS485: probes first, then the hydraulic module.
+5. Damper: `damper_test` first — it checks the resting level, the relay and the
+   feedback in one pass — then a full travel on the `l` cycle to record the two
+   end-stop values, and calibrate from the menu.
+6. RS485: `rs485_test` first, then the probes in the firmware, then the
+   hydraulic module.
 7. Radio, with the display refreshing at the same time. The buses are
    independent, so this should be uneventful — confirm it anyway.
