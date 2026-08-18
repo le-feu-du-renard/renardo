@@ -22,8 +22,8 @@ public:
 
   void Begin();
 
-  // Call each control cycle with fresh sensor readings.
-  void Update(float inlet_humidity, float outlet_humidity);
+  // Call each control cycle with a fresh inlet reading.
+  void Update(float inlet_humidity);
 
   // Set operating mode (called by SessionManager on phase transitions).
   void SetMode(Mode mode);

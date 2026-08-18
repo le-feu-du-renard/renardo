@@ -220,7 +220,7 @@ time is `millis()`-based, so the wall-clock gap during the outage is lost.
 An SX1262 at 868 MHz talks to the Commander, which has the internet connection.
 Session logging happens server-side; the dryer keeps none.
 
-**Uplink:** a 43-byte telemetry frame every 60 s — both probes, both water
+**Uplink:** a telemetry frame every 60 s — the inlet probe, both water
 temperatures, setpoints, phase, elapsed time, actuator states, damper position.
 Readings travel as signed tenths with a distinct sentinel for "no value", so a
 missing probe is not reported as a real zero.

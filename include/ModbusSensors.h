@@ -18,41 +18,39 @@ struct SensorReading
         error_count(0), valid(false) {}
 };
 
-// RS485 Modbus RTU interface for the SHT20/SHT30-type probes on bus A.
+// RS485 Modbus RTU interface for the SHT20/SHT30-type inlet probe.
 // Register map and scale factor come from config.h:
 //   MODBUS_REG_HUMIDITY    : humidity    (raw / MODBUS_RAW_SCALE = %RH)
 //   MODBUS_REG_TEMPERATURE : temperature (raw / MODBUS_RAW_SCALE = C)
 // Both registers are read in a single FC03 transaction.
 //
-// Each probe keeps its own error counter and success timestamp. In v3 a single
-// counter was shared by both probes, so a success on one silently reset the
-// failure count of the other and no staleness could ever be detected.
+// One probe, addressed by MODBUS_INLET_ADDRESS. v3 and early v4 also carried an
+// outlet probe, reached through an index on every call; it never fed a control
+// decision, so the index went with it. The error counter and the success
+// timestamp stay, because they are what tells a stale reading from a live one —
+// v3 shared a single counter between the two probes, so a success on one reset
+// the other's failure count and staleness could never be detected at all.
 class ModbusSensors
 {
 public:
-  static constexpr uint8_t kInlet  = 0;
-  static constexpr uint8_t kOutlet = 1;
-  static constexpr uint8_t kCount  = 2;
-
   explicit ModbusSensors(Rs485Bus *bus);
 
   void Begin();
 
-  // Poll one probe and update its slot. Returns true on success.
-  // On failure the previous values are kept and the error counter grows.
-  bool Poll(uint8_t index);
+  // Poll the probe. Returns true on success; on failure the previous values are
+  // kept and the error counter grows.
+  bool Poll();
 
-  const SensorReading &GetReading(uint8_t index) const;
+  const SensorReading &GetReading() const { return reading_; }
 
   // True when the probe has produced a value within `timeout_ms`.
   // A probe that never answered is never fresh.
-  bool IsFresh(uint8_t index, uint32_t timeout_ms) const;
+  bool IsFresh(uint32_t timeout_ms) const;
 
 private:
   Rs485Bus     *bus_;
-  uint8_t       addresses_[kCount];
-  SensorReading readings_[kCount];
-  SensorReading invalid_;  // returned for out-of-range indices
+  uint8_t       address_;
+  SensorReading reading_;
 
   static constexpr uint16_t kMaxErrors = 100;
 };

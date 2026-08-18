@@ -96,8 +96,6 @@ void LoraLink::SendTelemetry(const TelemetryData &data)
 
   packet.inlet_temperature  = LoraEncodeValue(data.inlet_temperature);
   packet.inlet_humidity     = LoraEncodeValue(data.inlet_humidity);
-  packet.outlet_temperature = LoraEncodeValue(data.outlet_temperature);
-  packet.outlet_humidity    = LoraEncodeValue(data.outlet_humidity);
   packet.water_temperature  = LoraEncodeValue(data.water_temperature);
   packet.tank_temperature   = LoraEncodeValue(data.tank_temperature);
   packet.target_temperature = LoraEncodeValue(data.target_temperature);

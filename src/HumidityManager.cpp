@@ -18,7 +18,7 @@ void HumidityManager::Begin()
   Logger::Info("HumidityManager: initialized (damper closed)");
 }
 
-void HumidityManager::Update(float inlet_humidity, float /*outlet_humidity*/)
+void HumidityManager::Update(float inlet_humidity)
 {
   current_inlet_humidity_ = inlet_humidity;
 

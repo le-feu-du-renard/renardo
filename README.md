@@ -1,7 +1,7 @@
 # renard'o — Dryer Controller
 
 Food dehydrator controller built on a Raspberry Pi Pico H. Hybrid heating
-(hydraulic + electric), RS485 probes and a deported hydraulic module, TFT
+(hydraulic + electric), an RS485 probe and a deported hydraulic module, TFT
 interface driven by a rotary encoder and a single button, LoRa link to a
 server.
 
@@ -22,7 +22,7 @@ The radio reports and accepts commands, it never regulates.
 
 ## Architecture at a glance
 
-- **Core 1** owns the RS485 bus: two SHT30 probes and the hydraulic module.
+- **Core 1** owns the RS485 bus: the SHT30 inlet probe and the hydraulic module.
 - **Core 0** runs everything else: regulation, display, menu, radio.
 - Readings cross between them through a seqlock-protected snapshot carrying
   freshness timestamps, which is what lets stale data block the heating.

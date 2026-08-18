@@ -130,8 +130,12 @@ exclusively.
 | Address | Device | Registers |
 |---|---|---|
 | 1 | SHT30 probe, injection | FC03 `0x0000` %RH ×10, `0x0001` °C ×10 |
-| 2 | SHT30 probe, outlet | idem |
 | 10 | Hydraulic module | see below |
+
+v4 carries **one probe**. The outlet one of v3 was polled and put on the air
+every minute, and nothing downstream read it: the damper follows inlet humidity,
+the heaters follow inlet temperature, and the screen has never shown it. It was
+dropped rather than kept warm — address 2 is free for whatever needs it next.
 
 120 Ω termination at both ends of the segment.
 

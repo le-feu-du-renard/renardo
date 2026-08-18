@@ -12,7 +12,12 @@
 // on: a frame can arrive corrupted, duplicated, or out of order, and every one
 // of those has to be rejected here rather than acted upon.
 
-#define LORA_PROTOCOL_VERSION 1
+// Version 2 dropped the outlet probe's two fields from the telemetry frame.
+// The frame is fixed-layout and byte-summed, so a shortened one cannot be read
+// by a v1 receiver at all — hence a version bump rather than zero-filled
+// fields. `IsTelemetryValid` rejects any other version, so a Commander still
+// speaking v1 goes quiet instead of decoding four bytes of the wrong quantity.
+#define LORA_PROTOCOL_VERSION 2
 #define LORA_TELEMETRY_MAGIC 0xD7
 #define LORA_COMMAND_MAGIC 0xD8
 
@@ -50,8 +55,6 @@ struct __attribute__((packed)) TelemetryPacket
 
   int16_t  inlet_temperature;
   int16_t  inlet_humidity;
-  int16_t  outlet_temperature;
-  int16_t  outlet_humidity;
   int16_t  water_temperature;
   int16_t  tank_temperature;
   int16_t  target_temperature;
@@ -79,15 +82,14 @@ struct __attribute__((packed)) CommandPacket
 
 // What the dryer reports, in engineering units.
 //
-// Deliberately not the display model: the screen shows a subset (it has no room
-// for the outlet probe) and the server wants the full picture, so tying the two
-// together would mean one of them carrying fields for the other's benefit.
+// Deliberately not the display model: the screen shows a subset — it has no
+// room for the water setpoint or the session sequence — and the server wants
+// the full picture, so tying the two together would mean one of them carrying
+// fields for the other's benefit.
 struct TelemetryData
 {
   float inlet_temperature;
   float inlet_humidity;
-  float outlet_temperature;
-  float outlet_humidity;
   float water_temperature;
   float tank_temperature;
   float target_temperature;
@@ -107,7 +109,6 @@ struct TelemetryData
 
   TelemetryData()
       : inlet_temperature(NAN), inlet_humidity(NAN),
-        outlet_temperature(NAN), outlet_humidity(NAN),
         water_temperature(NAN), tank_temperature(NAN),
         target_temperature(NAN), target_humidity(NAN),
         damper_position(NAN),

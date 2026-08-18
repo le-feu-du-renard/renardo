@@ -23,7 +23,7 @@
 // I2C bus (optional RTC DS1307)
 TwoWire i2c_bus_1(i2c1, I2C_BUS_1_SDA_PIN, I2C_BUS_1_SCL_PIN);
 
-// RS485 — single Modbus bus (probes @1 @2 + hydraulic module @10),
+// RS485 — single Modbus bus (inlet probe @1 + hydraulic module @10),
 // owned exclusively by Core 1
 Rs485Bus rs485(Serial2, RS485_TX_PIN, RS485_RX_PIN, RS485_DE_PIN, "rs485");
 ModbusSensors modbus_sensors(&rs485);
@@ -80,25 +80,19 @@ void setup1()
 
 void loop1()
 {
-  modbus_sensors.Poll(ModbusSensors::kInlet);
-  modbus_sensors.Poll(ModbusSensors::kOutlet);
+  modbus_sensors.Poll();
 
   hydraulic_remote.SetState(g_hydraulic_request);
   hydraulic_remote.SetWaterTarget(g_water_target);
   hydraulic_remote.Update();
 
-  const SensorReading &inlet  = modbus_sensors.GetReading(ModbusSensors::kInlet);
-  const SensorReading &outlet = modbus_sensors.GetReading(ModbusSensors::kOutlet);
+  const SensorReading &inlet = modbus_sensors.GetReading();
 
   SensorSnapshot snapshot;
   snapshot.inlet_temperature  = inlet.temperature;
   snapshot.inlet_humidity     = inlet.humidity;
   snapshot.inlet_updated_ms   = inlet.last_success_ms;
   snapshot.inlet_valid        = inlet.valid;
-  snapshot.outlet_temperature = outlet.temperature;
-  snapshot.outlet_humidity    = outlet.humidity;
-  snapshot.outlet_updated_ms  = outlet.last_success_ms;
-  snapshot.outlet_valid       = outlet.valid;
   snapshot.water_temperature  = hydraulic_remote.GetWaterTemperature();
   snapshot.tank_temperature   = hydraulic_remote.GetTankTemperature();
   snapshot.hydraulic_available = hydraulic_remote.IsAvailable();
@@ -181,8 +175,6 @@ static void UpdateSensors()
 
   dryer.SetInletTemperature(g_sensors.inlet_temperature);
   dryer.SetInletHumidity(g_sensors.inlet_humidity);
-  dryer.SetOutletTemperature(g_sensors.outlet_temperature);
-  dryer.SetOutletHumidity(g_sensors.outlet_humidity);
 
   // Sensor freshness interlock. The inlet probe is the control input: if it
   // goes silent, its last value would otherwise stay frozen forever and the
@@ -201,9 +193,8 @@ static void UpdateSensors()
   if (now - last_sensor_log >= SENSOR_UPDATE_INTERVAL)
   {
     last_sensor_log = now;
-    Logger::Debug("Inlet:  %F C  %F%%RH", g_sensors.inlet_temperature, g_sensors.inlet_humidity);
-    Logger::Debug("Outlet: %F C  %F%%RH", g_sensors.outlet_temperature, g_sensors.outlet_humidity);
-    Logger::Debug("Water:  %F C  Tank %F C", g_sensors.water_temperature, g_sensors.tank_temperature);
+    Logger::Debug("Inlet: %F C  %F%%RH", g_sensors.inlet_temperature, g_sensors.inlet_humidity);
+    Logger::Debug("Water: %F C  Tank %F C", g_sensors.water_temperature, g_sensors.tank_temperature);
   }
 }
 
@@ -419,8 +410,6 @@ static void UpdateLora()
   TelemetryData data;
   data.inlet_temperature  = g_sensors.inlet_temperature;
   data.inlet_humidity     = g_sensors.inlet_humidity;
-  data.outlet_temperature = g_sensors.outlet_temperature;
-  data.outlet_humidity    = g_sensors.outlet_humidity;
   data.water_temperature  = g_sensors.water_temperature;
   data.tank_temperature   = g_sensors.tank_temperature;
   data.target_temperature = temperature_manager->GetEffectiveTargetTemperature();

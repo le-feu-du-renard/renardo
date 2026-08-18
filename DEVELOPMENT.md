@@ -170,7 +170,7 @@ saved, or one reset from Système → Réinit. usine.
 ### Sensors not responding
 
 - Check RS485 wiring (GPIO 4/5) and the DE pin (GPIO 3)
-- Verify Modbus addresses match `MODBUS_INLET_ADDRESS` / `MODBUS_OUTLET_ADDRESS`
+- Verify the Modbus address matches `MODBUS_INLET_ADDRESS`
 - Check baud rate: 9600
 - A silent inlet probe blocks all heating after `SENSOR_TIMEOUT_MS` and shows
   `SONDE` in the status bar — that is the interlock working, not a bug

@@ -116,9 +116,10 @@
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600
 
-// Slave addresses on the single RS485 bus
+// Slave addresses on the single RS485 bus.
+// v4 carries one probe: the outlet one was polled and transmitted but never
+// fed a control decision, so it was dropped rather than kept warm.
 #define MODBUS_INLET_ADDRESS 1
-#define MODBUS_OUTLET_ADDRESS 2
 #define MODBUS_HYDRAULIC_ADDRESS 10
 
 // SHT30 RS485 sensor register map (function code FC03)

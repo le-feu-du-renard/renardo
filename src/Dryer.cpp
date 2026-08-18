@@ -8,9 +8,7 @@ Dryer::Dryer()
       humidity_manager_(&air_damper_),
       session_manager_(&temperature_manager_, &humidity_manager_),
       inlet_temperature_(0.0f),
-      outlet_temperature_(0.0f),
       inlet_humidity_(0.0f),
-      outlet_humidity_(0.0f),
       last_control_update_ms_(0) {}
 
 void Dryer::Begin()
@@ -57,7 +55,7 @@ void Dryer::UpdateControl()
 {
   session_manager_.Update(inlet_temperature_, inlet_humidity_);
   temperature_manager_.Update(inlet_temperature_);
-  humidity_manager_.Update(inlet_humidity_, outlet_humidity_);
+  humidity_manager_.Update(inlet_humidity_);
 }
 
 const char *Dryer::GetPhaseName() const

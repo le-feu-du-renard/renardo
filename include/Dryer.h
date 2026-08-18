@@ -31,16 +31,13 @@ public:
   uint32_t    GetTotalElapsedTime() const;
   uint32_t    GetPhaseElapsedTime() const;
 
-  // Sensor inputs
-  void  SetInletTemperature(float t)  { inlet_temperature_ = t; }
-  void  SetOutletTemperature(float t) { outlet_temperature_ = t; }
-  void  SetInletHumidity(float h)     { inlet_humidity_ = h; }
-  void  SetOutletHumidity(float h)    { outlet_humidity_ = h; }
+  // Sensor inputs — the inlet probe is the only measurement the control loop
+  // has ever used.
+  void  SetInletTemperature(float t) { inlet_temperature_ = t; }
+  void  SetInletHumidity(float h)    { inlet_humidity_ = h; }
 
-  float GetInletTemperature()  const { return inlet_temperature_; }
-  float GetOutletTemperature() const { return outlet_temperature_; }
-  float GetInletHumidity()     const { return inlet_humidity_; }
-  float GetOutletHumidity()    const { return outlet_humidity_; }
+  float GetInletTemperature() const { return inlet_temperature_; }
+  float GetInletHumidity()    const { return inlet_humidity_; }
 
   // Target setpoints (from potentiometers, updated each loop)
   void  SetTargetTemperature(float temperature);
@@ -87,9 +84,7 @@ private:
   SessionManager     session_manager_;
 
   float inlet_temperature_;
-  float outlet_temperature_;
   float inlet_humidity_;
-  float outlet_humidity_;
 
   uint32_t last_control_update_ms_;
   static constexpr uint32_t kControlIntervalMs = CONTROL_LOOP_INTERVAL;

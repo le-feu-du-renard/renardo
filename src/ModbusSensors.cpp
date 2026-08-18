@@ -2,68 +2,48 @@
 #include "ModbusSensors.h"
 #include "Logger.h"
 
-ModbusSensors::ModbusSensors(Rs485Bus *bus) : bus_(bus)
-{
-  addresses_[kInlet]  = MODBUS_INLET_ADDRESS;
-  addresses_[kOutlet] = MODBUS_OUTLET_ADDRESS;
-}
+ModbusSensors::ModbusSensors(Rs485Bus *bus)
+    : bus_(bus), address_(MODBUS_INLET_ADDRESS) {}
 
 void ModbusSensors::Begin()
 {
-  Logger::Info("ModbusSensors: inlet @%d, outlet @%d on bus %s",
-               addresses_[kInlet], addresses_[kOutlet], bus_->GetName());
+  Logger::Info("ModbusSensors: inlet @%d on bus %s", address_, bus_->GetName());
 }
 
-bool ModbusSensors::Poll(uint8_t index)
+bool ModbusSensors::Poll()
 {
-  if (index >= kCount || bus_ == nullptr)
+  if (bus_ == nullptr)
   {
     return false;
   }
 
-  SensorReading &reading = readings_[index];
   uint16_t raw[2] = {0, 0};
 
-  if (!bus_->ReadHoldingRegisters(addresses_[index], MODBUS_REG_HUMIDITY, 2, raw))
+  if (!bus_->ReadHoldingRegisters(address_, MODBUS_REG_HUMIDITY, 2, raw))
   {
-    if (reading.error_count < kMaxErrors)
+    if (reading_.error_count < kMaxErrors)
     {
-      reading.error_count++;
+      reading_.error_count++;
     }
     Logger::Warning("ModbusSensors: read failed @%d (error %X, count %d)",
-                    addresses_[index], bus_->GetLastError(), reading.error_count);
+                    address_, bus_->GetLastError(), reading_.error_count);
     return false;
   }
 
   // Register layout: 0x0000 = humidity, 0x0001 = temperature
-  reading.humidity        = static_cast<float>(raw[0]) / MODBUS_RAW_SCALE;
-  reading.temperature     = static_cast<float>(raw[1]) / MODBUS_RAW_SCALE;
-  reading.last_success_ms = millis();
-  reading.error_count     = 0;
-  reading.valid           = true;
+  reading_.humidity        = static_cast<float>(raw[0]) / MODBUS_RAW_SCALE;
+  reading_.temperature     = static_cast<float>(raw[1]) / MODBUS_RAW_SCALE;
+  reading_.last_success_ms = millis();
+  reading_.error_count     = 0;
+  reading_.valid           = true;
   return true;
 }
 
-const SensorReading &ModbusSensors::GetReading(uint8_t index) const
+bool ModbusSensors::IsFresh(uint32_t timeout_ms) const
 {
-  if (index >= kCount)
-  {
-    return invalid_;
-  }
-  return readings_[index];
-}
-
-bool ModbusSensors::IsFresh(uint8_t index, uint32_t timeout_ms) const
-{
-  if (index >= kCount)
+  if (!reading_.valid)
   {
     return false;
   }
-
-  const SensorReading &reading = readings_[index];
-  if (!reading.valid)
-  {
-    return false;
-  }
-  return (millis() - reading.last_success_ms) < timeout_ms;
+  return (millis() - reading_.last_success_ms) < timeout_ms;
 }

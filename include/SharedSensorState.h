@@ -9,28 +9,23 @@ struct SensorSnapshot
 {
   float inlet_temperature;
   float inlet_humidity;
-  float outlet_temperature;
-  float outlet_humidity;
 
   float water_temperature;  // hydraulic module, circulating water
   float tank_temperature;   // hydraulic module, storage tank
 
   // millis() of the last successful probe read. millis() is driven by the same
-  // timer on both cores, so Core 0 can compare these against SENSOR_TIMEOUT_MS
+  // timer on both cores, so Core 0 can compare this against SENSOR_TIMEOUT_MS
   // to decide whether heating may run.
   uint32_t inlet_updated_ms;
-  uint32_t outlet_updated_ms;
 
   bool inlet_valid;
-  bool outlet_valid;
   bool hydraulic_available;
 
   SensorSnapshot()
       : inlet_temperature(NAN), inlet_humidity(NAN),
-        outlet_temperature(NAN), outlet_humidity(NAN),
         water_temperature(NAN), tank_temperature(NAN),
-        inlet_updated_ms(0), outlet_updated_ms(0),
-        inlet_valid(false), outlet_valid(false), hydraulic_available(false) {}
+        inlet_updated_ms(0),
+        inlet_valid(false), hydraulic_available(false) {}
 };
 
 // Single-writer / single-reader seqlock for passing a snapshot between cores.
