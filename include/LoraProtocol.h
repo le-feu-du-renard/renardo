@@ -35,6 +35,11 @@ enum LoraFlag : uint8_t
   kLoraFlagDamperOpen   = 1 << 4,
   kLoraFlagSensorFault  = 1 << 5,
   kLoraFlagHydraulicOff = 1 << 6, // module unreachable
+  // Both registers reading shut: the air path is closed, the session is refused
+  // and a running one stopped. The last free bit, and no version bump with it —
+  // the packet layout is untouched, so a Commander that ignores bit 7 still
+  // decodes everything else. It should be taught the bit all the same.
+  kLoraFlagAirflowFault = 1 << 7,
 };
 
 enum LoraCommandCode : uint8_t
@@ -116,6 +121,7 @@ struct TelemetryData
   bool hydraulic_online;
   bool damper_open;
   bool sensor_fault;
+  bool airflow_fault;
 
   TelemetryData()
       : inlet_temperature(NAN), inlet_humidity(NAN),
@@ -125,7 +131,7 @@ struct TelemetryData
         session_elapsed_s(0), phase(0),
         running(false), fan_on(false), electric_on(false),
         hydraulic_on(false), hydraulic_online(false),
-        damper_open(false), sensor_fault(false) {}
+        damper_open(false), sensor_fault(false), airflow_fault(false) {}
 };
 
 // Value used when a reading is unavailable, so the server can tell a missing

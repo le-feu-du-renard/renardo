@@ -28,11 +28,31 @@ void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock 
   g_clock_write = write;
 }
 
+// Same reasoning as the clock hooks: the register page shows live ADC values and
+// can drive the air path, neither of which the menu is allowed to know how to do
+// itself.
+static bool (*g_damper_read)(uint8_t, MenuDamperReadback &) = nullptr;
+static void (*g_damper_command)(bool) = nullptr;
+
+void MenuSetDamperHooks(bool (*read)(uint8_t index, MenuDamperReadback &),
+                        void (*command)(bool extraction))
+{
+  g_damper_read = read;
+  g_damper_command = command;
+}
+
 namespace
 {
 
 bool RtcPresent() { return g_rtc_available; }
 bool AlwaysAvailable() { return true; }
+
+// The recycling entries are greyed out, not hidden, on a dryer declaring a
+// single register — same rule as the ECO page without an RTC.
+bool SecondDamperFitted()
+{
+  return g_settings != nullptr && g_settings->damper_count >= 2;
+}
 
 // --- Page tables ------------------------------------------------------------
 //
@@ -46,7 +66,7 @@ MenuItem g_phase_items[5];
 MenuItem g_control_items[10];
 MenuItem g_clock_items[8];
 MenuItem g_system_items[4];
-MenuItem g_damper_items[5];
+MenuItem g_damper_items[13];
 MenuItem g_root_items[7];
 
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
@@ -55,7 +75,7 @@ MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Phases", g_phase_items, 5};
 MenuPage g_control_page{"Regulation", g_control_items, 10};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
-MenuPage g_damper_page{"Registres", g_damper_items, 5};
+MenuPage g_damper_page{"Registres", g_damper_items, 13};
 MenuPage g_system_page{"Systeme", g_system_items, 4};
 MenuPage g_root_page{"Menu", g_root_items, 7};
 
@@ -195,6 +215,69 @@ void ApplyClockToRtc()
   Logger::Info("Menu: clock set to %s", ClockText());
 }
 
+// --- Registres page helpers -------------------------------------------------
+
+// Shared by both signal rows: FormatItemValue copies the string out before the
+// next row is drawn, so one buffer serves them all.
+const char *DamperSignalText(uint8_t index)
+{
+  static char text[24];
+
+  if (index >= 1 && !SecondDamperFitted())
+  {
+    return "non installe";
+  }
+
+  MenuDamperReadback readback{};
+  if (g_damper_read == nullptr || !g_damper_read(index, readback))
+  {
+    return "--";
+  }
+  if (!readback.has_signal)
+  {
+    return "absent";
+  }
+  if (isnan(readback.percent))
+  {
+    // A live signal the calibration cannot turn into an opening — which is
+    // exactly the state you are in while capturing the two marks, so the raw
+    // value still has to be readable.
+    snprintf(text, sizeof(text), "%u = ?", static_cast<unsigned>(readback.raw));
+    return text;
+  }
+  snprintf(text, sizeof(text), "%u = %d%%", static_cast<unsigned>(readback.raw),
+           static_cast<int>(readback.percent + 0.5f));
+  return text;
+}
+
+const char *ExtractionSignalText() { return DamperSignalText(0); }
+const char *RecyclingSignalText() { return DamperSignalText(1); }
+
+bool DamperCommandAvailable() { return g_damper_command != nullptr; }
+
+// Driving the air path from the menu, which the dryer otherwise only does inside
+// a running session. Two things need it: capturing the calibration marks means
+// sending a register to each of its stops, and an airflow fault with both
+// registers shut has no other way out — nothing else commands the damper while
+// the dryer is stopped, and the fault refuses the start that would.
+void CommandExtraction()
+{
+  if (g_damper_command != nullptr)
+  {
+    g_damper_command(true);
+    Logger::Info("Menu: air path commanded to extraction");
+  }
+}
+
+void CommandRecirculation()
+{
+  if (g_damper_command != nullptr)
+  {
+    g_damper_command(false);
+    Logger::Info("Menu: air path commanded to recirculation");
+  }
+}
+
 void ResetToFactoryDefaults()
 {
   if (g_settings != nullptr)
@@ -306,21 +389,47 @@ void MenuSystem::Begin(DryerSettings *settings)
   g_clock_items[6] = MakeAction("Valider", ApplyClockToRtc, RtcPresent);
   g_clock_items[7] = MakeBack();
 
-  // One end-stop pair per register: extraction and recycling are asymmetric, so
-  // calibrating one says nothing about the other. Each is captured by driving
-  // that register to the stop and reading the raw value off this page.
+  // The page describes the machine first — how many registers, which way the
+  // signal runs, which way each actuator was switched — and only then the two
+  // calibration marks per register.
+  //
+  // The marks are min and max, not closed and open: which end is open is said
+  // once, by "Sens signal", instead of being buried in the order of each pair
+  // where entering them backwards reported every opening inside out. Each is
+  // captured by driving that register to a stop and reading the raw value off
+  // the signal row below it.
   //
   // These bind to uint16_t fields: the width has to match the declaration
   // exactly, or WriteBinding would scribble past the end of the field.
-  g_damper_items[0] = MakeValue("Extrac. ferme", MenuValueType::kUint16,
-                                &s.extraction_raw_closed, 0.0f, 4095.0f, 10.0f, "");
-  g_damper_items[1] = MakeValue("Extrac. ouvert", MenuValueType::kUint16,
-                                &s.extraction_raw_open, 0.0f, 4095.0f, 10.0f, "");
-  g_damper_items[2] = MakeValue("Recycl. ferme", MenuValueType::kUint16,
-                                &s.recycling_raw_closed, 0.0f, 4095.0f, 10.0f, "");
-  g_damper_items[3] = MakeValue("Recycl. ouvert", MenuValueType::kUint16,
-                                &s.recycling_raw_open, 0.0f, 4095.0f, 10.0f, "");
-  g_damper_items[4] = MakeBack();
+  g_damper_items[0] = MakeValue("Nb registres", MenuValueType::kUint8,
+                                &s.damper_count, 1.0f, (float)DAMPER_COUNT_MAX,
+                                1.0f, "");
+  g_damper_items[1] = MakeToggle("Sens signal", &s.damper_feedback_low_is_open,
+                                 "Bas=ouvert", "Bas=ferme");
+
+  g_damper_items[2] = MakeToggle("Sens extrac.", &s.damper_extraction_inverted,
+                                 "Inverse", "Normal");
+  g_damper_items[3] = MakeValue("Extrac. mini", MenuValueType::kUint16,
+                                &s.extraction_raw_min, 0.0f, 4095.0f, 10.0f, "");
+  g_damper_items[4] = MakeValue("Extrac. maxi", MenuValueType::kUint16,
+                                &s.extraction_raw_max, 0.0f, 4095.0f, 10.0f, "");
+  g_damper_items[5] = MakeInfo("Signal extrac.", ExtractionSignalText);
+
+  g_damper_items[6] = MakeToggle("Sens recycl.", &s.damper_recycling_inverted,
+                                 "Inverse", "Normal", SecondDamperFitted);
+  g_damper_items[7] = MakeValue("Recycl. mini", MenuValueType::kUint16,
+                                &s.recycling_raw_min, 0.0f, 4095.0f, 10.0f,
+                                "", SecondDamperFitted);
+  g_damper_items[8] = MakeValue("Recycl. maxi", MenuValueType::kUint16,
+                                &s.recycling_raw_max, 0.0f, 4095.0f, 10.0f,
+                                "", SecondDamperFitted);
+  g_damper_items[9] = MakeInfo("Signal recycl.", RecyclingSignalText);
+
+  g_damper_items[10] = MakeAction("Vers extraction", CommandExtraction,
+                                  DamperCommandAvailable);
+  g_damper_items[11] = MakeAction("Vers recirc.", CommandRecirculation,
+                                  DamperCommandAvailable);
+  g_damper_items[12] = MakeBack();
 
   g_system_items[0] = MakeSubmenu("Registres", &g_damper_page);
   g_system_items[1] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,

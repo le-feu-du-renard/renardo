@@ -130,6 +130,29 @@ it goes stale. A fault is shown as `SONDE` in the status bar.
 Losing the hydraulic module degrades to electric-only; it never stops a
 session.
 
+### The airflow interlock — the one that acts on the session
+
+Every interlock above gates the **heat sources** and leaves the session running.
+One does not, and it is the only one: on a dryer configured for two registers,
+both of them reading shut means the air path is closed and the fan is moving
+nothing.
+
+| | |
+|---|---|
+| **Trips when** | both registers ≤ 10 % for 30 s, two registers declared |
+| **Effect** | refuses `Dryer::Start()` — button and LoRa alike — and stops a running session |
+| **Clears** | by itself, on the next good reading. Nothing latches, nothing to acknowledge |
+| **Shown as** | `REGISTRES FERMES - PAS DE CIRCULATION`, and LoRa flag bit 7 |
+
+A second, narrower rule covers the case where the interlock cannot be evaluated
+at all: with two registers declared and either feedback unusable — no signal, or
+no usable calibration — **the start is refused** (`RECOPIE REGISTRE HS -
+DEMARRAGE BLOQUE`). It does not stop a running session: a wire failing mid-cycle
+must not cost the batch.
+
+Both rules live in `Dryer::Start()` and `Dryer::Update()`; the decision itself is
+in `AirDamper`, which is why it is covered by host tests.
+
 ---
 
 ## Humidity and Air Damper
@@ -141,9 +164,16 @@ Init and Brassage) and `kForceOpen` (Extraction and the Init sub-extraction).
 Humidity does not modulate the damper; it decides **phase transitions**. The
 target is compared against the inlet reading to leave Brassage early.
 
-The Belimo's 2-10 V position feedback is read on ADC2 and used **only for
-display**, showing the vane travelling during its ~150 s stroke. Calibration is
-two-point, from the menu.
+A dryer has one or two registers, set from the menu (`Nb registres`). With two
+they are complementary — one relay drives both, one of them travelling the other
+way — and which way each one travels is itself a setting, because each Belimo
+carries its own mechanical direction switch that the firmware cannot read.
+
+The Belimo's 2-10 V position feedback is read on its own ADC channel per
+register. It drives the display, showing the vane travelling during its ~150 s
+stroke, and one safety decision: the airflow interlock above. Calibration is two
+ordered raw marks per register (`mini`, `maxi`) plus one `Sens signal` flag
+shared by all of them, all captured from the menu.
 
 ---
 
@@ -207,7 +237,7 @@ of flash all told, on 1.5 MB.
 | 32–107 | Cards | INJECTION · CONSIGNE |
 | 112–145 | Strip | hydraulic state, circulating and tank water temperatures |
 | 150–221 | Devices | fan (animated), electric heating, extraction, recycling |
-| 226–239 | Hint | empty, or the sensor alarm |
+| 226–239 | Hint | empty, or the highest-ranked active alarm |
 
 Every block centres its contents. Each card carries a label and two figures, and
 each figure carries its own unit — `42.3°` and `38%` — so the captions that named
@@ -235,6 +265,16 @@ The progress bar is an estimate, not a countdown: brassage and extraction both
 end on a humidity threshold when the crop dries faster than the clock allows, so
 the bar can fill before the phase changes, or the phase change while the bar is
 part way. It answers "is this phase well along".
+
+The recycling cell reads `ABSENT`, greyed and slashed, on a dryer configured for
+a single register. Dashes there would mean "should be reading and is not", which
+is a fault; a register the machine does not have is not one, and the screen must
+not blur the two.
+
+The hint band carries one alarm at a time, ranked rather than rotated so the
+worst news is never the hardest to catch: blocked airflow first, because it is
+the only one that stops the dryer, then an unusable register feedback, which
+refuses the next start, then a stale inlet probe, which blocks the heating.
 
 ### What the colours mean
 
@@ -301,6 +341,17 @@ Entries that make no sense in the current configuration are greyed out and
 skipped rather than hidden, so the menu keeps the same shape whatever hardware
 is fitted.
 
+`Système > Registres` holds everything about the air path the firmware cannot
+measure for itself: how many registers the dryer has, which end of the feedback
+signal means open (one flag for all of them — same actuator model everywhere),
+where each actuator's own direction switch is set, and the two raw calibration
+marks per register. Two read-only rows show each channel's live raw value and
+opening, which is how the marks are captured; `absent` there means the channel is
+carrying no signal at all. Two actions, `Vers extraction` and `Vers recirc.`,
+drive the air path from the menu — needed both to send a register to its stops
+while calibrating, and as the only way out of an airflow fault, since nothing
+else commands the damper while the dryer is stopped.
+
 `Système > Date / Heure` sets the RTC. Its entries edit a staging copy read from
 the chip when the page opens, and nothing is written until `Valider` — a date
 typed one field at a time would otherwise pass through impossible values. A day
@@ -343,7 +394,14 @@ each versioned and checksummed:
 
 Records are written to a temporary file and renamed over the target, so a power
 cut costs the new values rather than the previous ones. A record whose version
-or checksum does not match is discarded in favour of the factory defaults.
+or checksum does not match is discarded in favour of the factory defaults —
+there is no migration, by design.
+
+`SETTINGS_VERSION` is at **3**. v3 replaced each register's named calibration
+ends (closed, open) with ordered marks (min, max) plus an explicit signal
+direction, and added the register count and the two actuator direction flags. A
+v2 pair carries its direction in its own order, so it cannot be reinterpreted:
+**upgrading discards the stored calibration and it has to be captured again.**
 
 A reboot mid-cycle resumes the session at its phase and elapsed time. Elapsed
 time is `millis()`-based, so the wall-clock gap during the outage is lost.
@@ -359,6 +417,10 @@ Session logging happens server-side; the dryer keeps none.
 temperatures, setpoints, phase, elapsed time, actuator states, damper position.
 Readings travel as signed tenths with a distinct sentinel for "no value", so a
 missing probe is not reported as a real zero.
+
+Flag bit 7 of the telemetry frame carries the airflow fault. The packet layout is
+unchanged, so `LORA_PROTOCOL_VERSION` stays at 3 and a Commander that ignores the
+bit still decodes everything else — but it should be taught it.
 
 **Downlink:** START, STOP, set temperature, set humidity. Each frame carries a
 device id and a sequence number. Frames addressed to another dryer are dropped.

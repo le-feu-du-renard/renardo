@@ -101,7 +101,7 @@ constexpr int16_t kLongestStripLabel  = 11; // HYDRAULIQUE
 constexpr int16_t kLongestDeviceLabel = 7;  // RECIRC.
 constexpr int16_t kLongestDeviceState = 8;  // REFROID., OUV. 65%
 constexpr int16_t kLongestPhaseName   = 14; // INITIALISATION
-constexpr int16_t kLongestHint        = 37; // the sensor alarm
+constexpr int16_t kLongestHint        = 38; // the feedback alarm
 
 } // namespace
 
@@ -308,6 +308,7 @@ bool TftDisplay::DevicesChanged(const DisplayModel &model) const
          model.damper_open != previous_.damper_open ||
          model.extraction_moving != previous_.extraction_moving ||
          model.recycling_moving != previous_.recycling_moving ||
+         model.damper_count != previous_.damper_count ||
          // The openings are printed as whole percents, so the row has to
          // repaint on every step of the last digit — one repaint per 1.5 s over
          // the actuator's 150 s travel, which the row can well afford.
@@ -317,7 +318,9 @@ bool TftDisplay::DevicesChanged(const DisplayModel &model) const
 
 bool TftDisplay::HintChanged(const DisplayModel &model) const
 {
-  return model.sensor_fault != previous_.sensor_fault;
+  return model.sensor_fault != previous_.sensor_fault ||
+         model.airflow_fault != previous_.airflow_fault ||
+         model.damper_feedback_fault != previous_.damper_feedback_fault;
 }
 
 // --- Regions ----------------------------------------------------------------
@@ -625,14 +628,26 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
                       model.extraction_moving ? UiTheme::kWarn
                       : (model.damper_open ? UiTheme::kOk : UiTheme::kMuted));
 
+  // On a dryer with a single register the cell says ABSENT rather than dashes,
+  // the same word the hydraulic module gets when it is not answering. Dashes
+  // mean "should be reading and is not"; a register the dryer does not have is
+  // not a fault and must not look like one.
+  bool recycling_fitted = model.damper_count >= 2;
   UiTheme::FormatDamperState(model.recycling_position, text, sizeof(text));
-  DrawDeviceCell(canvas, x4, "RECIRC.", text,
-                 model.recycling_moving ? UiTheme::kWarn
+  DrawDeviceCell(canvas, x4, "RECIRC.", recycling_fitted ? text : "ABSENT",
+                 !recycling_fitted     ? UiTheme::kMuted
+                 : model.recycling_moving ? UiTheme::kWarn
                  : (!model.damper_open ? UiTheme::kOk : UiTheme::kNeutral));
   UiIcons::DrawDamper(canvas, x4 + kDeviceCellW / 2, kIconCy, 11,
-                      model.recycling_position, UiTheme::kBorder,
-                      model.recycling_moving ? UiTheme::kWarn
+                      recycling_fitted ? model.recycling_position : NAN,
+                      UiTheme::kBorder,
+                      !recycling_fitted     ? UiTheme::kMuted
+                      : model.recycling_moving ? UiTheme::kWarn
                       : (!model.damper_open ? UiTheme::kOk : UiTheme::kMuted));
+  if (!recycling_fitted)
+  {
+    UiIcons::DrawSlash(canvas, x4 + kDeviceCellW / 2, kIconCy, 11, UiTheme::kMuted);
+  }
 
   canvas.pushSprite(0, kDeviceY);
   canvas.deleteSprite();
@@ -649,17 +664,34 @@ void TftDisplay::DrawHintBar(const DisplayModel &model)
   canvas.drawFastHLine(0, 0, kWidth, UiTheme::kBorder);
 
   // The mock-up leaves this band empty on the dashboard — it only carries the
-  // key hints on the menu. Giving it the sensor alarm costs nothing and buys
-  // back the corner of the header the alarm used to take from the LoRa icon,
-  // so the link strength is now visible even while a probe is down, which is
-  // exactly when knowing whether the radio still works matters.
+  // key hints on the menu. Giving it the alarms costs nothing and buys back the
+  // corner of the header the alarm used to take from the LoRa icon, so the link
+  // strength is now visible even while a probe is down, which is exactly when
+  // knowing whether the radio still works matters.
   static_assert(kLongestHint * kMono12BAdvance <= kWidth,
                 "hint bar text is wider than the screen");
 
-  if (model.sensor_fault)
+  // One band, three possible alarms, so they are ranked rather than queued:
+  // blocked airflow first because it is the only one that stops the dryer, then
+  // the feedback that refuses the next start, then the probe that blocks the
+  // heating. Rotating them would make the worst news the hardest to catch.
+  const char *hint = nullptr;
+  if (model.airflow_fault)
   {
-    DrawText(canvas, &Mono12B, UiTheme::kDanger, TC_DATUM,
-             "SONDE INJECTION HS - CHAUFFAGE BLOQUE", kWidth / 2,
+    hint = "REGISTRES FERMES - PAS DE CIRCULATION";
+  }
+  else if (model.damper_feedback_fault)
+  {
+    hint = "RECOPIE REGISTRE HS - DEMARRAGE BLOQUE";
+  }
+  else if (model.sensor_fault)
+  {
+    hint = "SONDE INJECTION HS - CHAUFFAGE BLOQUE";
+  }
+
+  if (hint != nullptr)
+  {
+    DrawText(canvas, &Mono12B, UiTheme::kDanger, TC_DATUM, hint, kWidth / 2,
              UiLayout::CapTop(kHintH / 2, kMono12BBaseline, kMono12BCapHeight));
   }
 

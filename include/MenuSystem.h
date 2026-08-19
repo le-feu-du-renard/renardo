@@ -37,10 +37,27 @@ struct MenuClock
   uint8_t  minute;
 };
 
+// A register's live feedback, for the read-only rows on the Registres page.
+// Reading a raw value off the screen is how the two calibration marks are
+// captured, so the page has to show it as it moves.
+struct MenuDamperReadback
+{
+  uint16_t raw;
+  float    percent;     // NAN when there is nothing usable to report
+  bool     has_signal;  // the channel is carrying a signal at all
+};
+
 // Declared here rather than ad hoc in each .cpp: the menu stays unaware of
-// RTClib, which is what keeps it compiling in the host tests.
+// RTClib and of the ADC, which is what keeps it compiling in the host tests.
 void MenuSetRtcAvailable(bool available);
 void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &));
+
+// `index` is 0 for the extraction register, 1 for the recycling one. The command
+// hook drives the air path from the menu: it is what lets an operator send each
+// register to its stops to read the marks off, and the only way out of an
+// airflow fault that has both of them shut.
+void MenuSetDamperHooks(bool (*read)(uint8_t index, MenuDamperReadback &),
+                        void (*command)(bool extraction));
 
 struct MenuItem
 {

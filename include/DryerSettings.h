@@ -21,7 +21,12 @@
 // v2 split the single damper calibration into one pair per register, so a v1
 // record's stored values no longer line up — it is discarded and the two
 // registers start from the divider's theoretical end stops, awaiting calibration.
-#define SETTINGS_VERSION 2
+// v3 turned each pair from named ends (closed, open) into ordered marks (min,
+// max) alongside an explicit signal direction, and added the register count and
+// the two actuator direction flags. A v2 pair carries its direction in its own
+// order, so it cannot be read as a v3 one: the record is discarded and the
+// calibration has to be captured again.
+#define SETTINGS_VERSION 3
 #define SESSION_VERSION 1
 
 // Everything the menu can change.
@@ -61,12 +66,25 @@ struct DryerSettings
   float electric_t_off_min;
   float safety_max;
 
-  // Air damper feedback calibration, one pair per register: extraction and
-  // recycling are asymmetric, so a single pair cannot describe both.
-  uint16_t extraction_raw_closed;
-  uint16_t extraction_raw_open;
-  uint16_t recycling_raw_closed;
-  uint16_t recycling_raw_open;
+  // Air registers.
+  //
+  // `damper_count` describes the machine: how many registers it has, and so
+  // whether the second feedback is sampled and whether the airflow interlock
+  // exists at all. The direction flags describe the wiring: one for the feedback
+  // signal, shared because every register uses the same actuator model, and one
+  // per register for the actuator's own mechanical direction switch.
+  //
+  // The calibration is two ordered marks per register, min then max, with
+  // `damper_feedback_low_is_open` saying which end is the open one — the
+  // direction is deliberately not folded back into the order of the pair.
+  uint8_t  damper_count;
+  bool     damper_feedback_low_is_open;
+  bool     damper_extraction_inverted;
+  bool     damper_recycling_inverted;
+  uint16_t extraction_raw_min;
+  uint16_t extraction_raw_max;
+  uint16_t recycling_raw_min;
+  uint16_t recycling_raw_max;
 
   // LoRa
   uint32_t lora_telemetry_interval_ms;

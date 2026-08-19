@@ -114,11 +114,14 @@ namespace
   };
 
   Channel g_channels[] = {
-      {"EXT", DAMPER_EXTRACTION_FEEDBACK_PIN, nullptr, true, 0xFFFF, 0, 0, 0, false},
-      // Off until DAMPER_RECYCLING_FITTED says the wire exists. Press '2' to
-      // sample it anyway — useful the moment it is landed, before rebuilding.
-      {"REC", DAMPER_RECYCLING_FEEDBACK_PIN, nullptr, DAMPER_RECYCLING_FITTED != 0,
-       0xFFFF, 0, 0, 0, false},
+      // Both start off, and ProbeChannels() turns on the ones that look wired.
+      // That is the only honest way to decide it here: this is the tool you
+      // reach for *while* landing a wire, so it has to be able to read a channel
+      // the firmware would not — and it must not leave an unwired pin in the
+      // sampling rotation, where its high impedance drags its neighbour's
+      // conversion with it. '1' and '2' override the probe either way.
+      {"EXT", DAMPER_EXTRACTION_FEEDBACK_PIN, nullptr, false, 0xFFFF, 0, 0, 0, false},
+      {"REC", DAMPER_RECYCLING_FEEDBACK_PIN, nullptr, false, 0xFFFF, 0, 0, 0, false},
   };
   constexpr uint8_t kChannelCount = sizeof(g_channels) / sizeof(g_channels[0]);
 
@@ -172,14 +175,31 @@ namespace
       uint16_t raw = ReadRaw(c.pin);
       bool railed = raw <= kRailLow || raw >= kRailHigh;
 
+      // The probe decides, rather than asking: a railed channel left in the
+      // rotation does not merely report nonsense about itself, it corrupts the
+      // channel sampled after it, and a bring-up tool that quietly poisons the
+      // one good reading you have is worse than no tool.
+      c.enabled = !railed;
+
       Serial.printf("Channel %s on GP%u: raw %4u  %s\n", c.name, c.pin, raw,
-                    railed ? "** pinned to a rail: nothing connected"
-                           : "in range, looks wired");
+                    railed ? "** pinned to a rail: NOT sampled"
+                           : "in range, looks wired — sampled");
       if (railed)
       {
-        Serial.printf("   press '%u' to stop sampling it — a floating input can\n",
-                      i + 1);
-        Serial.println("   drag the other channel's reading with it.");
+        Serial.printf("   Nothing is driving GP%u, or what is driving it is\n", c.pin);
+        Serial.printf("   outside 0-3.3 V. Press '%u' to sample it anyway.\n", i + 1);
+      }
+      if (raw >= kRailHigh)
+      {
+        // Worth spelling out: full scale means the pin is at 3.3 V or above, and
+        // through the designed 0.2481 divider that would take 13.3 V or more at
+        // the actuator — which an LM24A-SR cannot produce. So the divider is not
+        // dividing, and the pin may be seeing the actuator's output undivided.
+        Serial.println("   ** Full scale = the pin is at 3.3 V or above. Through the");
+        Serial.println("   ** divider that needs 13.3 V at the actuator, which it cannot");
+        Serial.println("   ** produce: the divider is not dividing. Check R2 (3.3 k) to");
+        Serial.println("   ** GND and R1 (10 k) to the U output before driving anything —");
+        Serial.println("   ** the RP2040's ADC pin is not 5 V tolerant.");
       }
     }
   }
@@ -200,10 +220,15 @@ namespace
     Serial.printf("  extraction    (open)  -> GP%u %s\n", OUT_DAMPER_PIN, GpioLevelFor(true));
     Serial.printf("  recirculation (closed)-> GP%u %s\n", OUT_DAMPER_PIN, GpioLevelFor(false));
     Serial.printf("Calibration, both registers until each is captured: raw %u .. %u\n",
-                  DAMPER_RAW_CLOSED_DEFAULT, DAMPER_RAW_OPEN_DEFAULT);
+                  DAMPER_RAW_MIN_DEFAULT, DAMPER_RAW_MAX_DEFAULT);
+    Serial.printf("Signal direction: the %s mark is the open end.\n",
+                  DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT ? "low" : "high");
+    Serial.println("Those two marks and that direction are what the menu wants:");
+    Serial.println("Systeme > Registres > Extrac./Recycl. mini, maxi, Sens signal.");
     Serial.println("The registers are complementary: one opening must climb while the");
-    Serial.println("other falls. Both climbing together means an actuator wired the");
-    Serial.println("same way round as its partner rather than the opposite way.");
+    Serial.println("other falls. Both climbing together means an actuator whose own");
+    Serial.println("direction switch is set the same way round as its partner's — which");
+    Serial.println("is the fault the airflow interlock now stops the dryer on.");
     Serial.println();
   }
 
@@ -356,19 +381,39 @@ namespace
         continue;
       }
 
-      // GetPositionPercent() clamps to 0..100, so a raw value past an end stop
-      // shows up as a flat 0 % or 100 % with no hint of how far past it is. Say
-      // so: before the first calibration it is the normal state, and the raw
-      // value printed here is exactly what the menu wants.
-      uint16_t lo = c.feedback->GetRawClosed();
-      uint16_t hi = c.feedback->GetRawOpen();
-      if (lo > hi)
+      // GetPositionPercent() clamps to 0..100, so a raw value past a mark shows
+      // up as a flat 0 % or 100 % with no hint of how far past it is. Say so,
+      // and say by how much — those two cases look identical on the percentage
+      // and mean opposite things:
+      //
+      //   a few counts  -> ADC noise straddling a mark the vane is resting on,
+      //                    and nothing to act on;
+      //   tens of counts-> the stored mark is not where this register actually
+      //                    stops any more, and wants recapturing.
+      //
+      // Hence the deadband: without it, a vane sitting exactly on its mark makes
+      // the flag blink on every other sample, which reads as a fault and is only
+      // the last bit of the converter. kSettleBand is the same figure the
+      // settling test uses, chosen against the same bench noise.
+      //
+      // The marks are ordered by construction now, so there is nothing to sort
+      // before comparing against them.
+      int32_t past = 0;
+      if (raw < c.feedback->GetRawMin())
       {
-        uint16_t swap = lo;
-        lo = hi;
-        hi = swap;
+        past = static_cast<int32_t>(raw) - static_cast<int32_t>(c.feedback->GetRawMin());
       }
-      const char *scale = (raw < lo || raw > hi) ? " off scale" : "";
+      else if (raw > c.feedback->GetRawMax())
+      {
+        past = static_cast<int32_t>(raw) - static_cast<int32_t>(c.feedback->GetRawMax());
+      }
+
+      char scale[20] = "";
+      if (past > static_cast<int32_t>(kSettleBand) ||
+          past < -static_cast<int32_t>(kSettleBand))
+      {
+        snprintf(scale, sizeof(scale), " off scale %+ld", (long)past);
+      }
 
       Serial.printf("   %s raw %4u %5.1f%% %-7s%s%s", c.name, raw, position,
                     c.feedback->IsMoving() ? "moving" : "at stop", scale,

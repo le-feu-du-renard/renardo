@@ -33,12 +33,20 @@ void DryerSettings::Reset()
   electric_t_off_min  = CTRL_T_OFF_MIN;
   safety_max          = TEMPERATURE_SAFETY_MAX;
 
-  // Both registers start from the divider's theoretical end stops. They are
+  // One register out of the box: a dryer that has never been configured behaves
+  // exactly as the firmware did before the count was a setting, and declaring
+  // the second one is a deliberate act by whoever landed its wire.
+  damper_count                = DAMPER_COUNT_DEFAULT;
+  damper_feedback_low_is_open = DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT;
+  damper_extraction_inverted  = DAMPER_EXTRACTION_INVERTED_DEFAULT;
+  damper_recycling_inverted   = DAMPER_RECYCLING_INVERTED_DEFAULT;
+
+  // Both registers start from the divider's theoretical ends. They are
   // asymmetric, so these only hold until each one is calibrated from the menu.
-  extraction_raw_closed = DAMPER_RAW_CLOSED_DEFAULT;
-  extraction_raw_open   = DAMPER_RAW_OPEN_DEFAULT;
-  recycling_raw_closed  = DAMPER_RAW_CLOSED_DEFAULT;
-  recycling_raw_open    = DAMPER_RAW_OPEN_DEFAULT;
+  extraction_raw_min = DAMPER_RAW_MIN_DEFAULT;
+  extraction_raw_max = DAMPER_RAW_MAX_DEFAULT;
+  recycling_raw_min  = DAMPER_RAW_MIN_DEFAULT;
+  recycling_raw_max  = DAMPER_RAW_MAX_DEFAULT;
 
   lora_telemetry_interval_ms = LORA_TELEMETRY_INTERVAL_MS;
 

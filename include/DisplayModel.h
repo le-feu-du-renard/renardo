@@ -59,9 +59,16 @@ struct DisplayModel
   bool  extraction_moving;
   float recycling_position;
   bool  recycling_moving;
+  // How many registers this dryer is configured for. With one, the recycling
+  // cell says so outright instead of showing dashes: no feedback because there
+  // is nothing to read reads very differently from no feedback because the wire
+  // is dead, and the screen should not blur the two.
+  uint8_t damper_count;
 
   // --- Alarms ---
-  bool sensor_fault;        // inlet probe stale, heating blocked
+  bool sensor_fault;          // inlet probe stale, heating blocked
+  bool airflow_fault;         // both registers shut: session refused and stopped
+  bool damper_feedback_fault; // two registers declared, a feedback unusable
 
   DisplayModel()
       : total_elapsed_s(0),
@@ -87,7 +94,10 @@ struct DisplayModel
         extraction_moving(false),
         recycling_position(NAN),
         recycling_moving(false),
-        sensor_fault(false) {}
+        damper_count(1),
+        sensor_fault(false),
+        airflow_fault(false),
+        damper_feedback_fault(false) {}
 };
 
 #endif // DISPLAY_MODEL_H

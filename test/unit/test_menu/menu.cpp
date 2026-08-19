@@ -67,6 +67,36 @@ bool SelectLabel(MenuSystem &menu, const char *label)
   return false;
 }
 
+// Walks into Systeme > Registres, where every register test starts.
+bool OpenDamperPage(MenuSystem &menu)
+{
+  if (!SelectLabel(menu, "Systeme"))
+  {
+    return false;
+  }
+  menu.HandleClick();
+  if (!SelectLabel(menu, "Registres"))
+  {
+    return false;
+  }
+  menu.HandleClick();
+  return strcmp(menu.GetCurrentPage()->title, "Registres") == 0;
+}
+
+// Finds an entry by label without moving the cursor, so a greyed-out row can be
+// inspected at all — SelectLabel walks the cursor, which skips them.
+const MenuItem *FindItem(const MenuPage *page, const char *label)
+{
+  for (uint8_t i = 0; i < page->count; i++)
+  {
+    if (strcmp(page->items[i].label, label) == 0)
+    {
+      return &page->items[i];
+    }
+  }
+  return nullptr;
+}
+
 // Walks into Systeme > Date / Heure, where every clock test starts.
 bool OpenClockPage(MenuSystem &menu)
 {
@@ -289,21 +319,90 @@ void test_narrow_bindings_do_not_overflow_their_field(void)
   menu.HandleClick();
   TEST_ASSERT_TRUE(SelectLabel(menu, "Registres"));
   menu.HandleClick();
-  TEST_ASSERT_TRUE(SelectLabel(menu, "Extrac. ouvert"));
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Extrac. maxi"));
   menu.HandleClick();
   menu.HandleRotation(10000);
 
-  TEST_ASSERT_EQUAL_UINT16(4095, g_test_settings.extraction_raw_open);
+  TEST_ASSERT_EQUAL_UINT16(4095, g_test_settings.extraction_raw_max);
   // The neighbouring fields must be untouched — the four calibration values sit
   // side by side, so an over-wide binding would land on one of them first.
-  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_CLOSED_DEFAULT,
-                           g_test_settings.extraction_raw_closed);
-  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_CLOSED_DEFAULT,
-                           g_test_settings.recycling_raw_closed);
-  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_OPEN_DEFAULT,
-                           g_test_settings.recycling_raw_open);
+  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_MIN_DEFAULT,
+                           g_test_settings.extraction_raw_min);
+  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_MIN_DEFAULT,
+                           g_test_settings.recycling_raw_min);
+  TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_MAX_DEFAULT,
+                           g_test_settings.recycling_raw_max);
   TEST_ASSERT_EQUAL_UINT32(LORA_TELEMETRY_INTERVAL_MS,
                            g_test_settings.lora_telemetry_interval_ms);
+}
+
+void test_recycling_entries_follow_the_register_count(void)
+{
+  // The count describes the machine, so everything about the second register
+  // hangs off it. Greyed out rather than hidden: a page whose entries move
+  // around depending on a setting is much harder to learn.
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenDamperPage(menu));
+
+  const MenuPage *page = menu.GetCurrentPage();
+  const MenuItem *recycling_min = FindItem(page, "Recycl. mini");
+  const MenuItem *extraction_min = FindItem(page, "Extrac. mini");
+  TEST_ASSERT_NOT_NULL(recycling_min);
+  TEST_ASSERT_NOT_NULL(extraction_min);
+
+  // One register out of the box.
+  TEST_ASSERT_EQUAL_UINT8(1, g_test_settings.damper_count);
+  TEST_ASSERT_FALSE(menu.IsItemSelectable(*recycling_min));
+  TEST_ASSERT_TRUE(menu.IsItemSelectable(*extraction_min));
+  TEST_ASSERT_FALSE(menu.IsItemSelectable(*FindItem(page, "Sens recycl.")));
+
+  g_test_settings.damper_count = 2;
+  TEST_ASSERT_TRUE(menu.IsItemSelectable(*recycling_min));
+  TEST_ASSERT_TRUE(menu.IsItemSelectable(*FindItem(page, "Sens recycl.")));
+}
+
+void test_the_register_count_cannot_leave_its_range(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenDamperPage(menu));
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Nb registres"));
+
+  menu.HandleClick();
+  menu.HandleRotation(10000);
+  TEST_ASSERT_EQUAL_UINT8(DAMPER_COUNT_MAX, g_test_settings.damper_count);
+
+  menu.HandleRotation(-10000);
+  TEST_ASSERT_EQUAL_UINT8(1, g_test_settings.damper_count);
+}
+
+void test_the_direction_toggles_read_as_words(void)
+{
+  // Three booleans on one page, and getting one of them backwards on screen
+  // would send an operator to invert a switch that was already right.
+  MenuSystem menu;
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenDamperPage(menu));
+
+  const MenuPage *page = menu.GetCurrentPage();
+  char text[24];
+
+  g_test_settings.damper_feedback_low_is_open = true;
+  menu.FormatItemValue(*FindItem(page, "Sens signal"), text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("Bas=ouvert", text);
+
+  g_test_settings.damper_feedback_low_is_open = false;
+  menu.FormatItemValue(*FindItem(page, "Sens signal"), text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("Bas=ferme", text);
+
+  g_test_settings.damper_extraction_inverted = false;
+  menu.FormatItemValue(*FindItem(page, "Sens extrac."), text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("Normal", text);
+
+  g_test_settings.damper_recycling_inverted = true;
+  menu.FormatItemValue(*FindItem(page, "Sens recycl."), text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("Inverse", text);
 }
 
 void test_eco_hours_stay_within_a_day(void)
@@ -523,6 +622,9 @@ int main(int argc, char **argv)
   RUN_TEST(test_values_are_clamped_to_their_range);
   RUN_TEST(test_toggle_flips_on_a_single_click);
   RUN_TEST(test_narrow_bindings_do_not_overflow_their_field);
+  RUN_TEST(test_recycling_entries_follow_the_register_count);
+  RUN_TEST(test_the_register_count_cannot_leave_its_range);
+  RUN_TEST(test_the_direction_toggles_read_as_words);
   RUN_TEST(test_eco_hours_stay_within_a_day);
   RUN_TEST(test_factory_reset_restores_defaults);
 

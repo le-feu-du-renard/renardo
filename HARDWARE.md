@@ -99,35 +99,63 @@ travel on every reset.
 
 ## Air damper
 
-**Two** Belimo **LM24A-SR** registers, extraction and recycling, driven purely
-on/off: recirculation or extraction, never a percentage. Travel takes about
-150 s each way.
+**One or two** Belimo **LM24A-SR** registers, extraction and recycling, driven
+purely on/off: recirculation or extraction, never a percentage. Travel takes
+about 150 s each way. How many the dryer has is a **setting**, `Nb registres`
+(Système → Registres), not a build option — see "Declaring the second register"
+below.
 
-The two are **complementary** — air is either extracted or recycled, never both
-— so a single command drives both actuators, one of them wired to travel the
-other way. That is why there is one `OUT_DAMPER_PIN` and not two.
+With two, they are **complementary** — air is either extracted or recycled,
+never both — so a single command drives both actuators, one of them travelling
+the other way. That is why there is one `OUT_DAMPER_PIN` and not two.
 
 They are also **asymmetric**: different vane geometry, different travel, so each
 keeps its own two-point calibration and reports its own opening. Both 2-10 V
-feedbacks go through their own divider to 0-3.3 V, on ADC0 and ADC1. **They feed
-the display only** — no control logic depends on either. Calibration is captured
-from the menu by driving each register to its end stops
-(Système → Registres → Extrac. / Recycl. fermé / ouvert).
+feedbacks go through their own divider to 0-3.3 V, on ADC0 and ADC1.
 
-A disconnected feedback wire yields a degenerate calibration span, which the
-firmware detects and reports as "no position" rather than as 0 %. One dead wire
-does not mask the other register: they are evaluated independently.
+The readback used to feed the display and nothing else. It now also feeds one
+safety decision, the **airflow interlock** below — the only reading in this
+firmware allowed to stop the dryer.
 
-### The feedback runs backwards
+A disconnected feedback wire is caught twice over: it reads near zero, below the
+signal floor, and a calibration that was never captured leaves a degenerate span.
+Either way the register reports "no position" rather than 0 %. One dead wire does
+not mask the other register: they are evaluated independently.
+
+### Four settings, and why each is a setting
+
+Everything about the registers that the firmware cannot measure is on
+Système → Registres:
+
+| Setting | What it describes | Factory |
+|---|---|---|
+| `Nb registres` | how many registers the dryer has | 1 |
+| `Sens signal` | which end of the 2-10 V output means open — **common to every register**, since they are the same actuator model | `Bas=ouvert` |
+| `Sens extrac.` / `Sens recycl.` | where each actuator's own mechanical direction switch is set | `Normal` / `Inverse` |
+| `Extrac./Recycl. mini`, `maxi` | the two raw ADC marks at the ends of that register's travel | 630 / 3104 |
+
+The direction switch on each Belimo is the one the firmware cannot read and must
+be told about: it decides which end of its travel a register goes to under the
+single command. Get it wrong in the menu and travel detection chases the wrong
+end, and the interlock misreads which reading means shut.
+
+### The feedback runs backwards, and that is now a setting
 
 Measured at the actuator, the extraction register puts out **10.10 V shut and
 2.00 V open** — the opposite of the intuitive direction, and a property of the
-linkage rather than a fault. So its *closed* calibration value is the **higher**
-raw reading. No inverting flag exists or is needed: the span is taken as open
-minus closed and is simply negative, which the arithmetic and the degenerate-span
-guard both carry correctly. Enter the pair the wrong way round in the menu,
-however, and every opening on screen is reported inside out while looking
-entirely plausible.
+linkage rather than a fault.
+
+That used to be expressed by the *order* of the calibration pair: the "closed"
+value was simply the higher one, and the arithmetic carried the negative span.
+It worked, and it had one bad failure mode — entering the pair the wrong way
+round was a perfectly valid calibration that reported every opening inside out
+while looking entirely plausible.
+
+The pair is now two **ordered marks**, `mini` and `maxi`, and a separate
+`Sens signal` flag says which end is open. A descending pair is no longer a
+backwards calibration, it is not a calibration at all: the span guard rejects it
+and the register reports no position. The numbers to enter are the same ones you
+always measured; only the question "which of these is open?" moved out of them.
 
 ### A first measurement that was wrong, and how it showed
 
@@ -152,7 +180,8 @@ settling says so explicitly. **Never write down a value that has not settled.**
 
 The extraction register reads **3104 shut, 630 open**, confirmed against a meter
 at the same node (0.49 V where the ADC reports 0.508 V). Travel is 2474 counts,
-0.7 % off theory, with 991 counts left before the ADC clips.
+0.7 % off theory, with 991 counts left before the ADC clips. In today's menu that
+is `mini = 630`, `maxi = 3104`, `Sens signal = Bas=ouvert`.
 
 What makes those numbers trustworthy is that both ends now agree on **one
 ratio** — 0.2438 open, 0.2477 shut, against 0.2481 designed. Two earlier
@@ -180,16 +209,53 @@ brown-black-black-red-brown and does **not** — reversed it decodes cleanly as
 120 R, brown tolerance and all. Only a measurement rules that out. Read
 resistance with an ohmmeter, not with your eyes.
 
-### The recycling register is not wired yet
+### Declaring the second register
 
-`DAMPER_RECYCLING_FITTED` in `config.h` is `0`, so GP27 is never sampled. A
-floating input is not a harmless zero: it reads wandering noise that the screen
-would present as a live opening, and it presents a high impedance to a
-multiplexed ADC. Unsampled, `DamperFeedback` simply has no sample and reports no
-position — dashes on the main screen, the no-feedback sentinel over LoRa.
+`Nb registres` is `1` out of the box, so GP27 is never sampled and the recycling
+cell on the main screen reads `ABSENT`. An input with nothing on it is not a
+harmless zero: it reads wandering noise that the screen would present as a live
+opening, and it presents a high impedance to a multiplexed ADC. Unsampled,
+`DamperFeedback` simply has no sample and reports no position.
 
-Set it to `1` when the wire is landed. In `damper_test`, `2` samples the channel
-without rebuilding.
+**Set it to `2` only once that register's feedback is wired and calibrated.** On
+a dryer declaring two registers, an unusable feedback on either of them **refuses
+the start** — the airflow interlock cannot be evaluated without both readings,
+and it is not a safety device that can be allowed to fail quietly. A feedback
+that dies mid-session does *not* stop the session; it only refuses the next
+start.
+
+`damper_test` samples both channels regardless: it is the tool you use while
+landing the wire, so it has to read a channel the firmware would not. Press `2`
+there to drop it if the pin genuinely has nothing on it.
+
+### The airflow interlock
+
+Two registers can shut the air path completely, and a fan pushing against two
+closed vanes moves nothing. When both read at or below `DAMPER_CLOSED_THRESHOLD`
+(10 %) for `DAMPER_BLOCKED_CONFIRM_MS` (30 s), the firmware refuses a start —
+from the button and from the LoRa command alike, since the guard is in
+`Dryer::Start()` — and stops a running session.
+
+Three properties are deliberate:
+
+- **It only exists with two registers.** One register shut is a normal
+  recirculation, not a fault.
+- **It trips on a positive reading, never on a missing one.** A dead feedback
+  reads near zero, which through this dryer's `Bas=ouvert` calibration would
+  otherwise look exactly like a register at its shut stop. Missing readings block
+  the *start* instead.
+- **Nothing latches.** Fix the direction switch and the fault clears itself on
+  the next sample. There is no acknowledgement step, because there is none
+  anywhere else in this firmware either.
+
+The confirmation delay costs nothing legitimate: complementary registers pass
+each other mid-travel, one climbing while the other falls, and are never both
+under 10 % at once. Two actuators whose direction switches are set the same way
+round do settle there — which is precisely the fault this catches.
+
+The way out, if a fault leaves both registers shut and the dryer will not start:
+`Systeme → Registres → Vers extraction` drives the air path from the menu.
+Nothing else commands the damper while the dryer is stopped.
 
 ### Testing the damper
 
@@ -202,8 +268,9 @@ moved during a cycle.
 
 The reading that matters is the pair: the two openings must **mirror** each
 other, one climbing while the other falls. Both climbing together means an
-actuator wired the same way round as its partner instead of the opposite way —
-a fault that leaves the screen plausible and the air path wrong.
+actuator whose direction switch is set the same way round as its partner's
+instead of the opposite way — a fault that leaves the screen plausible and the
+air path wrong, and that the airflow interlock now stops the dryer on.
 
 The cycle is 150 s, the actuator's own travel time, so each half ends with the
 vane against a stop and the raw column resting on the value the calibration

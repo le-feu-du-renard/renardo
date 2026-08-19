@@ -23,6 +23,24 @@ void Dryer::Begin()
 void Dryer::Start()
 {
   if (session_manager_.IsRunning()) return;
+
+  // The first preconditions this dryer has ever had on starting. Every other
+  // interlock in the firmware gates the heat sources and leaves the session
+  // alone; these two cannot, because what they protect is the air path itself.
+  //
+  // They sit here rather than at the button, so the LoRa START goes through the
+  // same door.
+  if (air_damper_.IsAirflowBlocked())
+  {
+    Logger::Warning("Dryer: start refused — both registers shut, no airflow");
+    return;
+  }
+  if (!air_damper_.IsFeedbackUsable())
+  {
+    Logger::Warning("Dryer: start refused — register feedback unusable");
+    return;
+  }
+
   temperature_manager_.SetFanActive(true);
   session_manager_.Start();
   Logger::Info("Dryer: session started");
@@ -39,6 +57,18 @@ void Dryer::Stop()
 void Dryer::Update()
 {
   session_manager_.UpdateCooldown();
+
+  // Checked before the early return, and before anything else: a fan pushing
+  // against two shut vanes moves no air, and no amount of heating logic is worth
+  // running until that is resolved. A feedback that goes unusable mid-cycle does
+  // *not* stop anything — a wire failing must not cost the batch — it only
+  // refuses the next start.
+  if (session_manager_.IsRunning() && air_damper_.IsAirflowBlocked())
+  {
+    Logger::Error("Dryer: no airflow — stopping session");
+    Stop();
+    return;
+  }
 
   if (!session_manager_.IsRunning())
     return;
@@ -138,10 +168,16 @@ void Dryer::ApplySettings(const DryerSettings &settings, bool rtc_available)
   durations.extraction             = settings.extraction_phase_duration;
   durations.extraction_damper_open = settings.extraction_damper_open_duration;
 
-  air_damper_.Extraction().SetCalibration(settings.extraction_raw_closed,
-                                          settings.extraction_raw_open);
-  air_damper_.Recycling().SetCalibration(settings.recycling_raw_closed,
-                                         settings.recycling_raw_open);
+  DamperConfig damper{};
+  damper.count                = settings.damper_count;
+  damper.feedback_low_is_open = settings.damper_feedback_low_is_open;
+  damper.extraction_inverted  = settings.damper_extraction_inverted;
+  damper.recycling_inverted   = settings.damper_recycling_inverted;
+  damper.extraction_raw_min   = settings.extraction_raw_min;
+  damper.extraction_raw_max   = settings.extraction_raw_max;
+  damper.recycling_raw_min    = settings.recycling_raw_min;
+  damper.recycling_raw_max    = settings.recycling_raw_max;
+  air_damper_.ApplyConfig(damper);
 }
 
 void Dryer::CaptureSettings(DryerSettings &settings) const
@@ -175,10 +211,15 @@ void Dryer::CaptureSettings(DryerSettings &settings) const
   settings.extraction_phase_duration       = durations.extraction;
   settings.extraction_damper_open_duration = durations.extraction_damper_open;
 
-  settings.extraction_raw_closed = air_damper_.Extraction().GetRawClosed();
-  settings.extraction_raw_open   = air_damper_.Extraction().GetRawOpen();
-  settings.recycling_raw_closed  = air_damper_.Recycling().GetRawClosed();
-  settings.recycling_raw_open    = air_damper_.Recycling().GetRawOpen();
+  settings.damper_count                = air_damper_.GetCount();
+  settings.damper_feedback_low_is_open = air_damper_.Extraction().GetLowIsOpen();
+  settings.damper_extraction_inverted  = air_damper_.GetExtractionInverted();
+  settings.damper_recycling_inverted   = air_damper_.GetRecyclingInverted();
+
+  settings.extraction_raw_min = air_damper_.Extraction().GetRawMin();
+  settings.extraction_raw_max = air_damper_.Extraction().GetRawMax();
+  settings.recycling_raw_min  = air_damper_.Recycling().GetRawMin();
+  settings.recycling_raw_max  = air_damper_.Recycling().GetRawMax();
 }
 
 void Dryer::CaptureSession(SessionSnapshot &session) const

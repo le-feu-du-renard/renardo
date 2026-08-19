@@ -94,11 +94,12 @@
 
 // Air damper position feedback — one ADC channel per register.
 //
-// This version has two registers, extraction and recycling, and they are
-// **asymmetric**: different vane geometry, so different travel, so each needs
-// its own two-point calibration. They share the single command above because
-// they are complementary — air is either extracted or recycled, never both — so
-// one relay drives both actuators, one of them wired to travel the other way.
+// A dryer carries one or two registers, extraction and recycling, and when it
+// carries two they are **asymmetric**: different vane geometry, so different
+// travel, so each needs its own two-point calibration. They share the single
+// command above because they are complementary — air is either extracted or
+// recycled, never both — so one relay drives both actuators, one of them wired
+// to travel the other way.
 //
 // Both feedbacks go through the same divider: R1 = 10k to the Belimo U output,
 // R2 = 3.3k to ground, ratio 3.3/13.3 = 0.2481, which puts the actuator's 10.10V
@@ -120,28 +121,72 @@
 #define DAMPER_EXTRACTION_FEEDBACK_PIN 26 // ADC0
 #define DAMPER_RECYCLING_FEEDBACK_PIN 27  // ADC1
 
-// Set to 1 once the recycling register's feedback is actually wired.
+// How many registers this dryer actually has — a menu setting, not a #define.
 //
-// Until then GP27 is a floating input, and floating inputs are not merely
-// useless: they read wandering noise that the screen would show as a live
-// opening, and they present a high impedance to a multiplexed ADC. So the pin
-// is simply never sampled. That leaves DamperFeedback with no sample at all,
-// which it already reports as "no position" — the screen shows dashes, the LoRa
-// uplink sends its no-feedback sentinel, and nothing anywhere invents a number.
-// Preprocessor-valued rather than bool: it guards #if blocks.
-#define DAMPER_RECYCLING_FITTED 0
+// It used to be a compile-time DAMPER_RECYCLING_FITTED, which meant a rebuild to
+// declare the second register's wire landed. It is now `damper_count` in the
+// settings record, and it does three things: it decides whether GP27 is sampled
+// at all, it greys out the recycling entries in the menu, and it arms the
+// airflow interlock — which only exists with two registers, since one register
+// alone cannot shut the air path on its own.
+//
+// One is the factory value, so an uncalibrated dryer behaves exactly as the
+// firmware did before the setting existed. A channel that is not declared is
+// never sampled: a floating input is not a harmless zero, it reads wandering
+// noise that the screen would present as a live opening. Unsampled,
+// DamperFeedback simply has no sample and reports no position — dashes on the
+// screen, the sentinel over the air, and nothing anywhere invents a number.
+#define DAMPER_COUNT_DEFAULT 1
+#define DAMPER_COUNT_MAX 2
 
-// Raw 12-bit ADC values at each end stop, the starting point for both
+// Which end of the feedback signal means "open" — one setting for every
+// register, because it is a property of the actuator model and its linkage, not
+// of an individual register.
+//
+// On this dryer the signal runs backwards: the Belimo puts out 10.10V with the
+// register shut and 2.00V with it open, so the *low* end is the open one. That
+// used to be implicit in the order of the calibration pair, where entering the
+// two values the wrong way round reported every opening inside out while looking
+// entirely plausible. The pair is now two ordered marks, min and max, and this
+// flag alone says what they mean.
+#define DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT true
+
+// Which way each actuator travels under the single command — one flag per
+// register, because each Belimo carries its own mechanical direction switch.
+//
+// The firmware cannot read that switch, but it has to know where it is set: it
+// is what tells travel detection which end a register is heading for, and what
+// tells the airflow interlock which reading means shut. The factory values are
+// the complementary pair the dryer has always run: the extraction register opens
+// on the extraction command, the recycling one closes.
+#define DAMPER_EXTRACTION_INVERTED_DEFAULT false
+#define DAMPER_RECYCLING_INVERTED_DEFAULT true
+
+// Below this raw value, that channel is carrying no signal at all.
+//
+// This works because the divider's R2 = 3.3k sits between the tap and ground: a
+// feedback wire that is absent, cut or dead leaves the ADC pin pulled down to
+// roughly zero, not floating. A live signal never goes below the actuator's own
+// 2.00V floor, which is ~616 counts through the divider. 250 counts — about
+// 0.81V at the actuator — sits well clear of both, so the test never confuses a
+// register genuinely at its low end with a wire that is not there.
+//
+// Confirmed over a few consecutive samples so a single noisy conversion cannot
+// declare a working feedback dead.
+#define DAMPER_SIGNAL_MIN_RAW 250
+#define DAMPER_SIGNAL_CONFIRM_SAMPLES 3
+
+// Raw 12-bit ADC values at the two ends of travel, the starting point for both
 // registers. Measured on the extraction register and confirmed against a meter
 // at the same node.
 //
-// **The feedback runs backwards**: this actuator puts out 10.10V with the
-// register shut and 2.00V with it open, so the closed value is the *higher*
-// one. That is a property of the linkage, not a fault, and needs no inverting
-// flag — GetPositionPercent() derives its span as open minus closed, which is
-// simply negative here, and the guard against a degenerate span is written
-// signed for exactly this case. Enter the pair the wrong way round, though, and
-// the screen reports every opening inside out.
+// These are **ordered marks, not named ends**: min is simply the smaller of the
+// two readings and max the larger, and which of them is the open one is said
+// once by DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT above. That split is deliberate.
+// Naming them "closed" and "open" put the signal's direction inside the pair,
+// where entering the two values the wrong way round produced a screen that was
+// inside out and entirely believable. Ordered marks cannot be entered the wrong
+// way round — a descending pair is now rejected as an unusable calibration.
 //
 // Through the divider those two voltages predict 616 and 3110; the bench reads
 // 630 and 3104, and the meter reads 0.49V at the tap where the ADC reports
@@ -169,12 +214,29 @@
 // the menu by driving it to each end stop. The menu values are persisted and
 // are what the firmware actually runs on — these defaults only cover a dryer
 // that has never been calibrated.
-#define DAMPER_RAW_CLOSED_DEFAULT 3104
-#define DAMPER_RAW_OPEN_DEFAULT 630
-// Below this span the calibration is treated as invalid (feedback wire absent).
+#define DAMPER_RAW_MIN_DEFAULT 630   // 2.00V through the divider — open, here
+#define DAMPER_RAW_MAX_DEFAULT 3104  // 10.10V — shut, here
+// Below this span the calibration is treated as invalid (feedback wire absent,
+// or the pair entered in descending order).
 #define DAMPER_CALIBRATION_MIN_SPAN 200
 // Distance from the commanded end stop (%) under which travel is complete.
 #define DAMPER_POSITION_TOLERANCE 5.0f
+
+// --- Airflow interlock ------------------------------------------------------
+//
+// With two registers the air path can be shut completely, and a fan pushing
+// against two closed vanes moves nothing: the session has to be refused, and
+// stopped if it is already running. One register cannot do it — hence the
+// interlock only exists at DAMPER_COUNT_MAX.
+//
+// The confirmation delay costs nothing legitimate. Complementary registers pass
+// each other mid-travel, one climbing while the other falls, and are never both
+// under the closed threshold at the same time. Two actuators whose direction
+// switches are set the same way do settle there, and that is precisely the fault
+// this catches — but only after they have had time to arrive, so the delay is
+// generous rather than tight.
+#define DAMPER_CLOSED_THRESHOLD 10.0f    // % at or below which a register is shut
+#define DAMPER_BLOCKED_CONFIRM_MS 30000  // both shut this long = no airflow
 
 // RTC DS1307 on I2C0 — optional, an absent RTC disables ECO mode.
 //

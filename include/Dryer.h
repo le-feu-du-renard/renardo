@@ -59,6 +59,17 @@ public:
   float GetFanOutput()      const { return session_manager_.IsFanActive() ? 1.0f : 0.0f; }
   bool  GetDamperOutput()   const { return air_damper_.IsOpen(); }
 
+  // Air path faults, for the screen and the radio.
+  //
+  // Blocked airflow refuses a start and stops a running session; an unusable
+  // feedback only refuses a start, and only on a dryer that claims two
+  // registers — with one, there is no interlock to be deprived of.
+  bool GetAirflowBlocked() const { return air_damper_.IsAirflowBlocked(); }
+  bool GetDamperFeedbackFault() const
+  {
+    return air_damper_.GetCount() >= 2 && !air_damper_.IsFeedbackUsable();
+  }
+
   // Manager access
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
   HumidityManager    *GetHumidityManager()    { return &humidity_manager_; }

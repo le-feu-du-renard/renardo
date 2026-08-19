@@ -142,9 +142,11 @@ static void SetupAnalogInputs()
 {
   analogReadResolution(12);
   pinMode(DAMPER_EXTRACTION_FEEDBACK_PIN, INPUT);
-#if DAMPER_RECYCLING_FITTED
+  // Both pads are configured whatever the register count says: the count is a
+  // runtime setting now, and an input left unsampled costs nothing, whereas a
+  // pin that has never been through pinMode() the first time the setting changes
+  // would read whatever the last function left behind.
   pinMode(DAMPER_RECYCLING_FEEDBACK_PIN, INPUT);
-#endif
 }
 
 // The RTC is an optional module: probe it and degrade gracefully when absent.
@@ -198,6 +200,38 @@ static void WriteRtcClock(const MenuClock &clock)
   time_manager.SetTime(clock.year, clock.month, clock.day,
                        clock.hour, clock.minute, 0);
   Logger::Info("RTC set from menu: %s", time_manager.GetDateTimeString().c_str());
+}
+
+// --- Damper hooks for the menu ---
+//
+// Same split as the clock: the menu shows live feedback and can move the air
+// path, but knows nothing about the ADC or the damper object.
+
+static bool ReadDamperReadback(uint8_t index, MenuDamperReadback &readback)
+{
+  const AirDamper *damper = dryer.GetAirDamper();
+  const DamperFeedback &feedback =
+      index == 0 ? damper->Extraction() : damper->Recycling();
+
+  readback.raw        = feedback.GetRawPosition();
+  readback.percent    = feedback.GetPositionPercent();
+  readback.has_signal = feedback.HasSignal();
+  return true;
+}
+
+static void CommandDamper(bool extraction)
+{
+  AirDamper *damper = dryer.GetAirDamper();
+  if (extraction)
+  {
+    damper->Open();
+  }
+  else
+  {
+    damper->Close();
+  }
+  // The relay follows on the next UpdateOutputs(), which runs whether or not a
+  // session is going: nothing else has to be poked here.
 }
 
 // ========== SENSOR UPDATE ==========
@@ -332,13 +366,18 @@ static void UpdateDamperPosition()
   AirDamper *damper = dryer.GetAirDamper();
   damper->Extraction().SetRawPosition(
       ReadDamperFeedback(DAMPER_EXTRACTION_FEEDBACK_PIN));
-#if DAMPER_RECYCLING_FITTED
-  damper->Recycling().SetRawPosition(
-      ReadDamperFeedback(DAMPER_RECYCLING_FEEDBACK_PIN));
-#endif
-  // With the register unfitted, Recycling() never receives a sample, so it
-  // reports no position: dashes on screen, the sentinel over the air. Sampling a
-  // floating pin instead would put believable noise in both.
+  if (damper->GetCount() >= 2)
+  {
+    damper->Recycling().SetRawPosition(
+        ReadDamperFeedback(DAMPER_RECYCLING_FEEDBACK_PIN));
+  }
+  // On a dryer declaring one register, Recycling() never receives a sample, so
+  // it reports no position: dashes on screen, the sentinel over the air.
+  // Sampling a pin with nothing on it instead would put believable noise there.
+
+  // Times the interlock's confirmation window, so it has to run after the raw
+  // values have landed and at the rate they land.
+  damper->UpdateInterlock();
 }
 
 // ========== DISPLAY ==========
@@ -447,8 +486,11 @@ static void UpdateDisplay()
   model.extraction_moving    = damper->Extraction().IsMoving();
   model.recycling_position   = damper->Recycling().GetPositionPercent();
   model.recycling_moving     = damper->Recycling().IsMoving();
+  model.damper_count         = damper->GetCount();
 
-  model.sensor_fault = !temperature_manager->GetHeatingPermitted();
+  model.sensor_fault          = !temperature_manager->GetHeatingPermitted();
+  model.airflow_fault         = dryer.GetAirflowBlocked();
+  model.damper_feedback_fault = dryer.GetDamperFeedbackFault();
 
   display.RenderMain(model);
 }
@@ -526,6 +568,9 @@ static void UpdateLora()
   data.hydraulic_online = temperature_manager->GetHydraulicOnline();
   data.damper_open      = damper->IsOpen();
   data.sensor_fault     = !temperature_manager->GetHeatingPermitted();
+  // The unusable-feedback fault needs no bit of its own: it is already legible
+  // on the wire as a position sentinel on a dryer declaring two registers.
+  data.airflow_fault    = dryer.GetAirflowBlocked();
 
   lora.Update(data, settings.lora_telemetry_interval_ms);
   ApplyRemoteCommands();
@@ -667,6 +712,7 @@ void setup()
 
   MenuSetRtcAvailable(g_rtc_available);
   MenuSetClockHooks(ReadRtcClock, WriteRtcClock);
+  MenuSetDamperHooks(ReadDamperReadback, CommandDamper);
   menu.Begin(&settings);
   menu.SetOnChange(OnSettingsChanged);
 

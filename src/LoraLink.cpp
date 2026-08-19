@@ -109,6 +109,7 @@ void LoraLink::SendTelemetry(const TelemetryData &data)
   if (data.damper_open)       packet.flags |= kLoraFlagDamperOpen;
   if (data.sensor_fault)      packet.flags |= kLoraFlagSensorFault;
   if (!data.hydraulic_online) packet.flags |= kLoraFlagHydraulicOff;
+  if (data.airflow_fault)     packet.flags |= kLoraFlagAirflowFault;
 
   packet.extraction_position = LoraEncodePosition(data.extraction_position);
   packet.recycling_position  = LoraEncodePosition(data.recycling_position);
