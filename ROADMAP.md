@@ -10,7 +10,7 @@ v3 panel control.
 
 - [x] Strip the v3 hardware layer (voltmeters, MCP23017, LEDs, potentiometers,
       selector, TM1637, SD card) and move to `rpipico`
-- [x] New pin map: SPI0 for the TFT, single RS485 bus, three 2N2222 command
+- [x] New pin map: SPI0 for the TFT, single RS485 bus, three BC337 command
       outputs, damper ADC feedback, optional RTC
 - [x] `Rs485Bus` transport, per-probe error and freshness tracking,
       `HydraulicRemote` client for the deported module

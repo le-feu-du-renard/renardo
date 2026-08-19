@@ -29,9 +29,9 @@ RS485. The whole SPI1 block and a second UART come back with them.
 | RS485 DE/RE | 3 | HIGH = transmit |
 | RS485 TX | 4 | UART1 → MAX3485 DI |
 | RS485 RX | 5 | UART1 ← MAX3485 RO |
-| Fan command | 0 | 2N2222, **active HIGH** |
+| Fan command | 0 | BC337, contactor coil on the collector, **active HIGH** |
 | Damper command | 1 | BC337 driving the damper module, **active HIGH** |
-| Electric heating command | 2 | 2N2222, **active HIGH** |
+| Electric heating command | 2 | BC337, contactor coil on the collector, **active HIGH** |
 | Extraction register feedback | 26 | ADC0 |
 | Recycling register feedback | 27 | ADC1 |
 | I2C0 SDA | 28 | optional RTC |
@@ -55,16 +55,95 @@ the panel is driven at 40 MHz.
 
 ## Command outputs
 
-The three outputs are **small-signal NPN transistors in open collector** —
-2N2222 for the fan and the electric heating, **BC337** on the damper module.
-Note these are bipolars (800 mA max), not MOSFETs: they switch a control signal,
-never a load directly.
+The three outputs are the same stage three times over: a **BC337**, a
+small-signal NPN in common emitter, switching the low side. The fan and the
+electric heating carry a 24 V contactor coil on the collector; the damper's
+collector pulls down the register module's relay input. Note this is a bipolar
+(800 mA, 45 V), not a MOSFET: it switches a coil or a control signal, never a
+load directly.
 
-- Base fed through ~1 kΩ from the GPIO, emitter to the common ground.
-- A free-wheeling diode is required if a coil is driven directly.
+- Base fed from the GPIO through **1 kΩ**, and **10 kΩ from base to emitter**.
+- Emitter to the common ground.
+- **A free-wheeling diode is mandatory on any coil** — and where it goes is not
+  where the usual rule puts it, see below.
 - **A common ground between the 24 V supply and the Pico is mandatory.**
 
-### Polarity, and why it differs per output
+The 10 kΩ across the base-emitter junction is not there to make the stage work.
+An undriven RP2040 pad already sits low through its default pull-down, which is
+what the polarity argument below rests on; the resistor makes that off state a
+property of the **board** rather than of a register in the chip, so a pin left as
+a plain `INPUT` with no pull, a leaky pad or a long base wire picking up noise
+cannot bias the transistor on. It also speeds up turn-off, and it costs 90 µA out
+of the 2.4 mA of base drive.
+
+### Sizing the base resistor
+
+The pad delivers 3.3 V and a saturated BC337 wants about 0.9 V of base-emitter
+drop, so `Ib = (3.3 − 0.9) / Rb`. Saturation asks for a **forced beta of 20 or
+less**, i.e. `Ib ≥ Ic / 20`:
+
+| Rb | Ib | Ic at forced beta 20 | Smallest coil at 24 V |
+|---|---|---|---|
+| **1 kΩ** | 2.4 mA | 48 mA | 500 Ω |
+| 680 Ω | 3.5 mA | 70 mA | 340 Ω |
+| 470 Ω | 5.1 mA | 100 mA | 240 Ω |
+
+**1 kΩ on all three** — the value the damper stage already uses, one line on the
+bill of materials — and then let the measurement decide rather than the table.
+The forced-beta-of-20 rule is deliberately pessimistic: a BC337-25 is specified
+for hFE ≥ 160 at 100 mA and still saturates properly at a forced beta of 40. The
+one judge is **Vce measured with the coil connected**. Below 0.4 V the 1 kΩ is
+right; above it, drop to 680 Ω and measure again.
+
+470 Ω is where this stops being comfortable. arduino-pico leaves the pads at
+their **4 mA drive strength**, and a pad asked for 5 mA sags rather than
+refusing, so the base current quietly ends up below the calculation. Holding the
+level would take a `gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_12MA)` in
+`OutputDriver::Begin`. Needing it is the sign the coil has outgrown the stage.
+
+**Measure the coil with an ohmmeter before choosing**: `Ic = 24 / R`. Check while
+the meter is on it that the coil is a **DC** one — a 24 VAC coil cannot be
+switched by an NPN at all, whatever the base resistor — and on a contactor with
+an electronic coil it is the inrush, not the hold current, that has to fit.
+
+**Past roughly 150 mA, stop using the BC337.** Not because the transistor cannot
+carry it, it is good for 800 mA, but because the GPIO cannot supply the base
+current that goes with it. A logic-level MOSFET is the right part there, and it
+asks for no drive current at all.
+
+### The free-wheeling diode, and where it goes
+
+Without one, the collapsing field puts several hundred volts on the collector of
+a part specified for 45 V. This is what kills the stage, and it kills it the
+first time.
+
+**Put it on the board, anode to the collector, cathode to the local +24 V** — not
+only across the coil. The familiar rule of placing the diode as close to the coil
+as possible is for a load on the same board. Here the contactor is two metres of
+cable away, and a diode at that end leaves the cable's own inductance unclamped:
+100 mA collapsing in a microsecond through 2 µH is still 200 V on the collector.
+A diode between the collector and the +24 V node covers the coil **and** the
+wiring in between.
+
+If +24 V does not reach the board, fit one across the coil and a second one on
+the board. A 1N4007 costs nothing and there is no trade-off to make here. With
+the diode in place the collector never rises above about 24.7 V.
+
+A diode fitted backwards does not hide: it shorts the 24 V rail as soon as the
+supply comes up.
+
+### The pinout is not the one the package suggests
+
+**BC337 is E-B-C** — flat face towards you, left to right — the opposite of a
+BC547's C-B-E, in an identical black TO-92. Fitted as a BC547 it destroys nothing
+and switches nothing, which is the most expensive kind of fault to look for.
+
+Read the pinout with a meter, not by eye, for the same reason as the resistor
+colour bands below. On the diode range the base is the common anode of two
+junctions; separating the emitter from the collector takes a component tester or
+the meter's hFE socket.
+
+### Polarity, and why all three are active HIGH
 
 Until `pinMode()` runs — roughly two seconds after power-up — the GPIOs are
 high-impedance inputs. The safe state has to be the one a **floating** GPIO
@@ -72,20 +151,71 @@ produces.
 
 | Output | Wiring | Polarity | Floating GPIO |
 |---|---|---|---|
-| Fan | contactor coil between +24 V and the collector | active HIGH | no current → **off** |
-| Electric heating | contactor coil between +24 V and the collector | active HIGH | no current → **off** |
-| Damper | BC337 in common emitter driving the damper module's relay | active HIGH | base at 0 V → relay released → **recirculation** |
+| Fan | contactor coil between +24 V and the collector | active HIGH | base at 0 V → no collector current → **off** |
+| Electric heating | contactor coil between +24 V and the collector | active HIGH | base at 0 V → no collector current → **off** |
+| Damper | collector pulls down the register module's relay input, which is active LOW | active HIGH | base at 0 V → input released → relay off → **recirculation** |
 
-Wiring the fan or the electric heating active LOW would energise them during the
-whole boot window. Polarity is declared per output in `config.h`
-(`OUT_*_ACTIVE_LOW`), not globally.
+All three land on active HIGH, for two different reasons. On the fan and the
+heating the **stage does not invert the command**: the coil is the collector
+load, so a base driven high saturates the transistor and energises it. The
+inversion is at the collector *node*, and it only becomes an inversion of the
+command when the collector drives something already pulled up and itself active
+LOW — the damper module's relay input, which inverts a second time and arrives
+back at the same polarity.
+
+That direction is not a detail of taste. An inverting command on the fan or the
+electric heating would energise them for the whole boot window, every reset,
+with no firmware able to shorten it. Polarity is declared per output in
+`config.h` (`OUT_*_ACTIVE_LOW`), not globally, so the wrong one is a one-line
+mistake rather than a board-wide one.
 
 The damper went from active LOW to active HIGH when its command moved onto the
 BC337 module: the stage inverts, so the level that releases the relay is now the
 low one — which is also the level an undriven RP2040 pad sits at, its pull-down
 being enabled by default. `damper_test` reads that resting level back before it
-drives anything, which is the one measurement that proves the damper does not
-travel on every reset.
+drives anything, and `output_test` does the same for all three, which is the one
+measurement that proves nothing travels or heats on every reset.
+
+### The heating's safety cut-out does not pass through here
+
+A BC337 that fails, fails **short** more often than not, and a shorted stage
+holds the heating contactor closed with the firmware unable to do anything about
+it. The mechanical over-temperature cut-out therefore belongs **in series with
+the heating contactor's coil**, on a path that goes through neither the Pico nor
+the transistor. Everything else in this document is a control path; that one is
+not, and it is the only protection that survives this stage failing.
+
+### Testing the outputs
+
+`pio run -e output_test -t upload -t monitor` drives the three commands **one at
+a time** through the production `OutputDriver`, so the polarity applied is the
+firmware's own, and prints the GPIO level behind each logical state.
+
+It starts with the measurement that matters most here: the resting level of
+GP0, GP1 and GP2 read as plain inputs, **before `pinMode()` runs**, each
+translated through its `OUT_*_ACTIVE_LOW` into on or off. All three must read
+off. One that does not is a stage wired the other way round, and no amount of
+firmware shortens the two seconds it spends energised on every reset.
+
+One output at a time is the point rather than a limitation: it is what lets a
+collector be measured with nothing else moving, and on a dryer whose loads are
+already wired it also keeps the electric heating from being held on with the fan
+stopped. `m` lifts the restriction when that is genuinely what is being tested;
+`f`, `d` and `e` drive one output, `0` drops everything, `a` walks the three at
+5 s each, `h` prints the wiring.
+
+The sequence, with the loads still disconnected:
+
+1. **Transistor alone, no 24 V.** Collector through 1 kΩ to +3.3 V and nothing
+   else. Driving the output must take the collector below 0.2 V and release it
+   to 3.3 V. A collector that never moves is the E-B-C pinout fitted as C-B-E,
+   or no base current at all.
+2. **24 V, coil and diode, power load still off.** Measure **Vce with the output
+   on**: this is what validates the base resistor, and only this. Below 0.4 V the
+   1 kΩ stands.
+3. **Reset, then a full power cycle, with the coils wired.** No contactor may
+   close during the boot window. This is the test the whole polarity argument
+   exists for.
 
 ## Air damper
 
@@ -618,8 +748,10 @@ The 3.3 V rail now carries two small, steady loads and no transmitter: the
 3. Encoder: detents and click, no phantom steps — `encoder_test` first, then
    the menu itself.
    Button: one press starts, the next stops — check it never double-fires.
-4. Outputs one at a time, **measuring at the connector before wiring the loads**
-   — this is where a polarity mistake is caught.
+4. Outputs: `output_test`, one at a time, **measuring at the connector before
+   wiring the loads** — this is where a polarity mistake is caught, and where
+   the resting level of the three command pins is read back before anything
+   drives them.
 5. Registers: `damper_test` first — it checks the resting level, the relay and
    both feedbacks in one pass, and says whether the two openings mirror each
    other — then a full travel on the `l` cycle to record each register's two

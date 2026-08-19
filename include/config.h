@@ -50,16 +50,21 @@
 #define RS485_RX_PIN 5 // UART1 RX ← MAX3485 RO
 #define RS485_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
 
-// Command outputs — 2N2222 open collector.
+// Command outputs — one BC337 per output, NPN in common emitter, low side.
 //
-// Polarity is per output because it depends on how each load is wired:
-//   collector in series with a contactor coil to +24V → GPIO HIGH energises it
-//     (active HIGH), and a floating GPIO leaves the load OFF, which is what we
-//     want during the boot window before pinMode() runs;
-//   collector pulling down an input that is pulled up by the receiver → GPIO
-//     HIGH forces the line to 0V (active LOW).
-// See HARDWARE.md: the fan and the electric heater must be wired active HIGH so
-// they stay off while the MCU boots.
+// Polarity is per output because it depends on how each load is wired, and all
+// three happen to land on active HIGH by two different routes:
+//   collector in series with a contactor coil to +24V → GPIO HIGH saturates the
+//     transistor and energises it (active HIGH). The stage does not invert the
+//     command here: the coil is the load;
+//   collector pulling down an input the receiver already pulls up and that is
+//     itself active LOW → the stage inverts, the receiver inverts again, and the
+//     command comes back to active HIGH. This is the damper module.
+// What every case must share is the *floating* GPIO leaving the load off: until
+// pinMode() runs, roughly two seconds after power-up, the pads are inputs and
+// sit low through their default pull-down. See HARDWARE.md — the fan and the
+// electric heater must stay off for that whole window, and output_test reads the
+// resting level of all three pins back before anything drives them.
 #define OUT_FAN_PIN 0
 #define OUT_FAN_ACTIVE_LOW false
 // The damper module drives its relay through a BC337, an NPN in common

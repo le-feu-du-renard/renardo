@@ -3,14 +3,18 @@
 
 #include <Arduino.h>
 
-// One 2N2222 open-collector command output.
+// One BC337 command output, NPN in common emitter, switching the low side.
 //
 // Polarity follows how the load is wired, so it is a per-output property:
 //   active HIGH — the collector sits in series with a contactor coil to +24V,
 //     so a floating GPIO leaves the load off. Required for the fan and the
-//     electric heater, which must stay off during the boot window.
+//     electric heater, which must stay off during the boot window. The damper
+//     reaches the same polarity the other way round: its stage inverts into a
+//     relay input that is itself active LOW.
 //   active LOW  — the collector pulls down an input the receiver already pulls
-//     up, as on the Belimo damper command line.
+//     up and that energises on a high level. Nothing on this board is wired that
+//     way today; the case is kept because the polarity is per output, not a
+//     board-wide constant.
 //
 // Writes are edge-detected: the pin is only touched when the state changes.
 // v3 spread this logic across main.cpp and inverted the damper in two separate
