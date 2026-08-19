@@ -33,12 +33,6 @@ void DrawLightning(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
 void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                 float opening, uint16_t frame_color, uint16_t vane_color);
 
-// Four bars of increasing height — LoRa signal strength. `bars` of them are
-// filled with `color`, the rest outlined in `dim_color`; zero bars means the
-// link is down and the whole icon is dim.
-void DrawSignalBars(TFT_eSprite &canvas, int16_t left, int16_t bottom,
-                    uint8_t bars, uint16_t color, uint16_t dim_color);
-
 // Diagonal bar across an icon: the function exists but is unavailable or
 // switched off. Drawn over whatever icon was just rendered.
 void DrawSlash(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,

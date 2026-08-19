@@ -9,7 +9,6 @@
 - [Operator Interface](#operator-interface)
 - [ECO Mode](#eco-mode)
 - [Persistence](#persistence)
-- [Remote Link](#remote-link)
 
 ---
 
@@ -140,9 +139,9 @@ nothing.
 | | |
 |---|---|
 | **Trips when** | both registers ≤ 10 % for 30 s, two registers declared |
-| **Effect** | refuses `Dryer::Start()` — button and LoRa alike — and stops a running session |
+| **Effect** | refuses `Dryer::Start()`, whatever asked for it, and stops a running session |
 | **Clears** | by itself, on the next good reading. Nothing latches, nothing to acknowledge |
-| **Shown as** | `REGISTRES FERMES - PAS DE CIRCULATION`, and LoRa flag bit 7 |
+| **Shown as** | `REGISTRES FERMES - PAS DE CIRCULATION`, in the hint bar |
 
 A second, narrower rule covers the case where the interlock cannot be evaluated
 at all: with two registers declared and either feedback unusable — no signal, or
@@ -233,7 +232,7 @@ of flash all told, on 1.5 MB.
 | y | Region | Contents |
 |---|---|---|
 | 0–3 | Progress | how far the running phase has gone, in the phase colour |
-| 4–23 | Header | phase dot and name (left), elapsed time (centred), LoRa bars (right) |
+| 4–23 | Header | phase dot and name (left), elapsed time (centred) |
 | 32–107 | Cards | INJECTION · CONSIGNE |
 | 112–145 | Strip | hydraulic state, circulating and tank water temperatures |
 | 150–221 | Devices | fan (animated), electric heating, extraction, recycling |
@@ -305,9 +304,8 @@ off at the menu. The electric cell reads `DESACT.` the same way, the fan reads
 reads `--` rather than the `FERME` that would be taken for a measurement.
 
 The sensor alarm moved from the header to the hint bar, which the mock-up leaves
-empty on the dashboard. That buys back the corner the alarm used to take from
-the LoRa icon, so signal strength stays visible while a probe is down — exactly
-when whether the radio still works is worth knowing.
+empty on the dashboard. It buys the alarms a full 320 px line, where the header
+corner they used to share could only ever hold the shortest of them.
 
 A missing reading renders as `--.-`, never as `0.0`.
 
@@ -397,39 +395,16 @@ cut costs the new values rather than the previous ones. A record whose version
 or checksum does not match is discarded in favour of the factory defaults —
 there is no migration, by design.
 
-`SETTINGS_VERSION` is at **3**. v3 replaced each register's named calibration
-ends (closed, open) with ordered marks (min, max) plus an explicit signal
-direction, and added the register count and the two actuator direction flags. A
-v2 pair carries its direction in its own order, so it cannot be reinterpreted:
-**upgrading discards the stored calibration and it has to be captured again.**
+`SETTINGS_VERSION` is at **4**. v4 dropped the LoRa telemetry interval along
+with the radio; the field sat immediately before the checksum, so the record is
+shorter and no v3 file can be read as a v4 one. v3 before it replaced each
+register's named calibration ends (closed, open) with ordered marks (min, max)
+plus an explicit signal direction, and added the register count and the two
+actuator direction flags.
+
+Either way the effect on a board being upgraded is the same and it is worth
+stating plainly: **the stored calibration is discarded and has to be captured
+again from the menu.**
 
 A reboot mid-cycle resumes the session at its phase and elapsed time. Elapsed
 time is `millis()`-based, so the wall-clock gap during the outage is lost.
-
----
-
-## Remote Link
-
-An SX1262 at 868 MHz talks to the Commander, which has the internet connection.
-Session logging happens server-side; the dryer keeps none.
-
-**Uplink:** a telemetry frame every 60 s — the inlet probe, both water
-temperatures, setpoints, phase, elapsed time, actuator states, damper position.
-Readings travel as signed tenths with a distinct sentinel for "no value", so a
-missing probe is not reported as a real zero.
-
-Flag bit 7 of the telemetry frame carries the airflow fault. The packet layout is
-unchanged, so `LORA_PROTOCOL_VERSION` stays at 3 and a Commander that ignores the
-bit still decodes everything else — but it should be taught it.
-
-**Downlink:** START, STOP, set temperature, set humidity. Each frame carries a
-device id and a sequence number. Frames addressed to another dryer are dropped.
-The Commander repeats until acknowledged, so duplicates are normal and executed
-only once; a superseded setpoint arriving late is discarded. Sequence numbers
-wrap in a byte, handled as a signed window.
-
-A remote setpoint change goes through the same record the menu edits, so it is
-persisted and shown on screen like any other.
-
-The radio never participates in regulation: if it fails to initialise, the
-dryer logs it and carries on.

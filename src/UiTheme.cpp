@@ -88,21 +88,4 @@ void FormatDamperState(float position, char *out, size_t length)
   }
 }
 
-uint8_t LoraBars(float rssi_dbm, bool linked)
-{
-  if (!linked || isnan(rssi_dbm))
-  {
-    return 0;
-  }
-
-  // Thresholds for an SX1262 at 868 MHz. There is no floor below which the
-  // count drops to zero: a linked radio has just decoded a frame, so one bar
-  // is the truth however weak the signal was. Zero is reserved for the link
-  // being down, which is a different thing and reads differently.
-  if (rssi_dbm >= -70.0f)  return 4;
-  if (rssi_dbm >= -85.0f)  return 3;
-  if (rssi_dbm >= -100.0f) return 2;
-  return 1;
-}
-
 } // namespace UiTheme

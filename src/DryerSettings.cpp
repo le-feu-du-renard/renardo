@@ -48,8 +48,6 @@ void DryerSettings::Reset()
   recycling_raw_min  = DAMPER_RAW_MIN_DEFAULT;
   recycling_raw_max  = DAMPER_RAW_MAX_DEFAULT;
 
-  lora_telemetry_interval_ms = LORA_TELEMETRY_INTERVAL_MS;
-
   SealRecord(*this);
 }
 

@@ -332,8 +332,6 @@ void test_narrow_bindings_do_not_overflow_their_field(void)
                            g_test_settings.recycling_raw_min);
   TEST_ASSERT_EQUAL_UINT16(DAMPER_RAW_MAX_DEFAULT,
                            g_test_settings.recycling_raw_max);
-  TEST_ASSERT_EQUAL_UINT32(LORA_TELEMETRY_INTERVAL_MS,
-                           g_test_settings.lora_telemetry_interval_ms);
 }
 
 void test_recycling_entries_follow_the_register_count(void)

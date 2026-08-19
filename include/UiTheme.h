@@ -101,13 +101,6 @@ void FormatPercent(float percent, char *out, size_t length);
 // of the same fact competing for a cell 74 px wide.
 void FormatDamperState(float position, char *out, size_t length);
 
-// Signal strength as 0..4 bars, from the last RSSI in dBm.
-//
-// Zero whenever the link is down, whatever the RSSI says: the stored figure is
-// from the last frame received, which may be a quarter of an hour old, and an
-// icon showing four bars on a dead link is worse than no icon at all.
-uint8_t LoraBars(float rssi_dbm, bool linked);
-
 } // namespace UiTheme
 
 #endif // UI_THEME_H

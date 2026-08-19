@@ -197,29 +197,6 @@ void test_damper_state_fits_the_cell(void)
   }
 }
 
-void test_signal_bars_climb_with_the_signal(void)
-{
-  TEST_ASSERT_EQUAL_UINT8(4, UiTheme::LoraBars(-60.0f, true));
-  TEST_ASSERT_EQUAL_UINT8(3, UiTheme::LoraBars(-80.0f, true));
-  TEST_ASSERT_EQUAL_UINT8(2, UiTheme::LoraBars(-95.0f, true));
-  TEST_ASSERT_EQUAL_UINT8(1, UiTheme::LoraBars(-120.0f, true));
-}
-
-void test_signal_bars_are_inclusive_at_each_threshold(void)
-{
-  TEST_ASSERT_EQUAL_UINT8(4, UiTheme::LoraBars(-70.0f, true));
-  TEST_ASSERT_EQUAL_UINT8(3, UiTheme::LoraBars(-85.0f, true));
-  TEST_ASSERT_EQUAL_UINT8(2, UiTheme::LoraBars(-100.0f, true));
-}
-
-void test_a_dead_link_shows_no_bars(void)
-{
-  // The stored RSSI is from the last frame received, which can be a quarter of
-  // an hour old; four bars on a dead link is worse than no icon at all.
-  TEST_ASSERT_EQUAL_UINT8(0, UiTheme::LoraBars(-50.0f, false));
-  TEST_ASSERT_EQUAL_UINT8(0, UiTheme::LoraBars(NAN, true));
-}
-
 int main(int argc, char **argv)
 {
   UNITY_BEGIN();
@@ -238,8 +215,5 @@ int main(int argc, char **argv)
   RUN_TEST(test_damper_rounds_before_testing_the_end_stops);
   RUN_TEST(test_damper_without_feedback_is_not_closed);
   RUN_TEST(test_damper_state_fits_the_cell);
-  RUN_TEST(test_signal_bars_climb_with_the_signal);
-  RUN_TEST(test_signal_bars_are_inclusive_at_each_threshold);
-  RUN_TEST(test_a_dead_link_shows_no_bars);
   return UNITY_END();
 }

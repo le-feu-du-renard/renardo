@@ -7,9 +7,10 @@
 // Persistence on the RP2040's internal flash through LittleFS.
 //
 // Replaces the v3 SD card, which carried both /state.bin and the CSV session
-// logs. Logging moves to the server over LoRa, so only two small records are
-// left. The partition size is set by board_build.filesystem_size in
-// platformio.ini.
+// logs. Only the two small records are left here: the dryer keeps no session
+// log of its own, and whatever wants one belongs on the extension port, where a
+// module can hold far more of it than this partition ever could. The partition
+// size is set by board_build.filesystem_size in platformio.ini.
 //
 // Each record is written to a temporary file and then renamed over the target,
 // so a power cut during a write leaves the previous copy intact rather than a

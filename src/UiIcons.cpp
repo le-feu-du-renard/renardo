@@ -87,23 +87,6 @@ void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
   canvas.drawLine(a.x + 1, a.y, b.x + 1, b.y, vane_color);
 }
 
-void DrawSignalBars(TFT_eSprite &canvas, int16_t left, int16_t bottom,
-                    uint8_t bars, uint16_t color, uint16_t dim_color)
-{
-  // Four bars 3 px wide on a 4 px pitch, climbing 3, 5, 8, 10 px, as the design
-  // mock-up has them.
-  static const int16_t kHeights[4] = {3, 5, 8, 10};
-
-  for (uint8_t index = 0; index < 4; index++)
-  {
-    int16_t x = left + index * 4;
-    int16_t h = kHeights[index];
-    // Unfilled bars stay drawn rather than blank: four positions always visible
-    // is what makes three of them lit mean "three out of four".
-    canvas.fillRect(x, bottom - h, 3, h, index < bars ? color : dim_color);
-  }
-}
-
 void DrawSlash(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                uint16_t color)
 {

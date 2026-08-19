@@ -6,7 +6,10 @@
 // ========== PINS CONFIGURATION ==========
 
 // ----- SPI0, the display alone -----
-// Write-only, so no MISO is wired at all.
+// Write-only, so no MISO is wired at all. Nothing else is allowed onto this bus:
+// TFT_eSPI on the RP2040 may drive the panel through the PIO rather than the
+// hardware SPI block, and a second master on the same pins would be fighting it
+// with no amount of transaction bracketing to help.
 #define SPI0_SCK_PIN 18
 #define SPI0_MOSI_PIN 19
 
@@ -22,33 +25,10 @@
 #define TFT_DC_PIN 17
 #define TFT_RST_PIN 20
 
-// ----- SPI1, the LoRa radio alone -----
-// The radio deliberately does not share the display's bus. TFT_eSPI may drive
-// the panel through the RP2040's PIO rather than the hardware SPI block, in
-// which case two different masters would be fighting over the same pins and no
-// amount of transaction bracketing would help. Separate buses remove the
-// question, and let each run at its own clock — the panel is happy at 40 MHz,
-// the SX1262 tops out around 16.
-// SPI1 pin choices are fixed by the RP2040: SCK {10,14,26}, MOSI {11,15,27},
-// MISO {8,12,24,28}.
-#define SPI1_SCK_PIN 10
-#define SPI1_MOSI_PIN 11
-#define SPI1_MISO_PIN 12
-#define LORA_SPI_FREQUENCY 8000000 // Hz, conservative against the SX1262 limit
-
-// LoRa radio — DX-LR30 (SX1262, 868 MHz). NSS is driven in software, so it is
-// not tied to the SPI1 hardware chip-select pins.
-#define LORA_NSS_PIN 13
-#define LORA_BUSY_PIN 9
-#define LORA_DIO1_PIN 15
-#define LORA_RST_PIN 22
-
 // Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups.
 //
 // SW is on GP8 rather than GP9 so the three signals plus a ground land on four
-// consecutive header pins, 8 to 11: one flat connector, nothing to enjamb. BUSY
-// took GP9 in exchange, which costs the radio nothing — RadioLib only reads it
-// as a plain input, unlike SPI1 MISO whose pin choice is fixed by the RP2040.
+// consecutive header pins, 8 to 11: one flat connector, nothing to enjamb.
 #define ENCODER_A_PIN 6
 #define ENCODER_B_PIN 7
 #define ENCODER_SW_PIN 8
@@ -249,10 +229,11 @@
 #define RTC_I2C_SDA_PIN 28
 #define RTC_I2C_SCL_PIN 21
 
-// No GPIO left for expansion: GP21, the last spare, went to I2C0 SCL when the
-// second register arrived. Freeing one more means giving up a function — the
-// cheapest is TFT_RST (TFT_eSPI accepts -1 and resets the panel in software),
-// which would return GP20.
+// Free for expansion: GP9, GP10, GP11, GP12, GP13, GP15 and GP22, all returned
+// by the LoRa radio when the remote link moved onto RS485. The whole SPI1 block
+// comes back with them, and so does a second UART: should the extension port
+// ever want a segment of its own rather than a slave address on the existing
+// bus, Rs485Bus::kMaxBuses is already 2 and the pins are there for it.
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
@@ -277,19 +258,6 @@
 #define HYDRO_REG_WATER_TEMP 0x0010  // read: circulating water temperature x10
 #define HYDRO_REG_TANK_TEMP 0x0011   // read: storage tank temperature x10
 #define HYDRO_REG_STATUS 0x0012      // read: status bits
-
-// ========== LORA ==========
-// DX-LR30 (SX1262) on SPI0, driven by RadioLib. EU 868 MHz band.
-#define LORA_FREQUENCY 868.0f     // MHz
-#define LORA_BANDWIDTH 125.0f     // kHz
-#define LORA_SPREADING_FACTOR 9
-#define LORA_CODING_RATE 7
-#define LORA_SYNC_WORD 0x34
-#define LORA_TX_POWER 14          // dBm, EU868 limit without duty-cycle tricks
-#define LORA_PREAMBLE_LENGTH 8
-#define LORA_TELEMETRY_INTERVAL_MS 60000
-// Identifies this dryer on a shared band; frames addressed elsewhere are dropped.
-#define LORA_DEVICE_ID 1
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms

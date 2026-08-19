@@ -26,7 +26,11 @@
 // the two actuator direction flags. A v2 pair carries its direction in its own
 // order, so it cannot be read as a v3 one: the record is discarded and the
 // calibration has to be captured again.
-#define SETTINGS_VERSION 3
+// v4 dropped the LoRa telemetry interval along with the radio. The field sat
+// immediately before the checksum, so the record is shorter and every stored one
+// is discarded: the factory values come back, **and the register calibration
+// with them** — it has to be captured again from the menu after this upgrade.
+#define SETTINGS_VERSION 4
 #define SESSION_VERSION 1
 
 // Everything the menu can change.
@@ -85,9 +89,6 @@ struct DryerSettings
   uint16_t extraction_raw_max;
   uint16_t recycling_raw_min;
   uint16_t recycling_raw_max;
-
-  // LoRa
-  uint32_t lora_telemetry_interval_ms;
 
   uint16_t checksum;
 

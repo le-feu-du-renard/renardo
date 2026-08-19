@@ -130,8 +130,8 @@ explicitly, and `Logger` compiles to no-ops when `ARDUINO` is undefined.
 That matters: the v3 suite re-implemented the control logic in the test file,
 and its copy had already drifted from `config.h` — it was passing against logic
 the firmware no longer ran. Anything hardware-free belongs in a class the tests
-can compile, which is why the display model, the menu and the LoRa wire format
-are all separated from their hardware.
+can compile, which is why the display model and the menu are both separated from
+their hardware.
 
 ---
 
@@ -168,7 +168,6 @@ saved, or one reset from Système → Réinit. usine.
 |---------|-----------------|
 | Pin assignments | GPIO numbers for every peripheral |
 | Modbus register map | probe and hydraulic-module addresses and registers |
-| LoRa | frequency, SF, power, telemetry interval, device id |
 | Output polarity | `OUT_*_ACTIVE_LOW`, one per output |
 | Damper calibration | end-stop ADC defaults and tolerance |
 | Phase durations | Init / Brassage / Extraction defaults |

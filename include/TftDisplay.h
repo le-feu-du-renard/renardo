@@ -12,7 +12,7 @@
 // from CSS to drawing primitives. Six horizontal bands, 320 x 240:
 //
 //   progress   y   0..  3   phase progress, full width, phase-coloured
-//   header     y   4.. 23   phase pill left, clock centred, LoRa bars right
+//   header     y   4.. 23   phase pill left, clock centred
 //   cards      y  32..107   INJECTION (with gauges) | CONSIGNE
 //   strip      y 112..145   hydraulic state, circuit water, tank water
 //   devices    y 150..221   fan | electric | extraction | recycling

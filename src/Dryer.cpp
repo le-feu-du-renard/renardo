@@ -28,7 +28,8 @@ void Dryer::Start()
   // interlock in the firmware gates the heat sources and leaves the session
   // alone; these two cannot, because what they protect is the air path itself.
   //
-  // They sit here rather than at the button, so the LoRa START goes through the
+  // They sit here rather than at the button, so every route into a session —
+  // the button, a restored one at boot, whatever comes later — goes through the
   // same door.
   if (air_damper_.IsAirflowBlocked())
   {

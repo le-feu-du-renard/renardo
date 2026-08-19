@@ -274,8 +274,7 @@ bool TftDisplay::HeaderChanged(const DisplayModel &model) const
 {
   return model.total_elapsed_s != previous_.total_elapsed_s ||
          model.phase != previous_.phase ||
-         model.running != previous_.running ||
-         model.lora_bars != previous_.lora_bars;
+         model.running != previous_.running;
 }
 
 bool TftDisplay::InletChanged(const DisplayModel &model) const
@@ -380,10 +379,6 @@ void TftDisplay::DrawHeader(const DisplayModel &model)
   DrawText(canvas, &Mono14B, model.running ? UiTheme::kText : UiTheme::kMuted,
            TC_DATUM, duration, kWidth / 2,
            UiLayout::CapTop(center, kMono14BBaseline, kMono14BCapHeight));
-
-  // Signal strength. Four bars 3 px wide on a 4 px pitch occupy 15 px.
-  UiIcons::DrawSignalBars(canvas, kWidth - kPad - 15, center + 5,
-                          model.lora_bars, UiTheme::kAccent, UiTheme::kBorder);
 
   canvas.pushSprite(0, kHeaderY);
   canvas.deleteSprite();
@@ -664,10 +659,9 @@ void TftDisplay::DrawHintBar(const DisplayModel &model)
   canvas.drawFastHLine(0, 0, kWidth, UiTheme::kBorder);
 
   // The mock-up leaves this band empty on the dashboard — it only carries the
-  // key hints on the menu. Giving it the alarms costs nothing and buys back the
-  // corner of the header the alarm used to take from the LoRa icon, so the link
-  // strength is now visible even while a probe is down, which is exactly when
-  // knowing whether the radio still works matters.
+  // key hints on the menu. Giving it the alarms costs nothing and buys them a
+  // full 320 px line of their own, where the header corner they used to share
+  // could only ever hold the shortest of them.
   static_assert(kLongestHint * kMono12BAdvance <= kWidth,
                 "hint bar text is wider than the screen");
 

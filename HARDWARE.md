@@ -1,7 +1,8 @@
 # Hardware — v4
 
 Controller for the renard'o dryer, built on a **Raspberry Pi Pico H** (RP2040, no
-WiFi). Connectivity is provided solely by the LoRa radio.
+WiFi). Everything that leaves the board leaves it over the **RS485 bus**, which
+carries the probe, the hydraulic module, and the extension port to come.
 
 > The v3 board is gone: no more panel voltmeters, MCP23017 expander, indicator
 > LEDs, potentiometers, mode selector, TM1637 display or SD card. Everything the
@@ -10,7 +11,9 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 
 ## GPIO map
 
-25 of the 26 available GPIOs are used. **GP21 is free.**
+19 of the 26 available GPIOs are used. **GP9, GP10, GP11, GP12, GP13, GP15 and
+GP22 are free**, returned by the LoRa radio when the remote link moved onto
+RS485. The whole SPI1 block and a second UART come back with them.
 
 | Function | GPIO | Notes |
 |---|---|---|
@@ -19,13 +22,6 @@ WiFi). Connectivity is provided solely by the LoRa radio.
 | TFT CS | 16 | SPI0 RX pin, reused as an output |
 | TFT DC | 17 | |
 | TFT RST | 20 | |
-| SPI1 SCK | 10 | radio only |
-| SPI1 MOSI | 11 | radio only |
-| SPI1 MISO | 12 | radio only |
-| LoRa NSS | 13 | driven in software |
-| LoRa BUSY | 9 | mandatory on SX126x |
-| LoRa DIO1 | 15 | RX interrupt |
-| LoRa RST | 22 | |
 | Encoder A | 6 | EC11, internal pull-up |
 | Encoder B | 7 | EC11, internal pull-up |
 | Encoder SW | 8 | EC11, internal pull-up |
@@ -46,22 +42,16 @@ Pin assignments live in [include/config.h](include/config.h). The TFT pins are
 [platformio.ini](platformio.ini) — change both together or the display will not
 initialise.
 
-## Separate SPI buses
+## The display owns SPI0 alone
 
-The display owns **SPI0**, the radio owns **SPI1**. They share nothing.
+Nothing else goes on this bus, whatever comes to the board later. `TFT_eSPI` on
+the RP2040 may drive the panel through the **PIO** rather than the hardware SPI
+block; a second device on the same pins would then be facing another master
+entirely, and no amount of transaction bracketing would fix it. SPI1 is free and
+costs two GPIOs — that is the answer if a peripheral ever needs SPI here.
 
-This costs two GPIOs over a shared bus and is worth it. `TFT_eSPI` on the
-RP2040 may drive the panel through the **PIO** rather than the hardware SPI
-block; on a shared bus that would put two different masters on the same pins,
-and no amount of transaction bracketing would fix it. Separate buses remove the
-question entirely, and let each device run at its own clock — the panel is happy
-at 40 MHz, the SX1262 tops out around 16 and is driven at 8.
-
-The display is write-only, so SPI0 MISO is not wired at all (`TFT_MISO=-1`).
-
-SPI1 pin choices are fixed by the RP2040 and cannot be moved freely:
-SCK ∈ {10, 14, 26}, MOSI ∈ {11, 15, 27}, MISO ∈ {8, 12, 24, 28}. NSS is driven
-in software by RadioLib, so it is free of the hardware chip-select constraint.
+The display is write-only, so SPI0 MISO is not wired at all (`TFT_MISO=-1`), and
+the panel is driven at 40 MHz.
 
 ## Command outputs
 
@@ -233,8 +223,8 @@ there to drop it if the pin genuinely has nothing on it.
 Two registers can shut the air path completely, and a fan pushing against two
 closed vanes moves nothing. When both read at or below `DAMPER_CLOSED_THRESHOLD`
 (10 %) for `DAMPER_BLOCKED_CONFIRM_MS` (30 s), the firmware refuses a start —
-from the button and from the LoRa command alike, since the guard is in
-`Dryer::Start()` — and stops a running session.
+whatever asked for it, since the guard is in `Dryer::Start()` rather than at the
+button — and stops a running session.
 
 Three properties are deliberate:
 
@@ -431,17 +421,16 @@ sees a state change paired with a stale setpoint.
 frame for 60 s. The dryer marks it unavailable after 30 s of silence and falls
 back to electric-only.
 
-## LoRa radio
+## Extension port
 
-**DX-LR30 (SX1262), 868 MHz**, EU band. Settings in `config.h`: SF9, BW 125 kHz,
-CR 4/7, 14 dBm, sync word 0x34.
+Not built yet — the design is recorded in [ROADMAP.md](ROADMAP.md).
 
-Telemetry every 60 s, continuous reception in between. At SF9 a 43-byte frame
-lasts about 100 ms, so one transmission per minute stays far below the 1 % duty
-cycle limit on g1 — recheck this if the interval is ever shortened.
-
-`LORA_DEVICE_ID` identifies this dryer: frames addressed elsewhere are dropped,
-which matters as soon as a second dryer shares the band.
+The short version, because it constrains the board: the extension is **another
+slave on the same RS485 segment**, not a connector of its own. Modbus RTU allows
+one master per segment and the dryer is it, so nothing on the extension port
+needs a transceiver, a UART or a GPIO beyond what the bus already has. Wiring an
+extension module means landing it on the same A/B pair as the probe and the
+hydraulic module, on a free address.
 
 ## Optional RTC
 
@@ -583,9 +572,7 @@ parallel with the internal ones. **3.3 V only** — GP6, GP7 and GP8 are not
 
 The three signals plus a ground land on **four consecutive header pins, 8 to
 11**, so the encoder takes one flat connector with nothing to enjamb. That is
-why SW is on GP8 and not GP9: the radio's BUSY line was moved to GP9 in
-exchange, which costs it nothing — RadioLib only reads BUSY as a plain input,
-whereas SPI1's own pins cannot be moved freely.
+why SW is on GP8 and not GP9.
 
 ### Decoding
 
@@ -619,10 +606,10 @@ hides. Four checks, in order:
 |---|---|
 | 24 V | contactors, Belimo actuator, RS485 modules |
 | 5 V | Pico (VSYS), TFT |
-| 3.3 V | SX1262, MAX3485, RTC |
+| 3.3 V | MAX3485, RTC |
 
-The SX1262 draws around 120 mA during transmission — size the 3.3 V rail so a
-transmission does not brown out the display.
+The 3.3 V rail now carries two small, steady loads and no transmitter: the
+120 mA emission peak that used to set its size went with the radio.
 
 ## Bring-up order
 
@@ -638,6 +625,5 @@ transmission does not brown out the display.
    other — then a full travel on the `l` cycle to record each register's two
    end-stop values, and calibrate both from the menu.
 6. RS485: `rs485_test` first, then the probes in the firmware, then the
-   hydraulic module.
-7. Radio, with the display refreshing at the same time. The buses are
-   independent, so this should be uneventful — confirm it anyway.
+   hydraulic module. This is the last step — everything the dryer talks to now
+   lands on this bus.

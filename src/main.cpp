@@ -11,10 +11,8 @@
 #include "OutputDriver.h"
 #include "SettingsStore.h"
 #include "TftDisplay.h"
-#include "UiTheme.h"
 #include "MenuSystem.h"
 #include "MenuRenderer.h"
-#include "LoraLink.h"
 #include "InputHandler.h"
 #include "TimeManager.h"
 #include "Logger.h"
@@ -38,7 +36,6 @@ OutputDriver electric_output(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, "electri
 InputHandler input_handler;
 TftDisplay display;
 MenuSystem menu;
-LoraLink lora;
 
 // RTC — optional module; absence disables ECO mode
 TimeManager time_manager(&rtc_i2c);
@@ -464,7 +461,6 @@ static void UpdateDisplay()
   model.phase           = static_cast<uint8_t>(dryer.GetSessionManager()->GetCurrentPhase());
   model.phase_progress  = PhaseProgress();
   model.running         = dryer.IsRunning();
-  model.lora_bars       = UiTheme::LoraBars(lora.GetRssi(), lora.IsLinked());
 
   model.inlet_temperature  = g_sensors.inlet_temperature;
   model.inlet_humidity     = g_sensors.inlet_humidity;
@@ -493,87 +489,6 @@ static void UpdateDisplay()
   model.damper_feedback_fault = dryer.GetDamperFeedbackFault();
 
   display.RenderMain(model);
-}
-
-// ========== LORA LINK ==========
-
-// Commands arriving from the Commander. START/STOP are applied exactly like a
-// button press; setpoint changes go through the same record the menu edits, so
-// a remote change is persisted and reflected on screen like any other.
-static void ApplyRemoteCommands()
-{
-  uint8_t command = kLoraCommandNone;
-  float   argument = 0.0f;
-
-  while (lora.ConsumeCommand(command, argument))
-  {
-    switch (command)
-    {
-    case kLoraCommandStart:
-      if (!dryer.IsRunning())
-      {
-        Logger::Info("LoRa: remote START");
-        dryer.Start();
-      }
-      break;
-
-    case kLoraCommandStop:
-      if (dryer.IsRunning())
-      {
-        Logger::Info("LoRa: remote STOP");
-        dryer.Stop();
-      }
-      break;
-
-    case kLoraCommandSetTemp:
-      Logger::Info("LoRa: remote target %F C", argument);
-      settings.target_temperature = argument;
-      OnSettingsChanged();
-      break;
-
-    case kLoraCommandSetHumidity:
-      Logger::Info("LoRa: remote target %F %%RH", argument);
-      settings.target_humidity = argument;
-      OnSettingsChanged();
-      break;
-
-    default:
-      break;
-    }
-  }
-}
-
-static void UpdateLora()
-{
-  const TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
-  const AirDamper *damper = dryer.GetAirDamper();
-
-  TelemetryData data;
-  data.inlet_temperature  = g_sensors.inlet_temperature;
-  data.inlet_humidity     = g_sensors.inlet_humidity;
-  data.water_temperature  = g_sensors.water_temperature;
-  data.tank_temperature   = g_sensors.tank_temperature;
-  data.target_temperature = temperature_manager->GetEffectiveTargetTemperature();
-  data.target_humidity    = dryer.GetHumidityManager()->GetTargetHumidity();
-  data.extraction_position = damper->Extraction().GetPositionPercent();
-  data.recycling_position  = damper->Recycling().GetPositionPercent();
-
-  data.session_elapsed_s = dryer.IsRunning() ? dryer.GetTotalElapsedTime() : 0;
-  data.phase             = static_cast<uint8_t>(dryer.GetCurrentPhase());
-
-  data.running          = dryer.IsRunning();
-  data.fan_on           = dryer.GetFanOutput() > 0.0f;
-  data.electric_on      = temperature_manager->GetElectricOn();
-  data.hydraulic_on     = temperature_manager->GetHydraulicOn();
-  data.hydraulic_online = temperature_manager->GetHydraulicOnline();
-  data.damper_open      = damper->IsOpen();
-  data.sensor_fault     = !temperature_manager->GetHeatingPermitted();
-  // The unusable-feedback fault needs no bit of its own: it is already legible
-  // on the wire as a position sentinel on a dryer declaring two registers.
-  data.airflow_fault    = dryer.GetAirflowBlocked();
-
-  lora.Update(data, settings.lora_telemetry_interval_ms);
-  ApplyRemoteCommands();
 }
 
 // ========== SESSION PERSISTENCE ==========
@@ -670,12 +585,12 @@ void setup()
 
   // --- Hardware probing, deliberately outside the watchdog ---
   //
-  // Probing hardware that is not fitted blocks for seconds: RadioLib waits on
-  // BUSY when no radio answers, and the I2C and filesystem probes have their
-  // own timeouts. The RP2040 watchdog cannot be set beyond ~8.3 s, so there is
-  // no window generous enough to cover them — arming it here rebooted the board
-  // mid-setup, and since the reboot came back to the same absent hardware, it
-  // looped forever.
+  // Probing hardware that is not fitted blocks for seconds: the I2C bus waits
+  // out its own 1 s timeout for an absent RTC, and mounting the filesystem for
+  // the first time formats it. The RP2040 watchdog cannot be set beyond ~8.3 s,
+  // so there is no window generous enough to cover them — arming it here
+  // rebooted the board mid-setup, and since the reboot came back to the same
+  // absent hardware, it looped forever.
   //
   // A stage that hangs outright therefore leaves the board stopped rather than
   // cycling. That is the better failure: the log ends on the exact stage that
@@ -699,12 +614,6 @@ void setup()
   settings_store.LoadSettings(settings);
   dryer.ApplySettings(settings, g_rtc_available);
   g_water_target = settings.water_target;
-
-  // The device id lets the Commander tell several dryers apart and makes a
-  // frame meant for another one impossible to obey.
-  Logger::Info("LoraLink: probing SX1262 on SPI1 (several seconds if absent)...");
-  display.ShowBootStage("radio LoRa...");
-  lora.Begin(LORA_DEVICE_ID);
 
   // --- Probing done; everything below is bounded and fast ---
   watchdog_enable(kRuntimeWatchdogMs, 1);
@@ -758,7 +667,6 @@ void loop()
   UpdateOutputs();
   UpdateDamperPosition();
   UpdateDisplay();
-  UpdateLora();
   UpdateSessionPersistence();
   UpdateDiagnostics();
 

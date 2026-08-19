@@ -29,8 +29,7 @@ struct DisplayModel
   // is well along", never "this many minutes remain".
   float phase_progress;
 
-  bool    running;
-  uint8_t lora_bars;        // 0..4, zero when the link is down
+  bool running;
 
   // --- Measurement and setpoint tiles ---
   float inlet_temperature;
@@ -75,7 +74,6 @@ struct DisplayModel
         phase(0),
         phase_progress(NAN),
         running(false),
-        lora_bars(0),
         inlet_temperature(NAN),
         inlet_humidity(NAN),
         target_temperature(NAN),
