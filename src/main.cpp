@@ -353,6 +353,39 @@ static uint16_t ReadDamperFeedback(uint8_t pin)
   return static_cast<uint16_t>(sum / kSamples);
 }
 
+// Reports an opening that moved further between two samples than the actuator
+// can physically travel.
+//
+// The LM24A-SR takes about 150 s end to end, so 0.33 % per 500 ms sample. A jump
+// of tens of percent is therefore not a register moving, it is the reading
+// itself breaking down — a feedback wire picking up a switching load, a divider
+// losing its ground, or an unwired neighbour channel dragging this one through
+// the multiplexed ADC's sample-and-hold. On screen all three look identical: a
+// vane flicking between shut and open every second or so, which reads as a
+// mechanical fault and is not one.
+//
+// Named for what it measures rather than what it suspects: the log line gives
+// the two raw values, which is what tells those causes apart.
+static void CheckPositionPlausibility(const char *name, float previous, float current,
+                                      uint16_t previous_raw, uint16_t current_raw)
+{
+  constexpr float kMaxStepPercent = 20.0f; // ~60x the actuator's real rate
+
+  if (isnan(previous) || isnan(current))
+  {
+    return;
+  }
+  if (fabsf(current - previous) <= kMaxStepPercent)
+  {
+    return;
+  }
+
+  Logger::Warning("Damper %s: impossible jump %F%% -> %F%% in %ums "
+                  "(raw %u -> %u) — this is the reading, not the vane",
+                  name, previous, current, DAMPER_SAMPLE_INTERVAL,
+                  previous_raw, current_raw);
+}
+
 static void UpdateDamperPosition()
 {
   uint32_t now = millis();
@@ -361,12 +394,30 @@ static void UpdateDamperPosition()
   last_damper_sample = now;
 
   AirDamper *damper = dryer.GetAirDamper();
+
+  float    previous_extraction     = damper->Extraction().GetPositionPercent();
+  uint16_t previous_extraction_raw = damper->Extraction().GetRawPosition();
+  float    previous_recycling      = damper->Recycling().GetPositionPercent();
+  uint16_t previous_recycling_raw  = damper->Recycling().GetRawPosition();
+
   damper->Extraction().SetRawPosition(
       ReadDamperFeedback(DAMPER_EXTRACTION_FEEDBACK_PIN));
   if (damper->GetCount() >= 2)
   {
     damper->Recycling().SetRawPosition(
         ReadDamperFeedback(DAMPER_RECYCLING_FEEDBACK_PIN));
+  }
+
+  CheckPositionPlausibility("extraction", previous_extraction,
+                            damper->Extraction().GetPositionPercent(),
+                            previous_extraction_raw,
+                            damper->Extraction().GetRawPosition());
+  if (damper->GetCount() >= 2)
+  {
+    CheckPositionPlausibility("recycling", previous_recycling,
+                              damper->Recycling().GetPositionPercent(),
+                              previous_recycling_raw,
+                              damper->Recycling().GetRawPosition());
   }
   // On a dryer declaring one register, Recycling() never receives a sample, so
   // it reports no position: dashes on screen, the sentinel over the air.

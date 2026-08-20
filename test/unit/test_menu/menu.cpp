@@ -403,6 +403,41 @@ void test_the_direction_toggles_read_as_words(void)
   TEST_ASSERT_EQUAL_STRING("Inverse", text);
 }
 
+void test_a_page_with_a_live_row_repaints_on_its_own(void)
+{
+  // The register page's signal rows read the ADC, and nothing about an ADC
+  // moving marks the menu dirty. Without this the rows freeze on whatever they
+  // read when the cursor last moved — and reading a raw value off that page as
+  // it settles is the whole calibration procedure, so a frozen row hands out a
+  // number that was true seconds ago and looks exactly like one that is true now.
+  MenuSystem menu;
+  TestSetMillis(0);
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(OpenDamperPage(menu));
+
+  TEST_ASSERT_TRUE(menu.ConsumeDirty());  // the navigation that got us here
+  TEST_ASSERT_FALSE(menu.ConsumeDirty()); // idle: nothing has changed yet
+
+  TestAdvanceMillis(DAMPER_SAMPLE_INTERVAL + 1);
+  TEST_ASSERT_TRUE(menu.ConsumeDirty());
+  TEST_ASSERT_FALSE(menu.ConsumeDirty());
+}
+
+void test_a_page_without_a_live_row_stays_idle(void)
+{
+  // The cost side of the same rule: a page that is only settings must not
+  // repaint thirteen sprites twice a second for nothing.
+  MenuSystem menu;
+  TestSetMillis(0);
+  Prepare(menu, true);
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Consignes"));
+  menu.HandleClick();
+  TEST_ASSERT_TRUE(menu.ConsumeDirty());
+
+  TestAdvanceMillis(DAMPER_SAMPLE_INTERVAL * 10);
+  TEST_ASSERT_FALSE(menu.ConsumeDirty());
+}
+
 void test_eco_hours_stay_within_a_day(void)
 {
   MenuSystem menu;
@@ -623,6 +658,8 @@ int main(int argc, char **argv)
   RUN_TEST(test_recycling_entries_follow_the_register_count);
   RUN_TEST(test_the_register_count_cannot_leave_its_range);
   RUN_TEST(test_the_direction_toggles_read_as_words);
+  RUN_TEST(test_a_page_with_a_live_row_repaints_on_its_own);
+  RUN_TEST(test_a_page_without_a_live_row_stays_idle);
   RUN_TEST(test_eco_hours_stay_within_a_day);
   RUN_TEST(test_factory_reset_restores_defaults);
 

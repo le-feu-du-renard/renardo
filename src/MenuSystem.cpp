@@ -296,7 +296,8 @@ MenuSystem::MenuSystem()
       editing_(false),
       dirty_(true),
       depth_(0),
-      scroll_(0)
+      scroll_(0),
+      last_live_refresh_ms_(0)
 {
   for (uint8_t i = 0; i < kMaxDepth; i++)
   {
@@ -472,9 +473,47 @@ void MenuSystem::Close()
 
 bool MenuSystem::ConsumeDirty()
 {
+  // A page carrying a live row has to repaint on its own clock, not only when
+  // the knob moves. Without this the register page's raw values freeze on
+  // whatever they read when the cursor last moved — and reading a raw value off
+  // that page as it settles is the entire calibration procedure, so a frozen
+  // row is not a cosmetic fault: it hands out a number that was true seconds ago
+  // and looks exactly like one that is true now.
+  //
+  // Gated on the page actually having such a row, so the pages that are pure
+  // settings still cost one repaint per input.
+  if (!dirty_ && HasLiveRow())
+  {
+    uint32_t now = millis();
+    if (now - last_live_refresh_ms_ >= kLiveRefreshMs)
+    {
+      last_live_refresh_ms_ = now;
+      dirty_ = true;
+    }
+  }
+
   bool was_dirty = dirty_;
   dirty_ = false;
   return was_dirty;
+}
+
+// A kInfo row draws its text from a callback, which is the only thing on a page
+// that can change without an input.
+bool MenuSystem::HasLiveRow() const
+{
+  const MenuPage *page = CurrentPage();
+  if (page == nullptr)
+  {
+    return false;
+  }
+  for (uint8_t i = 0; i < page->count; i++)
+  {
+    if (page->items[i].kind == MenuItemKind::kInfo && page->items[i].text != nullptr)
+    {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool MenuSystem::IsItemSelectable(const MenuItem &item) const

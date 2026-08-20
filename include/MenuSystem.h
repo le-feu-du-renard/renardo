@@ -143,7 +143,9 @@ public:
   bool IsItemSelectable(const MenuItem &item) const;
   void FormatItemValue(const MenuItem &item, char *out, size_t length) const;
 
-  // True once after anything moved, so the renderer can skip an idle frame.
+  // True once after anything moved, so the renderer can skip an idle frame — and
+  // on its own clock while the current page carries a live row, which nothing
+  // else would ever mark dirty.
   bool ConsumeDirty();
 
   // Marks the whole page dirty, e.g. after the main screen took over the panel.
@@ -168,6 +170,14 @@ private:
   // once and the most-used page never scrolls.
   static constexpr uint8_t kVisibleRows = 7;
   uint8_t scroll_;
+
+  // Repaint cadence for a page carrying a live row. Matched to
+  // DAMPER_SAMPLE_INTERVAL: repainting faster than the value can change only
+  // costs sprites, and slower would hide the settling this page exists to show.
+  static constexpr uint32_t kLiveRefreshMs = DAMPER_SAMPLE_INTERVAL;
+  uint32_t last_live_refresh_ms_;
+
+  bool HasLiveRow() const;
 
   const MenuPage *CurrentPage() const { return stack_[depth_]; }
   uint8_t         Cursor() const { return cursor_stack_[depth_]; }
