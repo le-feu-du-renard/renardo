@@ -675,10 +675,13 @@ a reflash.
 ### Bring-up
 
 `pio run -e extension_test -t upload -t monitor`, on a **second Pico** with its
-own MAX3485, landed on the same A/B pair. It is the module the dryer thinks it is
-talking to: it accepts the telemetry block, decodes it with the production
-`ExtensionProtocol`, and posts back whatever command you type. Building it at all
-is the check that the header really is compilable by a module.
+own MAX3485, landed on the same A/B pair. Despite the name it plays **both**
+remote modules — the extension at @2 and the hydraulic module at @10 — because
+with nothing answering @10 the extension's telemetry shows dashes for both water
+figures and carries the hydraulic-offline flag forever, so half of what the port
+reports could never be seen. It decodes with the production `ExtensionProtocol`,
+so building it at all is the check that the header really is compilable by a
+module.
 
 A telemetry block should land every two seconds and print decoded. Then, from the
 console:
@@ -688,10 +691,24 @@ console:
 - `r`, `o`, `x` and `v` post the four refusals — START, out of range, unknown
   opcode, wrong version. Each should come back with its own result code rather
   than being silently swallowed or silently obeyed.
+- `w 48` and `k 55` set what the hydraulic module reports for water and tank;
+  they should appear in the extension's telemetry a cycle later, and on the
+  screen. `g` shows what the dryer is asking of the circulator.
+- `e` and `u` take either module off the bus without unplugging it. That is how
+  the 30 s availability timeout and the backoff are exercised: silence at @10
+  should raise hydraulic-offline and fall back to electric-only, and silence at
+  @2 should have the dryer retry once every 30 s rather than every cycle.
 - `n` prints the bus counters, and is the first thing to press when nothing
-  arrives: it separates "no traffic at all" from "traffic for other slaves but
+  arrives: it separates "no traffic at all" from "traffic for other nodes but
   none for us" from "the write lands and the read never comes", which are three
   different faults.
+
+**CRC errors are counted only on frames addressed to this board.** It hears the
+whole pair, and a master request is separated from the slave's answer by a
+turnaround routinely shorter than the 3.5 character times that end a frame — so
+the dryer's exchange with the probe arrives glued into one buffer whose CRC
+cannot check out. A passive listener cannot tell a request from the reply behind
+it, and the only traffic whose integrity it can judge is its own.
 
 Both boards must **share a ground**: RS485 is differential, not isolated. 120 Ω
 at the two ends of the segment and nowhere in between — a third resistor in the

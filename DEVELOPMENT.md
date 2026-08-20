@@ -36,7 +36,7 @@ Environments defined in `platformio.ini`:
 | `tft_test` | Raspberry Pi Pico H | Panel identification and test patterns |
 | `encoder_test` | Raspberry Pi Pico H | Encoder edges, detents and click |
 | `rs485_test` | Raspberry Pi Pico H | Modbus probes, address and baud sweeps |
-| `extension_test` | A **second** Raspberry Pi Pico H | Plays the extension module, on the far end of the bus |
+| `extension_test` | A **second** Raspberry Pi Pico H | Plays both remote modules, extension and hydraulic |
 | `damper_test` | Raspberry Pi Pico H | Damper command, relay and position feedback |
 | `output_test` | Raspberry Pi Pico H | The three command outputs, one at a time |
 | `panel_test` | Raspberry Pi Pico H | START/STOP buttons and the two status LEDs |
@@ -200,9 +200,9 @@ saved, or one reset from Système → Réinit. usine.
 - Check the TFT pins in `platformio.ini` match `config.h`
 - Inverted colours or an offset image is the usual ST7789 variant question —
   try `TFT_INVERSION_ON` or a column/row offset
-- The radio is on its own bus (SPI1), so a redraw and a transmission cannot
-  interfere; corruption during transmission would point at the power rail
-  rather than the bus
+- The panel owns SPI0 alone and nothing else is allowed on it, so a redraw
+  cannot be colliding with another master; corruption that coincides with RS485
+  traffic points at the power rail rather than at the bus
 
 ### Sensors not responding
 

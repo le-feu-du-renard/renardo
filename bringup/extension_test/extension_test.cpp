@@ -1,10 +1,18 @@
-// Extension module stand-in — built by
+// Remote module stand-in — built by
 // `pio run -e extension_test -t upload -t monitor`.
 //
 // Runs on a *second* Pico with its own MAX3485, landed on the same A/B pair as
-// the dryer. It is the module the dryer thinks it is talking to: a Modbus RTU
-// slave on MODBUS_EXTENSION_ADDRESS that accepts the telemetry block, decodes
-// it, and hands back whatever command you type on the USB console.
+// the dryer. It plays **both** remote modules the dryer talks to:
+//
+//   @2   the extension port — accepts the telemetry block, decodes it, and
+//        hands back whatever command you type on the USB console
+//   @10  the hydraulic module — answers with water and tank temperatures you
+//        set from the console, and prints what the dryer asks of the circulator
+//
+// The second is not scope creep on the first: with nothing answering @10, the
+// extension's telemetry shows dashes for both water figures and carries the
+// hydraulic-offline flag forever, so half of what the port reports can never be
+// seen. One board playing every remote node is also simply the cheaper rig.
 //
 // It answers, in the order the faults actually happen:
 //   nothing arrives at all      -> A and B swapped, no termination, the dryer's
@@ -27,6 +35,7 @@
 // frames the same way, for its own reasons.
 
 #include <Arduino.h>
+#include <stdlib.h>
 
 #include "config.h"
 #include "ExtensionProtocol.h"
@@ -35,15 +44,64 @@ namespace
 {
 
 // ---------------------------------------------------------------------------
-// The register file
+// The register files
 //
-// Two blocks, exactly the ones in HARDWARE.md. The dryer writes the first with
-// FC16 and reads the second with FC03; nothing else exists on this slave, and
-// anything addressed outside them gets an illegal-data-address exception rather
-// than a polite zero — a silent zero is how a register map disagreement hides.
+// Exactly the blocks in HARDWARE.md. Anything addressed outside them draws an
+// illegal-data-address exception rather than a polite zero — a silent zero is
+// how a register map disagreement hides.
 
-uint16_t g_telemetry[EXT_TELEMETRY_COUNT];
-uint16_t g_mailbox[EXT_COMMAND_COUNT];
+uint16_t g_ext_telemetry[EXT_TELEMETRY_COUNT]; // dryer writes, FC16
+uint16_t g_ext_mailbox[EXT_COMMAND_COUNT];     // dryer reads, FC03
+
+// The hydraulic map has no sentinel for "no reading": the dryer decodes every
+// value as signed tenths and believes it. So these start at plausible figures
+// rather than zero, which would look like a fault the moment the module
+// answered.
+uint16_t g_hydro_command[2] = {0, 0};              // 0x0000 state, 0x0001 setpoint
+uint16_t g_hydro_telemetry[3] = {450, 520, 0x0000}; // 0x0010 water, 0x0011 tank, 0x0012 status
+
+// ---------------------------------------------------------------------------
+// Which addresses this board answers for
+
+struct RegisterBlock
+{
+  uint16_t    base;
+  uint16_t    count;
+  uint16_t   *data;
+  bool        master_may_write;
+  const char *name;
+};
+
+struct SlaveNode
+{
+  uint8_t              address;
+  const char          *name;
+  const RegisterBlock *blocks;
+  uint8_t              block_count;
+  bool                *online;
+};
+
+// Both can be taken off the bus from the console, which is how the dryer's
+// availability timeout and its backoff get exercised without unplugging
+// anything.
+bool g_extension_online = true;
+bool g_hydraulic_online = true;
+
+const RegisterBlock kExtensionBlocks[] = {
+    {EXT_REG_TELEMETRY, EXT_TELEMETRY_COUNT, g_ext_telemetry, true, "telemetry"},
+    {EXT_REG_COMMAND, EXT_COMMAND_COUNT, g_ext_mailbox, false, "command mailbox"},
+};
+
+const RegisterBlock kHydraulicBlocks[] = {
+    {HYDRO_REG_STATE, 2, g_hydro_command, true, "command"},
+    {HYDRO_REG_WATER_TEMP, 3, g_hydro_telemetry, false, "measurements"},
+};
+
+const SlaveNode kNodes[] = {
+    {MODBUS_EXTENSION_ADDRESS, "extension", kExtensionBlocks, 2, &g_extension_online},
+    {MODBUS_HYDRAULIC_ADDRESS, "hydraulic", kHydraulicBlocks, 2, &g_hydraulic_online},
+};
+constexpr uint8_t kNodeCount = sizeof(kNodes) / sizeof(kNodes[0]);
 
 // ---------------------------------------------------------------------------
 // Bus plumbing
@@ -59,8 +117,8 @@ constexpr uint32_t kFrameGapMs = 5;
 // this baud rate.
 constexpr uint32_t kDriveHoldUs = 1100;
 
-constexpr uint8_t kFcReadHolding    = 0x03;
-constexpr uint8_t kFcWriteMultiple  = 0x10;
+constexpr uint8_t kFcReadHolding   = 0x03;
+constexpr uint8_t kFcWriteMultiple = 0x10;
 
 constexpr uint8_t kExcIllegalFunction = 0x01;
 constexpr uint8_t kExcIllegalAddress  = 0x02;
@@ -80,17 +138,20 @@ uint16_t g_frame_length = 0;
 uint32_t g_frames_seen = 0;
 uint32_t g_crc_errors = 0;
 uint32_t g_not_for_us = 0;
-uint32_t g_writes_served = 0;
-uint32_t g_reads_served = 0;
+uint32_t g_ext_writes = 0;
+uint32_t g_ext_reads = 0;
+uint32_t g_hydro_writes = 0;
+uint32_t g_hydro_reads = 0;
 uint32_t g_exceptions_sent = 0;
-uint32_t g_last_write_ms = 0;
-uint32_t g_last_read_ms = 0;
+uint32_t g_last_ext_write_ms = 0;
+uint32_t g_last_ext_read_ms = 0;
+uint32_t g_last_hydro_ms = 0;
 
 // ---------------------------------------------------------------------------
 // The pending command, and what became of it
 
-uint16_t g_sequence = 0;          // last sequence we posted
-uint16_t g_pending_sequence = 0;  // still waiting for an acknowledgement
+uint16_t    g_sequence = 0;         // last sequence we posted
+uint16_t    g_pending_sequence = 0; // still waiting for an acknowledgement
 const char *g_pending_label = "";
 
 uint16_t Crc16(const uint8_t *frame, uint16_t length)
@@ -108,7 +169,7 @@ uint16_t Crc16(const uint8_t *frame, uint16_t length)
   return crc;
 }
 
-void SendFrame(uint8_t *frame, uint16_t payload_length)
+void SendFrame(uint8_t address, uint8_t *frame, uint16_t payload_length)
 {
   uint16_t crc = Crc16(frame, payload_length);
   frame[payload_length]     = static_cast<uint8_t>(crc & 0xFF); // low byte first
@@ -119,15 +180,16 @@ void SendFrame(uint8_t *frame, uint16_t payload_length)
   Serial2.flush();
   delayMicroseconds(kDriveHoldUs);
   digitalWrite(RS485_DE_PIN, LOW);
+  (void)address;
 }
 
-void SendException(uint8_t function, uint8_t code)
+void SendException(uint8_t address, uint8_t function, uint8_t code)
 {
   uint8_t reply[5];
-  reply[0] = MODBUS_EXTENSION_ADDRESS;
+  reply[0] = address;
   reply[1] = function | 0x80;
   reply[2] = code;
-  SendFrame(reply, 3);
+  SendFrame(address, reply, 3);
 
   g_exceptions_sent++;
   Serial.printf("  -> exception %02X on function %02X\n", code, function);
@@ -140,12 +202,12 @@ const char *ResultName(uint16_t result)
 {
   switch (result)
   {
-  case kExtResultOk:             return "ok";
-  case kExtResultUnknownOpcode:  return "unknown opcode";
-  case kExtResultRefused:        return "refused by policy";
-  case kExtResultOutOfRange:     return "out of range";
-  case kExtResultBadVersion:     return "protocol version";
-  default:                       return "unrecognised result";
+  case kExtResultOk:            return "ok";
+  case kExtResultUnknownOpcode: return "unknown opcode";
+  case kExtResultRefused:       return "refused by policy";
+  case kExtResultOutOfRange:    return "out of range";
+  case kExtResultBadVersion:    return "protocol version";
+  default:                      return "unrecognised result";
   }
 }
 
@@ -211,38 +273,38 @@ void PrintFlags(uint16_t flags)
 
 void PrintTelemetry()
 {
-  uint32_t elapsed = (static_cast<uint32_t>(g_telemetry[kExtRegElapsedHigh]) << 16) |
-                     g_telemetry[kExtRegElapsedLow];
-  uint32_t uptime = (static_cast<uint32_t>(g_telemetry[kExtRegUptimeHigh]) << 16) |
-                    g_telemetry[kExtRegUptimeLow];
+  uint32_t elapsed = (static_cast<uint32_t>(g_ext_telemetry[kExtRegElapsedHigh]) << 16) |
+                     g_ext_telemetry[kExtRegElapsedLow];
+  uint32_t uptime = (static_cast<uint32_t>(g_ext_telemetry[kExtRegUptimeHigh]) << 16) |
+                    g_ext_telemetry[kExtRegUptimeLow];
 
-  Serial.printf("\n--- telemetry, protocol v%d ---\n", g_telemetry[kExtRegVersion]);
+  Serial.printf("\n--- telemetry, protocol v%d ---\n", g_ext_telemetry[kExtRegVersion]);
 
-  if (g_telemetry[kExtRegVersion] != EXT_PROTOCOL_VERSION)
+  if (g_ext_telemetry[kExtRegVersion] != EXT_PROTOCOL_VERSION)
   {
     Serial.printf("  ** the dryer speaks v%d, this sketch v%d — everything below\n",
-                  g_telemetry[kExtRegVersion], EXT_PROTOCOL_VERSION);
+                  g_ext_telemetry[kExtRegVersion], EXT_PROTOCOL_VERSION);
     Serial.println("     is being read against the wrong map **");
   }
 
-  Serial.printf("  %-14s %s\n", "phase", PhaseName(g_telemetry[kExtRegPhase]));
-  PrintFlags(g_telemetry[kExtRegFlags]);
+  Serial.printf("  %-14s %s\n", "phase", PhaseName(g_ext_telemetry[kExtRegPhase]));
+  PrintFlags(g_ext_telemetry[kExtRegFlags]);
 
-  PrintValue("inlet", g_telemetry[kExtRegInletTemp], "C");
-  PrintValue("inlet RH", g_telemetry[kExtRegInletHumidity], "%");
-  PrintValue("water", g_telemetry[kExtRegWaterTemp], "C");
-  PrintValue("tank", g_telemetry[kExtRegTankTemp], "C");
-  PrintValue("target", g_telemetry[kExtRegTargetTemp], "C");
-  PrintValue("target RH", g_telemetry[kExtRegTargetHumidity], "%");
+  PrintValue("inlet", g_ext_telemetry[kExtRegInletTemp], "C");
+  PrintValue("inlet RH", g_ext_telemetry[kExtRegInletHumidity], "%");
+  PrintValue("water", g_ext_telemetry[kExtRegWaterTemp], "C");
+  PrintValue("tank", g_ext_telemetry[kExtRegTankTemp], "C");
+  PrintValue("target", g_ext_telemetry[kExtRegTargetTemp], "C");
+  PrintValue("target RH", g_ext_telemetry[kExtRegTargetHumidity], "%");
 
-  PrintPosition("extraction", g_telemetry[kExtRegExtractionPos]);
-  PrintPosition("recycling", g_telemetry[kExtRegRecyclingPos]);
+  PrintPosition("extraction", g_ext_telemetry[kExtRegExtractionPos]);
+  PrintPosition("recycling", g_ext_telemetry[kExtRegRecyclingPos]);
 
   Serial.printf("  %-14s %lus  (uptime %lus)\n", "session",
                 (unsigned long)elapsed, (unsigned long)uptime);
 
-  uint16_t ack_sequence = g_telemetry[kExtRegAckSequence];
-  uint16_t ack_result   = g_telemetry[kExtRegAckResult];
+  uint16_t ack_sequence = g_ext_telemetry[kExtRegAckSequence];
+  uint16_t ack_result   = g_ext_telemetry[kExtRegAckResult];
   Serial.printf("  %-14s sequence %u, %s\n", "acknowledged", ack_sequence,
                 ResultName(ack_result));
 
@@ -260,92 +322,132 @@ void PrintTelemetry()
   Serial.println();
 }
 
+// What the dryer is asking of the circulator and the three-way valve. Printed
+// only when it changes: it is written every cycle and is usually the same.
+void PrintHydraulicCommand()
+{
+  static bool     first = true;
+  static uint16_t last_state = 0xFFFF;
+  static uint16_t last_target = 0xFFFF;
+
+  if (!first && g_hydro_command[0] == last_state && g_hydro_command[1] == last_target)
+  {
+    return;
+  }
+  first = false;
+  last_state = g_hydro_command[0];
+  last_target = g_hydro_command[1];
+
+  Serial.printf("\n[hydraulic] the dryer asks: circulator %s, water setpoint %.1f C\n\n",
+                g_hydro_command[0] ? "ON" : "off",
+                static_cast<int16_t>(g_hydro_command[1]) / 10.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Request handling
 
-void HandleReadHolding(uint16_t start, uint16_t count)
+const RegisterBlock *FindBlock(const SlaveNode &node, uint16_t start, uint16_t count)
 {
-  const uint16_t *source = nullptr;
-  uint16_t offset = 0;
-
-  if (start >= EXT_REG_COMMAND &&
-      start + count <= EXT_REG_COMMAND + EXT_COMMAND_COUNT)
+  for (uint8_t i = 0; i < node.block_count; i++)
   {
-    source = g_mailbox;
-    offset = start - EXT_REG_COMMAND;
+    const RegisterBlock &block = node.blocks[i];
+    if (start >= block.base && start + count <= block.base + block.count)
+    {
+      return &block;
+    }
   }
-  // Reading the telemetry back is not something the dryer does, but it is the
-  // quickest way to confirm from a Modbus tool that a write landed.
-  else if (start >= EXT_REG_TELEMETRY &&
-           start + count <= EXT_REG_TELEMETRY + EXT_TELEMETRY_COUNT)
+  return nullptr;
+}
+
+void HandleReadHolding(const SlaveNode &node, uint16_t start, uint16_t count)
+{
+  const RegisterBlock *block = FindBlock(node, start, count);
+  if (block == nullptr)
   {
-    source = g_telemetry;
-    offset = start - EXT_REG_TELEMETRY;
+    Serial.printf("[%s] FC03 for 0x%04X x%u — outside every block\n", node.name,
+                  start, count);
+    SendException(node.address, kFcReadHolding, kExcIllegalAddress);
+    return;
+  }
+
+  // 3 header bytes + two per register + two of CRC, sized for the largest block
+  // this board serves.
+  uint8_t reply[3 + 2 * EXT_TELEMETRY_COUNT + 2];
+  reply[0] = node.address;
+  reply[1] = kFcReadHolding;
+  reply[2] = static_cast<uint8_t>(count * 2);
+
+  uint16_t offset = start - block->base;
+  for (uint16_t i = 0; i < count; i++)
+  {
+    reply[3 + i * 2] = static_cast<uint8_t>(block->data[offset + i] >> 8);
+    reply[4 + i * 2] = static_cast<uint8_t>(block->data[offset + i] & 0xFF);
+  }
+  SendFrame(node.address, reply, static_cast<uint16_t>(3 + count * 2));
+
+  if (node.address == MODBUS_EXTENSION_ADDRESS)
+  {
+    g_ext_reads++;
+    g_last_ext_read_ms = millis();
   }
   else
   {
-    Serial.printf("FC03 for 0x%04X x%u — outside both blocks\n", start, count);
-    SendException(kFcReadHolding, kExcIllegalAddress);
-    return;
+    g_hydro_reads++;
+    g_last_hydro_ms = millis();
   }
-
-  uint8_t reply[5 + 2 * EXT_TELEMETRY_COUNT];
-  reply[0] = MODBUS_EXTENSION_ADDRESS;
-  reply[1] = kFcReadHolding;
-  reply[2] = static_cast<uint8_t>(count * 2);
-  for (uint16_t i = 0; i < count; i++)
-  {
-    reply[3 + i * 2] = static_cast<uint8_t>(source[offset + i] >> 8);
-    reply[4 + i * 2] = static_cast<uint8_t>(source[offset + i] & 0xFF);
-  }
-  SendFrame(reply, static_cast<uint16_t>(3 + count * 2));
-
-  g_reads_served++;
-  g_last_read_ms = millis();
 }
 
-void HandleWriteMultiple(uint16_t start, uint16_t count, const uint8_t *values)
+void HandleWriteMultiple(const SlaveNode &node, uint16_t start, uint16_t count,
+                         const uint8_t *values)
 {
-  // The mailbox is ours to write and the dryer's to read. A master writing here
-  // has the direction of the port backwards, and saying so is more use than
-  // accepting it.
-  if (start >= EXT_REG_COMMAND &&
-      start < EXT_REG_COMMAND + EXT_COMMAND_COUNT)
+  const RegisterBlock *block = FindBlock(node, start, count);
+  if (block == nullptr)
   {
-    Serial.printf("FC16 for 0x%04X — that is the command mailbox, read-only to the dryer\n",
-                  start);
-    SendException(kFcWriteMultiple, kExcIllegalAddress);
+    Serial.printf("[%s] FC16 for 0x%04X x%u — outside every block\n", node.name,
+                  start, count);
+    SendException(node.address, kFcWriteMultiple, kExcIllegalAddress);
     return;
   }
 
-  if (start < EXT_REG_TELEMETRY ||
-      start + count > EXT_REG_TELEMETRY + EXT_TELEMETRY_COUNT)
+  // The blocks this module reports from are ours to write and the dryer's to
+  // read. A master writing there has the direction of the link backwards, and
+  // saying so is more use than accepting it.
+  if (!block->master_may_write)
   {
-    Serial.printf("FC16 for 0x%04X x%u — outside the telemetry block\n", start, count);
-    SendException(kFcWriteMultiple, kExcIllegalAddress);
+    Serial.printf("[%s] FC16 for 0x%04X — that is the %s block, read-only to the dryer\n",
+                  node.name, start, block->name);
+    SendException(node.address, kFcWriteMultiple, kExcIllegalAddress);
     return;
   }
 
-  uint16_t offset = start - EXT_REG_TELEMETRY;
+  uint16_t offset = start - block->base;
   for (uint16_t i = 0; i < count; i++)
   {
-    g_telemetry[offset + i] =
+    block->data[offset + i] =
         static_cast<uint16_t>((values[i * 2] << 8) | values[i * 2 + 1]);
   }
 
-  uint8_t reply[6];
-  reply[0] = MODBUS_EXTENSION_ADDRESS;
+  uint8_t reply[8];
+  reply[0] = node.address;
   reply[1] = kFcWriteMultiple;
   reply[2] = static_cast<uint8_t>(start >> 8);
   reply[3] = static_cast<uint8_t>(start & 0xFF);
   reply[4] = static_cast<uint8_t>(count >> 8);
   reply[5] = static_cast<uint8_t>(count & 0xFF);
-  SendFrame(reply, 6);
+  SendFrame(node.address, reply, 6);
 
-  g_writes_served++;
-  g_last_write_ms = millis();
-
-  PrintTelemetry();
+  if (node.address == MODBUS_EXTENSION_ADDRESS)
+  {
+    g_ext_writes++;
+    g_last_ext_write_ms = millis();
+    PrintTelemetry();
+  }
+  else
+  {
+    g_hydro_writes++;
+    g_last_hydro_ms = millis();
+    PrintHydraulicCommand();
+  }
 }
 
 void HandleFrame()
@@ -359,28 +461,51 @@ void HandleFrame()
     return;
   }
 
+  // Address before CRC, deliberately.
+  //
+  // This board hears the whole pair, including the dryer talking to the probe.
+  // A master request and the answer that follows it are separated by the slave's
+  // turnaround, which is routinely shorter than the 3.5 character times that end
+  // a frame — so the two arrive glued into one buffer whose CRC cannot possibly
+  // check out. Reporting that as a bus fault is exactly wrong: a passive
+  // listener cannot tell a request from the reply behind it, and the only
+  // traffic whose integrity this board can judge is the traffic addressed to it.
+  const SlaveNode *node = nullptr;
+  for (uint8_t i = 0; i < kNodeCount; i++)
+  {
+    if (g_frame[0] == kNodes[i].address)
+    {
+      node = &kNodes[i];
+      break;
+    }
+  }
+
+  if (node == nullptr)
+  {
+    g_not_for_us++;
+    return;
+  }
+
   uint16_t received_crc = static_cast<uint16_t>(g_frame[g_frame_length - 2]) |
                           static_cast<uint16_t>(g_frame[g_frame_length - 1] << 8);
   if (received_crc != Crc16(g_frame, g_frame_length - 2))
   {
     g_crc_errors++;
-    Serial.printf("CRC error on a %u byte frame (%lu so far) — baud, noise, or\n",
-                  g_frame_length, (unsigned long)g_crc_errors);
-    Serial.println("  a segment with termination at only one end");
+    Serial.printf("CRC error on a %u byte frame for @%d (%lu so far) — baud,\n",
+                  g_frame_length, g_frame[0], (unsigned long)g_crc_errors);
+    Serial.println("  noise, or a segment with termination at only one end");
     return;
   }
 
-  uint8_t address = g_frame[0];
-  if (address != MODBUS_EXTENSION_ADDRESS)
+  // Taken off the bus from the console: hear the request, answer nothing. This
+  // is what an unplugged module looks like, and it is how the dryer's
+  // availability timeout and backoff get exercised.
+  if (!*node->online)
   {
-    // The probe @1 and the hydraulic module @10 share this pair. Hearing their
-    // traffic is proof the wiring is right, so it is counted, not complained
-    // about.
-    g_not_for_us++;
     return;
   }
 
-  uint8_t function = g_frame[1];
+  uint8_t  function = g_frame[1];
   uint16_t start = static_cast<uint16_t>((g_frame[2] << 8) | g_frame[3]);
   uint16_t count = static_cast<uint16_t>((g_frame[4] << 8) | g_frame[5]);
 
@@ -389,28 +514,28 @@ void HandleFrame()
   case kFcReadHolding:
     if (count == 0 || count > EXT_TELEMETRY_COUNT)
     {
-      SendException(function, kExcIllegalValue);
+      SendException(node->address, function, kExcIllegalValue);
       return;
     }
-    HandleReadHolding(start, count);
+    HandleReadHolding(*node, start, count);
     break;
 
   case kFcWriteMultiple:
     // addr fc start(2) count(2) bytecount(1) payload crc(2)
     if (g_frame_length < 9 + count * 2 || g_frame[6] != count * 2)
     {
-      Serial.printf("FC16 byte count disagrees with the register count (%u vs %u)\n",
-                    g_frame[6], count * 2);
-      SendException(function, kExcIllegalValue);
+      Serial.printf("[%s] FC16 byte count disagrees with the register count (%u vs %u)\n",
+                    node->name, g_frame[6], count * 2);
+      SendException(node->address, function, kExcIllegalValue);
       return;
     }
-    HandleWriteMultiple(start, count, &g_frame[7]);
+    HandleWriteMultiple(*node, start, count, &g_frame[7]);
     break;
 
   default:
-    Serial.printf("Function %02X — this module only implements FC03 and FC16\n",
-                  function);
-    SendException(function, kExcIllegalFunction);
+    Serial.printf("[%s] function %02X — this module only implements FC03 and FC16\n",
+                  node->name, function);
+    SendException(node->address, function, kExcIllegalFunction);
     break;
   }
 }
@@ -460,10 +585,10 @@ void PostCommand(uint16_t opcode, float argument, uint16_t version, const char *
     g_sequence = 1; // 0 means "the mailbox is empty"
   }
 
-  g_mailbox[kExtCmdRegOpcode]   = opcode;
-  g_mailbox[kExtCmdRegArgument] = static_cast<uint16_t>(ExtEncodeValue(argument));
-  g_mailbox[kExtCmdRegVersion]  = version;
-  g_mailbox[kExtCmdRegSequence] = g_sequence;
+  g_ext_mailbox[kExtCmdRegOpcode]   = opcode;
+  g_ext_mailbox[kExtCmdRegArgument] = static_cast<uint16_t>(ExtEncodeValue(argument));
+  g_ext_mailbox[kExtCmdRegVersion]  = version;
+  g_ext_mailbox[kExtCmdRegSequence] = g_sequence;
 
   g_pending_sequence = g_sequence;
   g_pending_label    = label;
@@ -477,10 +602,45 @@ void ClearMailbox()
 {
   for (uint8_t i = 0; i < EXT_COMMAND_COUNT; i++)
   {
-    g_mailbox[i] = 0;
+    g_ext_mailbox[i] = 0;
   }
   g_pending_sequence = 0;
   Serial.println("\nMailbox cleared. Sequence 0 is how a module says it wants nothing.\n");
+}
+
+// ---------------------------------------------------------------------------
+// What the hydraulic module reports
+
+void SetHydraulicValue(uint8_t index, float celsius, const char *label)
+{
+  g_hydro_telemetry[index] = static_cast<uint16_t>(lroundf(celsius * 10.0f));
+  Serial.printf("\n[hydraulic] %s now %.1f C. It reaches the dryer on its next poll,\n",
+                label, celsius);
+  Serial.println("and the extension's telemetry a cycle after that.\n");
+}
+
+void SetHydraulicStatus(uint16_t bits)
+{
+  g_hydro_telemetry[2] = bits;
+  Serial.printf("\n[hydraulic] status word now 0x%04X.\n", bits);
+  Serial.println("The dryer stores it and reports nothing about it: HARDWARE.md declares");
+  Serial.println("the register but no bit meanings yet, so this is where that gets");
+  Serial.println("decided once the real module exists.\n");
+}
+
+void PrintHydraulicState()
+{
+  Serial.println("\n--- hydraulic module ---");
+  Serial.printf("  %-14s %s\n", "on the bus", g_hydraulic_online ? "yes" : "NO — answering nothing");
+  Serial.printf("  %-14s %s\n", "circulator", g_hydro_command[0] ? "ON" : "off");
+  Serial.printf("  %-14s %6.1f C   (asked by the dryer)\n", "setpoint",
+                static_cast<int16_t>(g_hydro_command[1]) / 10.0f);
+  Serial.printf("  %-14s %6.1f C   (reported by us)\n", "water",
+                static_cast<int16_t>(g_hydro_telemetry[0]) / 10.0f);
+  Serial.printf("  %-14s %6.1f C   (reported by us)\n", "tank",
+                static_cast<int16_t>(g_hydro_telemetry[1]) / 10.0f);
+  Serial.printf("  %-14s 0x%04X\n", "status", g_hydro_telemetry[2]);
+  Serial.println();
 }
 
 void PrintCounters()
@@ -488,19 +648,29 @@ void PrintCounters()
   uint32_t now = millis();
   Serial.println("\n--- bus counters ---");
   Serial.printf("  frames seen        %lu\n", (unsigned long)g_frames_seen);
-  Serial.printf("  for another slave  %lu   (proof the pair is right)\n",
-                (unsigned long)g_not_for_us);
-  Serial.printf("  CRC errors         %lu\n", (unsigned long)g_crc_errors);
-  Serial.printf("  telemetry writes   %lu", (unsigned long)g_writes_served);
-  if (g_writes_served > 0)
+  Serial.printf("  for another node   %lu   (the probe @%d — proof the pair is right)\n",
+                (unsigned long)g_not_for_us, MODBUS_INLET_ADDRESS);
+  Serial.printf("  CRC errors         %lu   (counted only on frames addressed to us:\n",
+                (unsigned long)g_crc_errors);
+  Serial.println("                          a listener cannot judge a request glued to");
+  Serial.println("                          the reply that follows it)");
+  Serial.printf("  extension writes   %lu", (unsigned long)g_ext_writes);
+  if (g_ext_writes > 0)
   {
-    Serial.printf("   last %lu ms ago", (unsigned long)(now - g_last_write_ms));
+    Serial.printf("   last %lu ms ago", (unsigned long)(now - g_last_ext_write_ms));
   }
   Serial.println();
-  Serial.printf("  mailbox reads      %lu", (unsigned long)g_reads_served);
-  if (g_reads_served > 0)
+  Serial.printf("  extension reads    %lu", (unsigned long)g_ext_reads);
+  if (g_ext_reads > 0)
   {
-    Serial.printf("   last %lu ms ago", (unsigned long)(now - g_last_read_ms));
+    Serial.printf("   last %lu ms ago", (unsigned long)(now - g_last_ext_read_ms));
+  }
+  Serial.println();
+  Serial.printf("  hydraulic exchange %lu write / %lu read", (unsigned long)g_hydro_writes,
+                (unsigned long)g_hydro_reads);
+  if (g_hydro_writes > 0)
+  {
+    Serial.printf("   last %lu ms ago", (unsigned long)(now - g_last_hydro_ms));
   }
   Serial.println();
   Serial.printf("  exceptions sent    %lu\n", (unsigned long)g_exceptions_sent);
@@ -510,13 +680,13 @@ void PrintCounters()
     Serial.println("\n  Nothing at all on the pair. A and B swapped, no termination,");
     Serial.println("  the dryer not running, or its DE never rising.");
   }
-  else if (g_writes_served == 0 && g_not_for_us > 0)
+  else if (g_ext_writes == 0 && g_not_for_us > 0)
   {
-    Serial.printf("\n  Traffic for other slaves but none for @%d: the dryer is not\n",
+    Serial.printf("\n  Traffic for other nodes but none for @%d: the dryer is not\n",
                   MODBUS_EXTENSION_ADDRESS);
     Serial.println("  addressing this module. Check MODBUS_EXTENSION_ADDRESS on both sides.");
   }
-  else if (g_writes_served > 0 && g_reads_served == 0)
+  else if (g_ext_writes > 0 && g_ext_reads == 0)
   {
     Serial.println("\n  The write lands and the read never comes. The dryer skips the");
     Serial.println("  mailbox read when the write fails — but this one did not fail,");
@@ -543,7 +713,7 @@ void PrintWiring()
 
 void PrintHelp()
 {
-  Serial.println("Keys — a value may follow, e.g. `t 38.5`:");
+  Serial.println("Extension port @2 — a value may follow, e.g. `t 38.5`:");
   Serial.println("  s        post STOP");
   Serial.println("  t <C>    post a temperature setpoint");
   Serial.println("  h <%>    post a humidity setpoint");
@@ -556,6 +726,18 @@ void PrintHelp()
   Serial.println();
   Serial.println("  c        clear the mailbox");
   Serial.println("  d        dump the last telemetry again");
+  Serial.println();
+  Serial.println("Hydraulic module @10 — what it reports back to the dryer:");
+  Serial.println("  w <C>    water temperature");
+  Serial.println("  k <C>    tank temperature");
+  Serial.println("  b <n>    status word, decimal or 0x hex");
+  Serial.println("  g        show the module's state and what the dryer asks of it");
+  Serial.println();
+  Serial.println("Both:");
+  Serial.println("  e        take the extension off the bus, or put it back");
+  Serial.println("  u        take the hydraulic module off, or put it back");
+  Serial.println("           — silence is how the dryer's 30 s timeout and its backoff");
+  Serial.println("             get tested without unplugging anything");
   Serial.println("  n        bus counters");
   Serial.println("  ?        this help");
   Serial.println();
@@ -564,7 +746,7 @@ void PrintHelp()
 // Reads one console line: a command letter and an optional number.
 void PollConsole()
 {
-  static char line[32];
+  static char    line[32];
   static uint8_t length = 0;
 
   while (Serial.available() > 0)
@@ -588,7 +770,8 @@ void PollConsole()
     length = 0;
 
     char  key = line[0];
-    float argument = atof(&line[1]); // 0 when nothing follows
+    float argument = atof(&line[1]);                     // 0 when nothing follows
+    long  integer = strtol(&line[1], nullptr, 0);        // base 0: 0x.. understood
 
     switch (key)
     {
@@ -603,6 +786,30 @@ void PollConsole()
 
     case 'c': ClearMailbox(); break;
     case 'd': PrintTelemetry(); break;
+
+    case 'w': SetHydraulicValue(0, argument, "water temperature"); break;
+    case 'k': SetHydraulicValue(1, argument, "tank temperature"); break;
+    case 'b': SetHydraulicStatus(static_cast<uint16_t>(integer)); break;
+    case 'g': PrintHydraulicState(); break;
+
+    case 'e':
+      g_extension_online = !g_extension_online;
+      Serial.printf("\nExtension @%d is now %s.\n\n", MODBUS_EXTENSION_ADDRESS,
+                    g_extension_online ? "answering again" : "silent — expect the dryer to back off");
+      break;
+
+    case 'u':
+      g_hydraulic_online = !g_hydraulic_online;
+      Serial.printf("\nHydraulic @%d is now %s.\n", MODBUS_HYDRAULIC_ADDRESS,
+                    g_hydraulic_online ? "answering again" : "silent");
+      if (!g_hydraulic_online)
+      {
+        Serial.println("The dryer should raise hydraulic-offline within 30 s and fall back");
+        Serial.println("to electric-only — losing it degrades the dryer, it does not stop it.");
+      }
+      Serial.println();
+      break;
+
     case 'n': PrintCounters(); break;
     case '?': PrintWiring(); PrintHelp(); break;
     default:
@@ -621,7 +828,7 @@ void setup()
 
   Serial.println();
   Serial.println("========================================");
-  Serial.println("  Extension module stand-in");
+  Serial.println("  Remote module stand-in");
   Serial.println("========================================");
   Serial.println();
 
@@ -629,7 +836,7 @@ void setup()
 
   for (uint8_t i = 0; i < EXT_TELEMETRY_COUNT; i++)
   {
-    g_telemetry[i] = 0;
+    g_ext_telemetry[i] = 0;
   }
   ClearMailbox();
 
@@ -640,15 +847,21 @@ void setup()
   pinMode(RS485_DE_PIN, OUTPUT);
   digitalWrite(RS485_DE_PIN, LOW); // receive until we have something to say
 
-  Serial.printf("Listening as slave @%d at %d baud 8N1.\n",
-                MODBUS_EXTENSION_ADDRESS, MODBUS_BAUDRATE);
-  Serial.printf("  telemetry  0x%04X x%d   written by the dryer, FC16\n",
-                EXT_REG_TELEMETRY, EXT_TELEMETRY_COUNT);
-  Serial.printf("  mailbox    0x%04X x%d    read by the dryer, FC03\n",
+  Serial.printf("Answering for two slaves at %d baud 8N1.\n", MODBUS_BAUDRATE);
+  Serial.printf("  @%-3d extension   0x%04X x%-2d telemetry in, 0x%04X x%d mailbox out\n",
+                MODBUS_EXTENSION_ADDRESS, EXT_REG_TELEMETRY, EXT_TELEMETRY_COUNT,
                 EXT_REG_COMMAND, EXT_COMMAND_COUNT);
+  Serial.printf("  @%-3d hydraulic   0x%04X x2  command in, 0x%04X x3 measurements out\n",
+                MODBUS_HYDRAULIC_ADDRESS, HYDRO_REG_STATE, HYDRO_REG_WATER_TEMP);
   Serial.println();
-  Serial.println("A telemetry block should land every two seconds. If none does,");
-  Serial.println("press n before touching the wiring — it says which half is missing.");
+  Serial.printf("Water starts at %.1f C and the tank at %.1f C — figures this sketch\n",
+                static_cast<int16_t>(g_hydro_telemetry[0]) / 10.0f,
+                static_cast<int16_t>(g_hydro_telemetry[1]) / 10.0f);
+  Serial.println("invented, not measured. The hydraulic map has no sentinel for a missing");
+  Serial.println("reading, so zero would look like ice water rather than like no answer.");
+  Serial.println();
+  Serial.println("A telemetry block should land every two seconds. If none does, press n");
+  Serial.println("before touching the wiring — it says which half is missing.");
   Serial.println();
   PrintHelp();
 }
