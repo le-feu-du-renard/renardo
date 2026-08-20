@@ -7,6 +7,7 @@
 #include "Rs485Bus.h"
 #include "ModbusSensors.h"
 #include "HydraulicRemote.h"
+#include "ExtensionPort.h"
 #include "SharedSensorState.h"
 #include "OutputDriver.h"
 #include "StatusIndicator.h"
@@ -25,11 +26,12 @@
 // feedbacks took GP26/GP27, the only ADC-capable pins the Pico brings out.
 TwoWire rtc_i2c(i2c0, RTC_I2C_SDA_PIN, RTC_I2C_SCL_PIN);
 
-// RS485 — single Modbus bus (inlet probe @1 + hydraulic module @10),
-// owned exclusively by Core 1
+// RS485 — single Modbus bus (inlet probe @1 + extension port @2 + hydraulic
+// module @10), owned exclusively by Core 1
 Rs485Bus rs485(Serial2, RS485_TX_PIN, RS485_RX_PIN, RS485_DE_PIN, "rs485");
 ModbusSensors modbus_sensors(&rs485);
 HydraulicRemote hydraulic_remote(&rs485);
+ExtensionPort extension(&rs485);
 
 // Physical I/O
 OutputDriver fan_output(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, "fan");
@@ -53,8 +55,9 @@ Dryer dryer;
 
 // ========== CORE 1 ==========
 
-// Core 1 owns the RS485 bus exclusively: both probes and the hydraulic module.
-// It publishes a coherent snapshot that Core 0 reads without blocking.
+// Core 1 owns the RS485 bus exclusively: the probe, the hydraulic module and
+// the extension port. It publishes a coherent snapshot that Core 0 reads
+// without blocking.
 
 static SharedSensorState g_sensor_state;
 
@@ -63,6 +66,27 @@ static SharedSensorState g_sensor_state;
 // seqlock: a torn read simply means the command applies one cycle later.
 static volatile bool  g_hydraulic_request = false;
 static volatile float g_water_target = WATER_TARGET_DEFAULT;
+
+// Extension port, Core 0 -> Core 1: what to report on the next exchange.
+static Seqlock<ExtensionTelemetry> g_extension_telemetry;
+
+// Extension port, Core 1 -> Core 0: the command found in the mailbox, with the
+// verdict Core 1 reached on it. Validation happens on the bus side, execution on
+// the dryer side.
+struct ExtensionRequest
+{
+  ExtensionCommand command;
+  uint16_t         result;
+
+  ExtensionRequest() : result(kExtResultOk) {}
+};
+static Seqlock<ExtensionRequest> g_extension_request;
+
+// The answer going back, Core 0 -> Core 1. Two scalars written by one core and
+// read by the other, same reasoning as the hydraulic pair above: a torn read
+// only delays an acknowledgement by one cycle.
+static volatile uint16_t g_extension_ack_sequence = 0;
+static volatile uint16_t g_extension_ack_result = kExtResultOk;
 
 static volatile bool g_core0_ready = false;
 
@@ -75,15 +99,12 @@ void setup1()
   rs485.Begin(MODBUS_BAUDRATE);
   modbus_sensors.Begin();
   hydraulic_remote.Begin();
+  extension.Begin();
 }
 
 void loop1()
 {
   modbus_sensors.Poll();
-
-  hydraulic_remote.SetState(g_hydraulic_request);
-  hydraulic_remote.SetWaterTarget(g_water_target);
-  hydraulic_remote.Update();
 
   const SensorReading &inlet = modbus_sensors.GetReading();
 
@@ -92,11 +113,36 @@ void loop1()
   snapshot.inlet_humidity     = inlet.humidity;
   snapshot.inlet_updated_ms   = inlet.last_success_ms;
   snapshot.inlet_valid        = inlet.valid;
+  // From the previous cycle's exchange, one cycle old on purpose — see below.
   snapshot.water_temperature  = hydraulic_remote.GetWaterTemperature();
   snapshot.tank_temperature   = hydraulic_remote.GetTankTemperature();
   snapshot.hydraulic_available = hydraulic_remote.IsAvailable();
 
+  // Published before the two remote modules are polled, not after. A silent
+  // module still costs one 2 s response timeout on the cycle it is retried, and
+  // Core 0 cuts the heating once the probe reading ages past SENSOR_TIMEOUT_MS —
+  // so the probe reading must not sit here waiting behind them. The water
+  // figures going out one cycle stale is the price, and it buys nothing back to
+  // pay it: they only reach the screen, and availability is judged on 30 s.
   g_sensor_state.Publish(snapshot);
+
+  hydraulic_remote.SetState(g_hydraulic_request);
+  hydraulic_remote.SetWaterTarget(g_water_target);
+  hydraulic_remote.Update();
+
+  ExtensionTelemetry telemetry;
+  g_extension_telemetry.Read(telemetry);
+  telemetry.ack_sequence = g_extension_ack_sequence;
+  telemetry.ack_result   = g_extension_ack_result;
+  extension.SetTelemetry(telemetry);
+
+  if (extension.Update())
+  {
+    ExtensionRequest request;
+    request.command = extension.GetPendingCommand();
+    request.result  = extension.GetPendingResult();
+    g_extension_request.Publish(request);
+  }
 
   delay(SENSOR_UPDATE_INTERVAL);
 }
@@ -244,6 +290,11 @@ static void CommandDamper(bool extraction)
 static uint32_t last_sensor_log = 0;
 static SensorSnapshot g_sensors;   // latest snapshot, refreshed every loop
 
+// Whether the interlock below currently permits heating. Kept at file scope so
+// the extension telemetry can report the same verdict the heaters act on rather
+// than recomputing it and drifting from it.
+static bool g_inlet_fresh = false;
+
 static void UpdateSensors()
 {
   uint32_t now = millis();
@@ -257,11 +308,11 @@ static void UpdateSensors()
   // goes silent, its last value would otherwise stay frozen forever and the
   // heaters would keep chasing a stale reading. v3 declared both
   // SENSOR_TIMEOUT_MS and SetElectricEnabled() for this and wired neither.
-  bool inlet_fresh = g_sensors.inlet_valid &&
-                     (now - g_sensors.inlet_updated_ms) < SENSOR_TIMEOUT_MS;
+  g_inlet_fresh = g_sensors.inlet_valid &&
+                  (now - g_sensors.inlet_updated_ms) < SENSOR_TIMEOUT_MS;
 
   TemperatureManager *temperature_manager = dryer.GetTemperatureManager();
-  temperature_manager->SetHeatingPermitted(inlet_fresh);
+  temperature_manager->SetHeatingPermitted(g_inlet_fresh);
 
   // The hydraulic module is optional at runtime: losing it degrades to
   // electric-only rather than stopping the session.
@@ -483,6 +534,21 @@ static void OnSettingsChanged()
   settings_store.SaveSettings(settings);
 }
 
+// Same, minus the flash write, for a setpoint that arrived over the extension
+// port. The menu commits one value per knob click and a write per click is
+// nothing; a module is free to send a new setpoint every cycle, and writing
+// flash every two seconds would wear the part out for no gain. The value applies
+// at once either way — only the record is written lazily, by
+// UpdateSettingsPersistence() below.
+static bool g_settings_dirty = false;
+
+static void OnSettingsChangedDeferred()
+{
+  dryer.ApplySettings(settings, g_rtc_available);
+  g_water_target = settings.water_target;
+  g_settings_dirty = true;
+}
+
 // DisplayModel::phase carries a DryerPhase, and TftDisplay indexes its table of
 // phase names and colours with it. The renderer is deliberately unaware of
 // SessionManager — this is the seam where the two meet, so this is where the
@@ -618,6 +684,134 @@ static void UpdateSessionPersistence()
     return;
   last_session_save = now;
   SaveSessionNow();
+}
+
+// Flushes a settings record changed by something other than the menu — today,
+// only the extension port. Bounded to one write per SETTINGS_SAVE_INTERVAL
+// however fast the commands arrive.
+static uint32_t last_settings_save = 0;
+
+static void UpdateSettingsPersistence()
+{
+  if (!g_settings_dirty)
+  {
+    return;
+  }
+
+  uint32_t now = millis();
+  if (now - last_settings_save < SETTINGS_SAVE_INTERVAL)
+    return;
+  last_settings_save = now;
+
+  g_settings_dirty = false;
+  settings_store.SaveSettings(settings);
+  Logger::Info("Settings persisted after a remote change");
+}
+
+// ========== EXTENSION PORT ==========
+
+static uint32_t last_extension_telemetry = 0;
+static ExtensionCommandFilter g_extension_filter;
+
+// Assembles what the module is told. Deliberately not the display model: the
+// screen shows a subset, and tying the two together would leave one of them
+// carrying fields for the other's benefit.
+static void UpdateExtensionTelemetry()
+{
+  uint32_t now = millis();
+  if (now - last_extension_telemetry < SENSOR_UPDATE_INTERVAL)
+    return;
+  last_extension_telemetry = now;
+
+  const AirDamper *damper = dryer.GetAirDamper();
+
+  ExtensionTelemetry telemetry;
+
+  telemetry.inlet_temperature  = g_sensors.inlet_temperature;
+  telemetry.inlet_humidity     = g_sensors.inlet_humidity;
+  telemetry.water_temperature  = g_sensors.water_temperature;
+  telemetry.tank_temperature   = g_sensors.tank_temperature;
+  telemetry.target_temperature = dryer.GetTargetTemperature();
+  telemetry.target_humidity    = dryer.GetHumidityManager()->GetTargetHumidity();
+
+  // NAN already when a register has no usable feedback, which encodes to the
+  // sentinel — a dryer with one register reports no recycling position rather
+  // than a believable zero.
+  telemetry.extraction_position = damper->Extraction().GetPositionPercent();
+  telemetry.recycling_position  = damper->Recycling().GetPositionPercent();
+
+  telemetry.session_elapsed_s = dryer.GetTotalElapsedTime();
+  telemetry.uptime_s          = now / 1000;
+  telemetry.phase             = static_cast<uint8_t>(dryer.GetCurrentPhase());
+
+  telemetry.running          = dryer.IsRunning();
+  telemetry.fan_on           = dryer.GetFanOutput() > 0.5f;
+  telemetry.electric_on      = dryer.GetHeaterOutput() > 0.5f;
+  telemetry.hydraulic_on     = dryer.GetHydraulicOn();
+  telemetry.hydraulic_online = g_sensors.hydraulic_available;
+  telemetry.damper_open      = dryer.GetDamperOutput();
+  telemetry.sensor_fault     = !g_inlet_fresh;
+  telemetry.airflow_fault    = dryer.GetAirflowBlocked();
+  telemetry.feedback_fault   = dryer.GetDamperFeedbackFault();
+
+  // ack_sequence and ack_result are filled in on Core 1, which owns the answer.
+
+  g_extension_telemetry.Publish(telemetry);
+}
+
+// Executes at most one command per mailbox sequence.
+//
+// The filter lives here rather than on the bus side because this is where the
+// command takes effect: Core 1 republishes whatever the mailbox holds on every
+// exchange, and without this a resident command would fire every two seconds
+// forever.
+static void UpdateExtensionCommands()
+{
+  ExtensionRequest request;
+  g_extension_request.Read(request);
+
+  if (!g_extension_filter.ShouldExecute(request.command.sequence))
+  {
+    return;
+  }
+  g_extension_filter.MarkExecuted(request.command.sequence);
+
+  uint16_t result = request.result;
+
+  if (result == kExtResultOk)
+  {
+    switch (request.command.opcode)
+    {
+    case kExtCmdStop:
+      // Through Dryer::Stop() like every other route, so the cooldown runs.
+      dryer.Stop();
+      Logger::Info("Extension: STOP accepted (sequence %d)", request.command.sequence);
+      break;
+
+    case kExtCmdSetTemp:
+      settings.target_temperature = request.command.argument;
+      OnSettingsChangedDeferred();
+      Logger::Info("Extension: target %F C (sequence %d)",
+                   request.command.argument, request.command.sequence);
+      break;
+
+    case kExtCmdSetHumidity:
+      settings.target_humidity = request.command.argument;
+      OnSettingsChangedDeferred();
+      Logger::Info("Extension: target %F%%RH (sequence %d)",
+                   request.command.argument, request.command.sequence);
+      break;
+
+    default:
+      // kExtCmdNone reached here only if the sequence moved without an opcode.
+      break;
+    }
+  }
+
+  // Answered whatever the verdict. A module that never learns its command was
+  // refused repeats it forever, waiting for an acknowledgement that never comes.
+  g_extension_ack_sequence = request.command.sequence;
+  g_extension_ack_result   = result;
 }
 
 // ========== DIAGNOSTICS ==========
@@ -759,12 +953,15 @@ void loop()
 
   UpdateSensors();
   UpdateInputs();
+  UpdateExtensionCommands();
   dryer.Update();
   UpdateOutputs();
   UpdateStatusLed();
   UpdateDamperPosition();
   UpdateDisplay();
+  UpdateExtensionTelemetry();
   UpdateSessionPersistence();
+  UpdateSettingsPersistence();
   UpdateDiagnostics();
 
   delay(10);
