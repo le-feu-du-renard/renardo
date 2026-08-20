@@ -38,6 +38,8 @@ Environments defined in `platformio.ini`:
 | `rs485_test` | Raspberry Pi Pico H | Modbus probes, address and baud sweeps |
 | `damper_test` | Raspberry Pi Pico H | Damper command, relay and position feedback |
 | `output_test` | Raspberry Pi Pico H | The three command outputs, one at a time |
+| `panel_test` | Raspberry Pi Pico H | START/STOP buttons and the two status LEDs |
+| `adc_test` | Raspberry Pi Pico H | One ADC pin as a raw count and as volts |
 
 The bring-up sketches live in [bringup/](bringup/), outside `src/`, so the
 firmware build needs no exclusion list and nothing that only exists to be

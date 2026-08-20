@@ -24,12 +24,17 @@ v3 panel control.
 - [x] Documentation rewritten for v4
 - [x] Drop the LoRa radio entirely — the remote link becomes an RS485 extension
       port, freeing seven GPIOs, the SPI1 block and the RadioLib dependency
+- [x] Panel controls back on three of those GPIOs: dedicated START and STOP
+      buttons in place of the single toggle, and green/red status LEDs saying
+      running, cooling, stopped and fault from across the room
 
 ### Remaining before the board is usable
 
 - [ ] Bring-up on real hardware, in the order given in HARDWARE.md
 - [ ] Confirm the ST7789 variant: orientation, colour inversion, offsets
 - [ ] Measure the three outputs at the connector before wiring the loads
+- [ ] `panel_test` on the wired panel: both LEDs dark at boot, one line per
+      press under the right name, the green readable in daylight
 - [ ] Record the damper end-stop ADC values and calibrate
 - [ ] Build the deported hydraulic module against the register map in HARDWARE.md
 

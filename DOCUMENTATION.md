@@ -356,11 +356,41 @@ typed one field at a time would otherwise pass through impossible values. A day
 beyond the end of the chosen month is corrected on commit, not while turning the
 knob. The read-only `Horloge` row shows what the chip currently holds.
 
-**The START/STOP button remains physical and always acts**, whatever is on
-screen. A single button serves both: pressing it starts a stopped dryer and
-stops a running one. It fires once per press and is ignored while held, and a
-button stuck low at boot is treated as already consumed — otherwise it would
-stop a session restored from flash the moment the board came back up.
+**START and STOP remain physical and always act**, whatever is on screen. Two
+dedicated buttons rather than one toggling both ways: a press means the same
+thing whatever the dryer is doing, which is what matters for the hand reaching
+for STOP. Each fires once per press and is ignored while held, and a button
+stuck low at boot is treated as already consumed — otherwise a stuck STOP would
+end a session restored from flash the moment the board came back up.
+
+STOP is read first, so pressing both at once stops the dryer. Asking for the
+state the dryer is already in does nothing, and the start preconditions — the
+airflow interlock and a usable register feedback — stay inside `Dryer::Start()`,
+so every route into a session goes through the same door.
+
+## Status LEDs
+
+Two LEDs on the panel, green and red, say what the machine is doing from across
+the room:
+
+| State | Green | Red |
+|---|---|---|
+| running | steady | out |
+| cooling down | blinking | out |
+| stopped | out | steady |
+| fault | out | blinking |
+
+No state leaves both dark, so an unpowered board does not look like a dryer at
+rest. The cooldown is the fan still turning after a stop, for
+`FAN_COOLDOWN_DURATION_S` — a blinking green rather than the steady red of a
+machine that has actually finished.
+
+A fault wins over a running session: a silent probe blocks the heat sources but
+not the fan, so the dryer can be turning while something is wrong, and that is
+when the panel must say so. Three conditions light it — no airflow, a silent
+inlet probe, and a hydraulic module that stopped answering while its source is
+enabled in the menu. Nothing is reported for the first 15 s after boot, where
+neither the probe nor the hydraulic module has answered yet.
 
 ---
 

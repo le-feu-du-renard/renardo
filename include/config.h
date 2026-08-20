@@ -40,9 +40,48 @@
 // HARDWARE.md. Flip it if encoder_test reports CCW while you turn right.
 #define ENCODER_REVERSED true
 
-// Single START/STOP button (active LOW, internal pullup).
-// One press starts a stopped dryer, the next stops a running one.
+// Panel controls — two dedicated buttons and two status LEDs, on one contiguous
+// block of header pins, 16 to 20, with the ground in the middle:
+//
+//   16  GP12  green LED anode
+//   17  GP13  red LED anode
+//   18  GND   both LED cathodes and both button commons
+//   19  GP14  START
+//   20  GP15  STOP
+//
+// One flat connector for the whole panel, nothing to enjamb — the same reason
+// the encoder's switch sits on GP8 rather than GP9 above.
+
+// START and STOP, both active LOW with internal pullups. Dry contacts to
+// ground: the internal pullup is the only pull there is, as on the encoder.
+//
+// v4 shipped with a single button toggling the session, and GP14 is still that
+// button's wire — it now only starts. A toggle answers the wrong question in
+// front of the machine: the operator reaching for it wants to *stop*, and has
+// to know what the dryer is currently doing to predict what the press will do.
+// Two dedicated buttons remove that inference. A press on STOP stops, whatever
+// the state, and neither button can be the other by mistake.
 #define BTN_START_PIN 14
+#define BTN_STOP_PIN 15
+
+// Status LEDs — one green, one red, active HIGH, anode on the GPIO and cathode
+// to ground through a series resistor. Two discrete LEDs rather than one RGB
+// part: it says the same four states on one GPIO less.
+//
+//   running       green steady
+//   cooling down  green blinking
+//   stopped       red steady
+//   fault         red blinking, green off
+//
+// No state has both LEDs dark, so a dead LED or an unpowered board does not
+// look like a dryer sitting quietly at rest.
+//
+// 330 ohm in series with each, which puts ~4.2 mA through the red (Vf 1.9V) and
+// ~3.6 mA through the green (Vf 2.1V), inside the RP2040 pad's default 4 mA
+// drive. Use a *standard* green: a high-brightness InGaN one drops 3.0-3.2V and
+// would leave the resistor 0.1V to work with. See HARDWARE.md.
+#define LED_RUN_PIN 12
+#define LED_FAULT_PIN 13
 
 // RS485 — single Modbus bus carrying both probes and the hydraulic module
 // (UART1 / Serial2 → MAX3485)
@@ -239,11 +278,15 @@
 #define RTC_I2C_SDA_PIN 28
 #define RTC_I2C_SCL_PIN 21
 
-// Free for expansion: GP9, GP10, GP11, GP12, GP13, GP15 and GP22, all returned
-// by the LoRa radio when the remote link moved onto RS485. The whole SPI1 block
-// comes back with them, and so does a second UART: should the extension port
-// ever want a segment of its own rather than a slave address on the existing
-// bus, Rs485Bus::kMaxBuses is already 2 and the pins are there for it.
+// Free for expansion: GP9, GP10, GP11 and GP22, what is left of the seven pins
+// the LoRa radio returned when the remote link moved onto RS485 — the panel
+// buttons and status LEDs took GP12, GP13 and GP15. The whole SPI1 block comes
+// back with them, and so does a second UART.
+//
+// The extension port did not need any of them: it is a slave address on the
+// existing segment, so it costs no transceiver, no UART and no GPIO. They stay
+// free for whatever comes next — and should a future extension ever want a
+// segment of its own, Rs485Bus::kMaxBuses is already 2 and the pins are there.
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
@@ -253,8 +296,13 @@
 
 // Slave addresses on the single RS485 bus.
 // v4 carries one probe: the outlet one was polled and transmitted but never
-// fed a control decision, so it was dropped rather than kept warm.
+// fed a control decision, so it was dropped rather than kept warm. Address 2
+// fell vacant with it and now carries the extension port.
+//
+// Modbus RTU allows one master per segment and the dryer is it — both the probe
+// and the hydraulic module depend on that. Everything else here is a slave.
 #define MODBUS_INLET_ADDRESS 1
+#define MODBUS_EXTENSION_ADDRESS 2
 #define MODBUS_HYDRAULIC_ADDRESS 10
 
 // SHT30 RS485 sensor register map (function code FC03)
@@ -269,6 +317,22 @@
 #define HYDRO_REG_TANK_TEMP 0x0011   // read: storage tank temperature x10
 #define HYDRO_REG_STATUS 0x0012      // read: status bits
 
+// Extension port register map.
+//
+// Two blocks, both driven by the dryer because a slave never speaks unprompted:
+// the dryer pushes its telemetry with one FC16, then reads the module's command
+// mailbox with one FC03. A command therefore waits at most one poll cycle.
+//
+// The acknowledgement rides inside the telemetry block, so no separate write is
+// needed to answer a command.
+#define EXT_PROTOCOL_VERSION 1
+
+#define EXT_REG_TELEMETRY 0x0000 // write: block base
+#define EXT_TELEMETRY_COUNT 17   // registers in the block
+
+#define EXT_REG_COMMAND 0x0040 // read: mailbox base
+#define EXT_COMMAND_COUNT 4    // registers in the mailbox
+
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms
 #define SENSOR_TIMEOUT_MS 10000      // ms — heating disabled if inlet sensor silent for this long
@@ -278,6 +342,19 @@
 #define INPUT_UPDATE_INTERVAL 50     // ms (button debounce)
 #define DAMPER_SAMPLE_INTERVAL 500   // ms (position feedback, display only)
 #define DISPLAY_UPDATE_INTERVAL 100  // ms (values throttle themselves further)
+
+// Half period of the blinking LED states. Same value as TftDisplay's own blink,
+// so the panel LED and the cooldown icon on screen beat together.
+#define STATUS_BLINK_INTERVAL 500 // ms
+
+// How long after boot a fault is held back from the LED.
+//
+// The inlet probe and the hydraulic module are both silent until Core 1 has
+// completed its first RS485 cycle, so every freshly booted dryer is briefly in
+// "fault" by the letter of the test. Long enough to cover SENSOR_UPDATE_INTERVAL
+// several times over, short enough that a genuine fault present at power-up is
+// still announced while the operator is standing there.
+#define STATUS_FAULT_GRACE_MS 15000 // ms
 
 // ========== DRYER DEFAULT PARAMETERS ==========
 

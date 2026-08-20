@@ -9,6 +9,8 @@
 #include "HydraulicRemote.h"
 #include "SharedSensorState.h"
 #include "OutputDriver.h"
+#include "StatusIndicator.h"
+#include "StatusLed.h"
 #include "SettingsStore.h"
 #include "TftDisplay.h"
 #include "MenuSystem.h"
@@ -33,6 +35,7 @@ HydraulicRemote hydraulic_remote(&rs485);
 OutputDriver fan_output(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, "fan");
 OutputDriver damper_output(OUT_DAMPER_PIN, OUT_DAMPER_ACTIVE_LOW, "damper");
 OutputDriver electric_output(OUT_ELECTRIC_PIN, OUT_ELECTRIC_ACTIVE_LOW, "electric");
+StatusLed status_led(LED_RUN_PIN, LED_FAULT_PIN);
 InputHandler input_handler;
 TftDisplay display;
 MenuSystem menu;
@@ -133,6 +136,10 @@ static void SetupOutputs()
   fan_output.Begin();
   damper_output.Begin();
   electric_output.Begin();
+
+  // The LEDs come up with the command outputs, in the first gesture of setup():
+  // both dark, and the panel stays dark until the first UpdateStatusLed().
+  status_led.Begin();
 }
 
 static void SetupAnalogInputs()
@@ -289,20 +296,26 @@ static void UpdateInputs()
     dryer.SetOperatingMode(OperatingMode::PERFORMANCE);
   }
 
-  // The button is read before the menu and acts whatever is on screen: it is
-  // the safety control, not a menu entry. One press toggles the session.
-  if (input_handler.IsButtonPressed())
+  // The buttons are read before the menu and act whatever is on screen: they
+  // are the safety controls, not menu entries.
+  //
+  // STOP is read first and both are read every pass, so a press on each in the
+  // same window ends with the dryer stopped: whatever else is being asked of
+  // the machine, the request to stop it is the one that must land. Start() and
+  // Stop() both return immediately when the dryer is already in the state being
+  // asked for, so a press that changes nothing costs nothing.
+  bool stop_pressed  = input_handler.IsStopPressed();
+  bool start_pressed = input_handler.IsStartPressed();
+
+  if (stop_pressed)
   {
-    if (dryer.IsRunning())
-    {
-      Logger::Info("Button pressed — stopping session");
-      dryer.Stop();
-    }
-    else
-    {
-      Logger::Info("Button pressed — starting session");
-      dryer.Start();
-    }
+    Logger::Info("STOP pressed");
+    dryer.Stop();
+  }
+  else if (start_pressed)
+  {
+    Logger::Info("START pressed");
+    dryer.Start();
   }
 
   int32_t detents = input_handler.ConsumeEncoderDelta();
@@ -332,6 +345,35 @@ static void UpdateOutputs()
 
   // Hand the hydraulic on/off request to the core that owns the RS485 bus.
   g_hydraulic_request = dryer.GetHydraulicOn();
+}
+
+// ========== STATUS LEDS ==========
+
+// Runs every loop rather than on an interval of its own: Apply() only touches a
+// pin whose level changes, and the blink needs a finer resolution than the
+// display's 100 ms. What is logged is the state changing, once — never the
+// blink.
+static void UpdateStatusLed()
+{
+  uint32_t now = millis();
+
+  // Same expression as DisplayModel::fan_cooling below: the fan outliving a
+  // stopped session is the cooldown.
+  bool fan_active = dryer.GetFanOutput() > 0.0f;
+
+  DryerStatus status =
+      ResolveStatus(dryer.IsRunning(), fan_active, dryer.HasFault(), now);
+
+  static DryerStatus last_status = DryerStatus::kStopped;
+  static bool        status_seen = false;
+  if (!status_seen || status != last_status)
+  {
+    status_seen = true;
+    last_status = status;
+    Logger::Info("Status: %s", StatusName(status));
+  }
+
+  status_led.Apply(PatternFor(status, now));
 }
 
 // ========== DAMPER POSITION FEEDBACK ==========
@@ -690,8 +732,11 @@ void setup()
   last_session_save = millis();
 
   // Sync the last_* tracking variables in UpdateOutputs() with the pin levels
-  // established by SetupOutputs().
+  // established by SetupOutputs(), and light the panel for the state that was
+  // just restored — the splash is still up, and the LEDs are what says whether
+  // the board came back into a running session.
   UpdateOutputs();
+  UpdateStatusLed();
 
   Logger::Info("Setup complete — running=%s", was_running ? "YES" : "NO");
 
@@ -716,6 +761,7 @@ void loop()
   UpdateInputs();
   dryer.Update();
   UpdateOutputs();
+  UpdateStatusLed();
   UpdateDamperPosition();
   UpdateDisplay();
   UpdateSessionPersistence();

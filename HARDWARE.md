@@ -4,16 +4,17 @@ Controller for the renard'o dryer, built on a **Raspberry Pi Pico H** (RP2040, n
 WiFi). Everything that leaves the board leaves it over the **RS485 bus**, which
 carries the probe, the hydraulic module, and the extension port to come.
 
-> The v3 board is gone: no more panel voltmeters, MCP23017 expander, indicator
-> LEDs, potentiometers, mode selector, TM1637 display or SD card. Everything the
-> operator sees is on the TFT, and everything they change goes through the
-> rotary encoder.
+> The v3 board is gone: no more panel voltmeters, MCP23017 expander,
+> potentiometers, mode selector, TM1637 display or SD card. Everything the
+> operator *changes* goes through the rotary encoder and the menu; what they
+> read is on the TFT, except the one thing that has to be readable from across
+> the room, which is on two LEDs.
 
 ## GPIO map
 
-19 of the 26 available GPIOs are used. **GP9, GP10, GP11, GP12, GP13, GP15 and
-GP22 are free**, returned by the LoRa radio when the remote link moved onto
-RS485. The whole SPI1 block and a second UART come back with them.
+23 of the 26 available GPIOs are used. **GP9, GP10, GP11 and GP22 are free** —
+what is left of the seven the LoRa radio returned when the remote link moved
+onto RS485. The whole SPI1 block and a second UART come back with them.
 
 | Function | GPIO | Notes |
 |---|---|---|
@@ -25,7 +26,10 @@ RS485. The whole SPI1 block and a second UART come back with them.
 | Encoder A | 6 | EC11, internal pull-up |
 | Encoder B | 7 | EC11, internal pull-up |
 | Encoder SW | 8 | EC11, internal pull-up |
-| START/STOP button | 14 | active LOW, internal pull-up, toggles the session |
+| Green status LED | 12 | active HIGH, 330 Ω to ground |
+| Red status LED | 13 | active HIGH, 330 Ω to ground |
+| START button | 14 | active LOW, internal pull-up |
+| STOP button | 15 | active LOW, internal pull-up |
 | RS485 DE/RE | 3 | HIGH = transmit |
 | RS485 TX | 4 | UART1 → MAX3485 DI |
 | RS485 RX | 5 | UART1 ← MAX3485 RO |
@@ -677,8 +681,8 @@ draws corner markers, which also reveal orientation and any row/column offset.
 ## Rotary encoder
 
 **EC11**, quadrature plus push switch. Since v4 it is the only way to change a
-setpoint: the two old buttons became a single START/STOP, everything else lives
-in the menu.
+setpoint: the panel keeps two buttons, START and STOP, and nothing else —
+everything else lives in the menu.
 
 ### Wiring
 
@@ -740,6 +744,114 @@ hides. Four checks, in order:
 4. **One press → exactly one `CLICK`.** Two per press is switch bounce; the
    30 ms debounce in `RotaryEncoder` covers a normal EC11.
 
+## Panel buttons and status LEDs
+
+Four signals on one contiguous block of header pins, 16 to 20, with the ground
+in the middle — one flat connector for the whole panel, the same reason the
+encoder's switch sits on GP8 rather than GP9:
+
+| Header | GPIO | Signal |
+|---|---|---|
+| 16 | GP12 | green LED anode, 330 Ω to ground |
+| 17 | GP13 | red LED anode, 330 Ω to ground |
+| 18 | GND | both LED cathodes **and** both button commons |
+| 19 | GP14 | START |
+| 20 | GP15 | STOP |
+
+A connector fitted one row out therefore puts all four signals on the wrong pin
+at once, which is loud rather than subtle: `panel_test` prints the resting level
+of each pin under its own name.
+
+### Two buttons, not one
+
+v4 shipped with a single button toggling the session, and GP14 is still that
+button's wire — it now only starts. A toggle answers the wrong question in front
+of the machine: the operator reaching for it wants to *stop*, and has to know
+what the dryer is currently doing to predict what the press will do. Two
+dedicated buttons remove that inference, and neither can be the other by
+mistake.
+
+Both are dry contacts to ground with no external resistor: the RP2040's internal
+pull-up is the only pull there is, as on the encoder. Both are debounced 50 ms
+by `PushButton` and fire once per press, however long they are held.
+
+STOP is read first every pass, so pressing both within one debounce window ends
+with the dryer stopped. `Dryer::Start()` and `Dryer::Stop()` each return
+immediately when the dryer is already in the state being asked for, so a press
+that changes nothing costs nothing — and the start preconditions stay where they
+were, inside `Dryer::Start()`, whatever route asks for a session.
+
+### Two LEDs, not one RGB
+
+Two discrete LEDs say the four states on one GPIO less than an RGB part would,
+and they are what the machine can be read by from across the room:
+
+| State | Green | Red |
+|---|---|---|
+| running | steady | out |
+| cooling down (`FAN_COOLDOWN_DURATION_S`) | blinking | out |
+| stopped | out | steady |
+| fault | out | blinking |
+
+No state leaves both LEDs dark, so an unpowered board or a dead LED does not
+look like a dryer sitting quietly at rest. The blink is 500 ms on, 500 ms off —
+the same half period as the screen's own blink, so the panel LED and the
+cooldown icon beat together.
+
+The fault wins over a running session. A stale probe blocks the heat sources but
+not the fan, so the dryer can be turning while something is wrong, and that is
+precisely when the panel must say so rather than show a reassuring steady green.
+Three conditions light it: **no airflow** (both registers shut), **a silent
+inlet probe** (`SENSOR_TIMEOUT_MS`), and **a hydraulic module that stopped
+answering** — the last only when the hydraulic source is enabled in the menu,
+since a dryer fitted without one would otherwise blink red for ever. An unusable
+register feedback is deliberately not among them: it refuses a start and says so
+on screen, but nothing is wrong with a machine standing there stopped.
+
+Nothing is reported for the first 15 s after boot (`STATUS_FAULT_GRACE_MS`).
+The probe and the hydraulic module are both silent until Core 1 has completed
+its first RS485 cycle, so every freshly booted dryer is in fault by the letter
+of the test — that is a boot, not a fault.
+
+### Sizing the series resistors
+
+Straight off the GPIO, one resistor per LED, cathode to ground. At 3.3 V:
+
+| LED | Vf | R | I |
+|---|---|---|---|
+| red | ~1.9 V | 330 Ω | ~4.2 mA |
+| green (standard) | ~2.1 V | 330 Ω | ~3.6 mA |
+
+One value for both keeps the bill of materials short; drop the green to 220 Ω
+(~5.5 mA) if it looks pale in daylight. That is inside the RP2040 pad's default
+4 mA drive strength and well under its 12 mA absolute maximum.
+
+**Use a standard green** — GaP or AlInGaP, 2.0–2.2 V. A high-brightness InGaN
+green drops 3.0–3.2 V, which leaves 0.1–0.3 V across the resistor: the current
+would then be set by the part's forward-voltage tolerance rather than by
+anything on the board, and two LEDs from the same reel would not match.
+
+Panel-mount 12 V or 24 V indicators are a different fitting altogether: they
+cannot be driven from a pad and would need a BC337 stage like the three command
+outputs. Decide that before buying the indicators, not after.
+
+### Bring-up
+
+`pio run -e panel_test -t upload -t monitor` reads all four pins before it
+drives anything, then names each button as it is pressed and walks the LEDs
+through the four states, 4 s each. Four checks:
+
+1. **Both LEDs dark at boot**, before `pinMode` runs. A LED lit here is wired to
+   3.3 V rather than to its GPIO, and is on for the whole boot window of every
+   reset.
+2. **Both buttons read released** with nobody touching them. One reading LOW is
+   a stuck contact — or that signal shorted to the ground at header 18, which is
+   what a connector one row out does.
+3. **One press, one line, under the right name.** Two lines per press is bounce;
+   the wrong name is two swapped signal wires.
+4. **Press `b` and look at the panel in daylight.** Both LEDs on: if the green
+   is the one that disappears, it is the wrong green or the wrong resistor.
+
 ## Power supply
 
 | Rail | Use |
@@ -757,7 +869,9 @@ The 3.3 V rail now carries two small, steady loads and no transmitter: the
 2. TFT: mire, fonts, icons. Confirm orientation and colours.
 3. Encoder: detents and click, no phantom steps — `encoder_test` first, then
    the menu itself.
-   Button: one press starts, the next stops — check it never double-fires.
+   Panel: `panel_test` — both LEDs dark before `pinMode`, both buttons released
+   at rest, one line per press under the right name, and the four LED states
+   legible in daylight.
 4. Outputs: `output_test`, one at a time, **measuring at the connector before
    wiring the loads** — this is where a polarity mistake is caught, and where
    the resting level of the three command pins is read back before anything

@@ -70,6 +70,22 @@ public:
     return air_damper_.GetCount() >= 2 && !air_damper_.IsFeedbackUsable();
   }
 
+  // The three conditions the panel LED reports as a fault: no airflow, a probe
+  // that has gone silent, and a hydraulic module that stopped answering.
+  //
+  // A missing hydraulic module only counts when the source is enabled in the
+  // menu — a dryer fitted with no hydraulic at all would otherwise blink red
+  // for ever. The unusable damper feedback is deliberately absent: it refuses a
+  // start and says so on screen, but nothing is wrong with the machine that is
+  // standing there stopped.
+  bool HasFault() const
+  {
+    return air_damper_.IsAirflowBlocked() ||
+           !temperature_manager_.GetHeatingPermitted() ||
+           (temperature_manager_.GetHydraulicEnabled() &&
+            !temperature_manager_.GetHydraulicOnline());
+  }
+
   // Manager access
   TemperatureManager *GetTemperatureManager() { return &temperature_manager_; }
   HumidityManager    *GetHumidityManager()    { return &humidity_manager_; }

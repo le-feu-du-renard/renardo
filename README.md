@@ -2,7 +2,8 @@
 
 Food dehydrator controller built on a Raspberry Pi Pico H. Hybrid heating
 (hydraulic + electric), an RS485 probe and a deported hydraulic module, TFT
-interface driven by a rotary encoder and a single button.
+interface driven by a rotary encoder, START and STOP buttons, and two status
+LEDs.
 
 ## Project Philosophy
 
