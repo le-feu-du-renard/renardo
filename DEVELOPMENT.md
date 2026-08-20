@@ -36,6 +36,7 @@ Environments defined in `platformio.ini`:
 | `tft_test` | Raspberry Pi Pico H | Panel identification and test patterns |
 | `encoder_test` | Raspberry Pi Pico H | Encoder edges, detents and click |
 | `rs485_test` | Raspberry Pi Pico H | Modbus probes, address and baud sweeps |
+| `extension_test` | A **second** Raspberry Pi Pico H | Plays the extension module, on the far end of the bus |
 | `damper_test` | Raspberry Pi Pico H | Damper command, relay and position feedback |
 | `output_test` | Raspberry Pi Pico H | The three command outputs, one at a time |
 | `panel_test` | Raspberry Pi Pico H | START/STOP buttons and the two status LEDs |

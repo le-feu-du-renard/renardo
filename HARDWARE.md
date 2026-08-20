@@ -672,6 +672,35 @@ retried once every 30 s rather than every cycle, so leaving the port empty costs
 the poll loop almost nothing, and a module plugged in later is picked up without
 a reflash.
 
+### Bring-up
+
+`pio run -e extension_test -t upload -t monitor`, on a **second Pico** with its
+own MAX3485, landed on the same A/B pair. It is the module the dryer thinks it is
+talking to: it accepts the telemetry block, decodes it with the production
+`ExtensionProtocol`, and posts back whatever command you type. Building it at all
+is the check that the header really is compilable by a module.
+
+A telemetry block should land every two seconds and print decoded. Then, from the
+console:
+
+- `s` posts a STOP, `t 38.5` a temperature setpoint, `h 55` a humidity one. The
+  acknowledgement comes back inside the next telemetry block, named.
+- `r`, `o`, `x` and `v` post the four refusals — START, out of range, unknown
+  opcode, wrong version. Each should come back with its own result code rather
+  than being silently swallowed or silently obeyed.
+- `n` prints the bus counters, and is the first thing to press when nothing
+  arrives: it separates "no traffic at all" from "traffic for other slaves but
+  none for us" from "the write lands and the read never comes", which are three
+  different faults.
+
+Both boards must **share a ground**: RS485 is differential, not isolated. 120 Ω
+at the two ends of the segment and nowhere in between — a third resistor in the
+middle is the same fault as none at all.
+
+Leaving an accepted command sitting in the mailbox is deliberate, and is the
+check on the replay filter: the dryer re-reads it every cycle and must act on it
+exactly once.
+
 ## Optional RTC
 
 DS1307 on I2C1, address 0x68. Probed at startup.
@@ -977,5 +1006,5 @@ The 3.3 V rail now carries two small, steady loads and no transmitter: the
    other — then a full travel on the `l` cycle to record each register's two
    end-stop values, and calibrate both from the menu.
 6. RS485: `rs485_test` first, then the probes in the firmware, then the
-   hydraulic module. This is the last step — everything the dryer talks to now
-   lands on this bus.
+   hydraulic module, then `extension_test` on a second Pico. This is the last
+   step — everything the dryer talks to now lands on this bus.
