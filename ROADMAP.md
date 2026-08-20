@@ -27,6 +27,9 @@ v3 panel control.
 - [x] Panel controls back on three of those GPIOs: dedicated START and STOP
       buttons in place of the single toggle, and green/red status LEDs saying
       running, cooling, stopped and fault from across the room
+- [x] The RS485 extension port itself: telemetry block and command mailbox on
+      address 2, a `RemoteModule` base shared with the hydraulic client, and a
+      backoff that stops an unplugged module from stalling the poll loop
 
 ### Remaining before the board is usable
 
@@ -37,6 +40,8 @@ v3 panel control.
       press under the right name, the green readable in daylight
 - [ ] Record the damper end-stop ADC values and calibrate
 - [ ] Build the deported hydraulic module against the register map in HARDWARE.md
+- [ ] Exercise the extension port against a Modbus slave simulator on address 2
+      before any module firmware exists
 
 ## Open questions
 
@@ -48,44 +53,48 @@ v3 panel control.
       19 minutes. Worth keeping now that the hydraulic timers are 300 s?
 - [ ] Day/night water setpoint for the hydraulic module when an RTC is fitted.
 
-## Next — the RS485 extension port
+## Done — the RS485 extension port
 
-The dryer has no remote link at all since the radio came out. This is what
-replaces it, and it is deliberately more than a radio: one connector on which
-optional modules hang — data logger, energy metering, an SD card, a LoRa or
-WiFi gateway for whoever still wants one. The dryer gains a feature by gaining
-a module, and none of them is ever load-bearing for regulation.
+What replaced the radio, and deliberately more than one: a connector on which
+optional modules hang — data logger, energy metering, an SD card, a LoRa or WiFi
+gateway for whoever still wants one. The dryer gains a feature by gaining a
+module, and none of them is ever load-bearing for regulation. The register map is
+in [HARDWARE.md](HARDWARE.md); the wire format both sides compile is
+`include/ExtensionProtocol.h`.
 
-**The dryer stays the Modbus RTU master on the single bus.** Modbus allows one
-master per segment, and the probe @1 and the hydraulic module @10 both depend on
-the dryer being it. So the extension is **another slave**, on a free address —
-2 to 9 or 11 upwards, address 2 having been vacant since the outlet probe was
-dropped. No second transceiver, no second UART, no GPIO: this costs the board
-nothing.
+**The dryer stays the Modbus RTU master on the single bus**, so the extension is
+another slave — address 2, vacant since the outlet probe was dropped. No second
+transceiver, no second UART, no GPIO. Telemetry goes out on one FC16, the command
+mailbox comes back on one FC03, and the acknowledgement rides inside the next
+telemetry block rather than costing a write of its own.
 
-- **Uplink.** The dryer pushes its telemetry into the module's registers with a
-  single `WriteMultipleRegisters` (FC16), exactly as `HydraulicRemote::Update()`
-  pushes state and setpoint together.
-- **Downlink.** A mailbox: the dryer reads a command block with FC03 on each
-  cycle and writes back an acknowledgement register. A slave cannot speak
-  unprompted, so a command waits at most one `loop1()` cycle —
-  `SENSOR_UPDATE_INTERVAL`, 2 s. The radio it replaces answered once a minute.
-- **Reused as-is.** `Rs485Bus` unchanged; the `HydraulicRemote` shape (own
-  address, `IsAvailable()` on a timeout, error counter); the register map
-  declared in `config.h` beside the `HYDRO_REG_*` block; and the cross-core
-  request pattern in `main.cpp` — the bus belongs to Core 1 alone, so commands
-  arrive there and cross over the same way `g_hydraulic_request` does.
-- **Where the register map comes from.** The v3 telemetry frame already settled
-  what is worth sending: probe readings, both water temperatures, setpoints,
-  phase, elapsed time, actuator flags, both register openings, each with a
-  sentinel distinct from a real zero. It is in git, in `include/LoraProtocol.h`
-  on the commit before its removal — start from `TelemetryData` rather than from
-  a blank page.
+Three things the plan did not foresee:
 
-Open with it: whether commands need the sequence-number replay filter the radio
-carried. A byte-summed frame over the air could arrive twice; a Modbus register
-read cannot, so the filter may well be answering a question the bus no longer
-asks.
+- **The shape shared with `HydraulicRemote` was worth extracting.** Address,
+  availability timeout and error counter are the same on both, so they moved into
+  `RemoteModule`. The two clients differ only in their register blocks and in
+  which way authority runs — the dryer commands the hydraulic module and obeys
+  neither.
+- **An absent module was already stalling the poll loop**, before any extension
+  existed. ModbusMaster's response timeout is fixed at 2 s, so an unplugged
+  hydraulic module cost `loop1()` two seconds every cycle, and Core 0 cuts the
+  heating once the probe reading ages past `SENSOR_TIMEOUT_MS`. `BackoffGate`
+  retries a dead module once per interval instead of once per cycle, and
+  `loop1()` now publishes the sensor snapshot before polling either module rather
+  than after.
+- **Remote setpoints persist lazily.** A menu commit is one value per knob click;
+  a module can send one every cycle, and a flash write every two seconds would
+  wear the part out for nothing.
+
+The question this section left open is settled, in the opposite direction to the
+guess. The replay filter **is** still needed: a Modbus read cannot duplicate, but
+the dryer re-reads the same mailbox every cycle and would replay a resident
+command forever. With neither loss nor reordering on the bus it collapses to an
+inequality, so the signed window the radio's byte-wide sequence needed is gone.
+
+Starting a session is the one thing the port cannot do. The opcode is reserved
+and refused every time, so a module author gets an answer rather than silence,
+but no remote launches a dryer nobody is standing in front of.
 
 ## Later
 

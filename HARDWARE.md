@@ -426,12 +426,14 @@ exclusively.
 | Address | Device | Registers |
 |---|---|---|
 | 1 | SHT30 probe, injection | FC03 `0x0000` %RH ×10, `0x0001` °C ×10 |
+| 2 | Extension module, optional | see below |
 | 10 | Hydraulic module | see below |
 
 v4 carries **one probe**. The outlet one of v3 was polled and put on the air
 every minute, and nothing downstream read it: the damper follows inlet humidity,
 the heaters follow inlet temperature, and the screen has never shown it. It was
-dropped rather than kept warm — address 2 is free for whatever needs it next.
+dropped rather than kept warm, and the address it left is what the extension port
+now uses.
 
 120 Ω termination at both ends of the segment.
 
@@ -567,14 +569,108 @@ back to electric-only.
 
 ## Extension port
 
-Not built yet — the design is recorded in [ROADMAP.md](ROADMAP.md).
+One connector for optional modules — data logger, energy metering, a WiFi or
+LoRa gateway, a deported panel. The dryer gains a feature by gaining a module,
+and **none of them is ever load-bearing for regulation**. That is the difference
+with the hydraulic module above, which carries a heat source: nothing on the
+extension port can stop a session or change what the control loop does beyond
+the setpoint it is allowed to move.
 
-The short version, because it constrains the board: the extension is **another
-slave on the same RS485 segment**, not a connector of its own. Modbus RTU allows
-one master per segment and the dryer is it, so nothing on the extension port
-needs a transceiver, a UART or a GPIO beyond what the bus already has. Wiring an
-extension module means landing it on the same A/B pair as the probe and the
-hydraulic module, on a free address.
+The extension is **another slave on the same RS485 segment**, not a connector of
+its own. Modbus RTU allows one master per segment and the dryer is it, so nothing
+here needs a transceiver, a UART or a GPIO beyond what the bus already has.
+Wiring an extension module means landing it on the same A/B pair as the probe and
+the hydraulic module, on **address 2** — vacant since the outlet probe was
+dropped.
+
+A slave never speaks unprompted, so both directions are driven by the dryer. Once
+per poll cycle it writes the telemetry block with one FC16, then reads the
+command mailbox with one FC03. **A command therefore waits at most one cycle,
+2 s.** The wire format is in [`include/ExtensionProtocol.h`](include/ExtensionProtocol.h),
+which the module firmware compiles too, and the addresses in `config.h`
+(`EXT_REG_*`).
+
+### Telemetry — the dryer writes, one FC16 of 17 registers from `0x0000`
+
+| Register | Contents |
+|---|---|
+| `0x0000` | protocol version, currently 1 |
+| `0x0001` | flags, see below |
+| `0x0002` | phase — 0 stop, 1 init, 2 brassage, 3 extraction |
+| `0x0003` | inlet temperature ×10, signed |
+| `0x0004` | inlet humidity ×10 |
+| `0x0005` | circulating water temperature ×10 |
+| `0x0006` | storage tank temperature ×10 |
+| `0x0007` | temperature setpoint ×10 |
+| `0x0008` | humidity setpoint ×10 |
+| `0x0009` | extraction register opening, whole percent |
+| `0x000A` | recycling register opening, whole percent |
+| `0x000B`–`0x000C` | session seconds elapsed, high word then low |
+| `0x000D`–`0x000E` | uptime in seconds, high word then low |
+| `0x000F` | acknowledged sequence — echo of the last command acted on |
+| `0x0010` | result — 0 ok, 1 unknown opcode, 2 refused, 3 out of range, 4 version |
+
+Readings are **signed tenths** in an unsigned register: cast to `int16_t` before
+dividing, because the water loop legitimately reads below zero. A reading the
+dryer does not have is `INT16_MIN` (`0x8000`), never a zero — a probe reading
+0.0 °C must not look like an absent probe. Openings are whole percent with
+`0xFFFF` for no usable feedback; 0 % is a shut register and 100 % a legal
+reading, so the sentinel sits outside the range rather than at either end.
+
+Flag bits, `0x0001`:
+
+| Bit | Meaning |
+|---|---|
+| 0 | session running |
+| 1 | fan on |
+| 2 | electric heater on |
+| 3 | hydraulic heat on |
+| 4 | air register open (extracting) |
+| 5 | sensor fault — the inlet probe is stale and heating is inhibited |
+| 6 | hydraulic module **unreachable** (note the polarity) |
+| 7 | airflow blocked — every register reads shut |
+| 8 | a register's position readback is unusable |
+
+Bits 0-7 keep the assignments the v3 radio frame used, so a decoder written for
+it still reads them; bit 8 is new.
+
+### Commands — the dryer reads, one FC03 of 4 registers from `0x0040`
+
+| Register | Contents |
+|---|---|
+| `0x0040` | sequence — increment for each new command; 0 means the mailbox is empty |
+| `0x0041` | opcode |
+| `0x0042` | argument, signed tenths |
+| `0x0043` | protocol version the module speaks |
+
+| Opcode | Command |
+|---|---|
+| 0 | none |
+| 1 | start — **reserved and always refused** |
+| 2 | stop |
+| 3 | set temperature setpoint |
+| 4 | set humidity setpoint |
+
+**Starting a session is not available over the port.** The opcode exists so a
+module author gets `2` (refused) rather than silence, but no remote can launch a
+dryer nobody is standing in front of. Setpoints are checked against the same
+limits the menu enforces and **refused rather than clamped**, so a module is
+never told a value took when a different one did.
+
+Write the sequence **last**, after the opcode and argument, or the dryer may read
+a new sequence paired with the previous command's argument.
+
+The dryer executes one command per sequence value and answers in `0x000F` /
+`0x0010`. Repeat the command until the echoed sequence matches, then stop: the
+mailbox is re-read every cycle, and the dryer's replay filter is what keeps a
+command sitting there from firing again and again.
+
+The module needs **no watchdog of its own** — unlike the hydraulic module above,
+nothing here can leave a load energised. The dryer marks the port unavailable
+after 30 s of silence and simply stops reporting to it. An absent module is
+retried once every 30 s rather than every cycle, so leaving the port empty costs
+the poll loop almost nothing, and a module plugged in later is picked up without
+a reflash.
 
 ## Optional RTC
 

@@ -12,8 +12,8 @@
 // trampoline slots at construction, which keeps the pin an instance member and
 // leaves room for a second bus should one ever be added.
 //
-// The dryer runs a single bus carrying the two probes (@1, @2) and the remote
-// hydraulic module (@10).
+// The dryer runs a single bus carrying the inlet probe (@1), the extension port
+// (@2) and the remote hydraulic module (@10).
 //
 // All calls are blocking. A bus instance must only be used from the core that
 // owns it; there is no internal locking.
