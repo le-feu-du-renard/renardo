@@ -252,7 +252,7 @@ Système → Registres:
 | `Nb registres` | how many registers the dryer has | 1 |
 | `Sens signal` | which end of the 2-10 V output means open — **common to every register**, since they are the same actuator model | `Bas=ouvert` |
 | `Sens extrac.` / `Sens recycl.` | where each actuator's own mechanical direction switch is set | `Normal` / `Inverse` |
-| `Extrac./Recycl. mini`, `maxi` | the two raw ADC marks at the ends of that register's travel | 630 / 3104 |
+| `Extrac./Recycl. mini`, `maxi` | the two raw ADC marks at the ends of that register's travel | 641 / 3179 |
 
 The direction switch on each Belimo is the one the firmware cannot read and must
 be told about: it decides which end of its travel a register goes to under the
@@ -296,16 +296,21 @@ ratio, at least one of them is not where it claims to be.
 ±15 count band — and prints `SETTLED` when it does. A cycle that ends without
 settling says so explicitly. **Never write down a value that has not settled.**
 
-### Calibration, and the two false starts before it
+### Calibration, and the three false starts before it
 
-The extraction register reads **3104 shut, 630 open**, confirmed against a meter
-at the same node (0.49 V where the ADC reports 0.508 V). Travel is 2474 counts,
-0.7 % off theory, with 991 counts left before the ADC clips. In today's menu that
-is `mini = 630`, `maxi = 3104`, `Sens signal = Bas=ouvert`.
+The extraction register reads **3179 shut, 641 open**, both settled, on the
+repaired wiring. Travel is 2538 counts, with 916 left before the ADC clips. In
+today's menu that is `mini = 641`, `maxi = 3179`, `Sens signal = Bas=ouvert` —
+enter 640 and 3180, the nearest values the menu's step of 10 can reach; one count
+is 0.04 % of the travel.
 
-What makes those numbers trustworthy is that both ends now agree on **one
-ratio** — 0.2438 open, 0.2477 shut, against 0.2481 designed. Two earlier
-attempts did not, and each failed differently:
+What makes those numbers trustworthy is that both ends agree on **one ratio** —
+0.2583 open, 0.2537 shut, against 0.2481 designed. That is a 1.8 % disagreement,
+and it is the amount two 1 % resistors and an unregulated 3V3 pressed into
+service as the ADC reference are entitled to. Fitted as a line rather than two
+ratios: 313 counts per volt with a 14 count offset, against 308 predicted.
+
+Three earlier attempts did not agree, and each failed differently:
 
 1. **Readings taken on a moving vane.** A fixed 150 s hold is not proof of
    arrival. One end had settled, the other was still creeping, and comparing a
@@ -316,11 +321,16 @@ attempts did not, and each failed differently:
    that has not settled.**
 2. **A wiring fault on the prototype**, which made the divider measure 0.280
    with both resistors confirmed correct.
+3. **A full sweep reading 51..4095**, which is not a 2-10 V signal at all:
+   below the actuator's own floor at one end, clipping at the other. A divider
+   that is not dividing. The earlier published pair, 630 and 3104, dates from
+   before this was found, which is why it is gone rather than kept as a
+   footnote.
 
-Both were caught by the same check, and it is the one to keep: **a divider has
-exactly one ratio.** Whenever two calibration points disagree about it, at least
-one of them is not where it claims to be. Software compensation is never the
-answer.
+All three were caught by the same check, and it is the one to keep: **a divider
+has exactly one ratio.** Whenever two calibration points disagree about it by
+more than the components allow, at least one of them is not where it claims to
+be. Software compensation is never the answer.
 
 A note on the resistors, since they cost two rounds: both are 5-band and both
 were first read from the wrong end. 3.3 k is orange-orange-black-brown-brown and

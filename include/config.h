@@ -174,20 +174,25 @@
 // way round — a descending pair is now rejected as an unusable calibration.
 //
 // Through the divider those two voltages predict 616 and 3110; the bench reads
-// 630 and 3104, and the meter reads 0.49V at the tap where the ADC reports
-// 0.508V. Both ends now agree on one ratio — 0.2438 open, 0.2477 shut, against
-// 0.2481 designed — which is precisely what was missing while this was broken.
-// The travel, 2474 counts, is 0.7% off theory, and 991 counts remain before the
-// ADC clips.
+// 641 and 3179, once the wiring fault below was found and the readings were
+// allowed to settle. Both ends agree on one ratio — 0.2583 open, 0.2537 shut,
+// against 0.2481 designed — a 1.8% disagreement, which is what a pair of 1%
+// resistors and an unregulated 3V3 used as the ADC reference are entitled to.
+// Fitted as a line, that is 313 counts per volt with a 14 count offset. The
+// travel, 2538 counts, and 916 counts remain before the ADC clips.
 //
-// Getting here took two false starts, both worth recording because both are
+// Getting here took three false starts, all worth recording because all are
 // easy to repeat. The first bench run gave 1392 and 3845, from a fixed 150s hold
 // rather than from the reading going quiet: one end had arrived, the other was
 // still creeping, and comparing a mid-travel sample against an end-stop voltage
 // manufactures an offset that does not exist. damper_test now waits for a
 // settled reading and will not call anything an end stop until it stops moving.
 // The second was a genuine wiring fault on the prototype, which made the divider
-// measure 0.280 instead of 0.248 with both resistors confirmed correct.
+// measure 0.280 instead of 0.248 with both resistors confirmed correct. The
+// third read 51..4095 on a full sweep, which is not a 2-10V signal at all: below
+// the actuator's own floor at one end and clipping at the other, the signature
+// of a divider not dividing. Values 630 and 3104 date from before that one was
+// fixed, which is why they are gone.
 //
 // Both were caught by the same test, which is the one worth keeping: a divider
 // has exactly one ratio. Whenever two calibration points disagree about it, at
@@ -199,8 +204,8 @@
 // the menu by driving it to each end stop. The menu values are persisted and
 // are what the firmware actually runs on — these defaults only cover a dryer
 // that has never been calibrated.
-#define DAMPER_RAW_MIN_DEFAULT 630   // 2.00V through the divider — open, here
-#define DAMPER_RAW_MAX_DEFAULT 3104  // 10.10V — shut, here
+#define DAMPER_RAW_MIN_DEFAULT 641   // 2.00V through the divider — open, here
+#define DAMPER_RAW_MAX_DEFAULT 3179  // 10.10V — shut, here
 // Below this span the calibration is treated as invalid (feedback wire absent,
 // or the pair entered in descending order).
 #define DAMPER_CALIBRATION_MIN_SPAN 200
