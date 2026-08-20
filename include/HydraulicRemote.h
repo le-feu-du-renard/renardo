@@ -2,6 +2,7 @@
 #define HYDRAULIC_REMOTE_H
 
 #include <Arduino.h>
+#include "RemoteModule.h"
 #include "Rs485Bus.h"
 
 // Client for the remote hydraulic module on RS485 bus A.
@@ -14,11 +15,18 @@
 //
 // Register map is declared in config.h (HYDRO_REG_*) so the module firmware
 // and this client stay in agreement.
-class HydraulicRemote
+//
+// Address, health and backoff come from RemoteModule; what is left here is the
+// two register blocks and their meaning.
+class HydraulicRemote : public RemoteModule
 {
 public:
   // The module is considered unavailable after this long without an answer.
   static constexpr uint32_t kTimeoutMs = 30000;
+
+  // It carries the heat, so it is poked back to life four times more often than
+  // the extension port — losing it degrades the dryer to electric-only.
+  static constexpr uint32_t kRetryMs = 10000;
 
   explicit HydraulicRemote(Rs485Bus *bus);
 
@@ -40,25 +48,13 @@ public:
   float    GetTankTemperature()  const { return tank_temperature_; }
   uint16_t GetStatusBits()       const { return status_bits_; }
 
-  // True when the module answered within kTimeoutMs.
-  bool     IsAvailable() const;
-  uint16_t GetErrorCount() const { return error_count_; }
-
 private:
-  Rs485Bus *bus_;
-
   bool  requested_state_;
   float water_target_;
 
   float    water_temperature_;
   float    tank_temperature_;
   uint16_t status_bits_;
-
-  uint32_t last_success_ms_;
-  uint16_t error_count_;
-  bool     valid_;
-
-  static constexpr uint16_t kMaxErrors = 100;
 };
 
 #endif // HYDRAULIC_REMOTE_H
