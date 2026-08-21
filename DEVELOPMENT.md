@@ -210,7 +210,15 @@ saved, or one reset from Système → Réinit. usine.
 | Control parameters | hysteresis bands, horizons, anti-short-cycle timers |
 
 > The TFT pins are duplicated in the `TFT_eSPI` build flags in
-> `platformio.ini`. Change both together.
+> `platformio.ini`, along with `TFT_SPI_PORT=1` which puts the panel on spi1.
+> Change both together.
+
+The pin map is arranged **by side of the Pico header**, so that each module's
+signals sit on consecutive pins with the ground they need inside the block: the
+front panel, the RS485 transceiver, the display and the encoder on pins 1–20,
+and everything that leaves for the plant — contactor commands, register command
+and feedbacks, RTC — on 21–40. [HARDWARE.md](HARDWARE.md) has the full table.
+Moving a pin means checking that arrangement, not just the number.
 
 ---
 
@@ -232,13 +240,16 @@ saved, or one reset from Système → Réinit. usine.
 - Check the TFT pins in `platformio.ini` match `config.h`
 - Inverted colours or an offset image is the usual ST7789 variant question —
   try `TFT_INVERSION_ON` or a column/row offset
-- The panel owns SPI0 alone and nothing else is allowed on it, so a redraw
+- `TFT_SPI_PORT=1` must be in the build flags: the panel is on **spi1** since
+  the PCB pin map, and TFT_eSPI defaults the port to 0. Without it the library
+  drives the wrong SPI block and the screen simply stays blank
+- The panel owns SPI1 alone and nothing else is allowed on it, so a redraw
   cannot be colliding with another master; corruption that coincides with RS485
   traffic points at the power rail rather than at the bus
 
 ### Sensors not responding
 
-- Check RS485 wiring (GPIO 4/5) and the DE pin (GPIO 3)
+- Check RS485 wiring (GPIO 4/5) and the DE pin (GPIO 6)
 - Verify the Modbus address matches `MODBUS_INLET_ADDRESS`
 - Check baud rate: 9600
 - A silent inlet probe blocks all heating after `SENSOR_TIMEOUT_MS` and shows

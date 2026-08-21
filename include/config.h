@@ -5,33 +5,49 @@
 
 // ========== PINS CONFIGURATION ==========
 
-// ----- SPI0, the display alone -----
+// ----- SPI1, the display alone -----
 // Write-only, so no MISO is wired at all. Nothing else is allowed onto this bus:
 // TFT_eSPI on the RP2040 may drive the panel through the PIO rather than the
 // hardware SPI block, and a second master on the same pins would be fighting it
 // with no amount of transaction bracketing to help.
-#define SPI0_SCK_PIN 18
-#define SPI0_MOSI_PIN 19
+//
+// SPI1 rather than SPI0 since the PCB layout: the whole right-hand side of the
+// header (GP16 upwards) is now field wiring — contactors, registers, RTC — and
+// ten pins there do not stretch to the display as well. The bus moved rather
+// than the process I/O, because the display is the one peripheral whose pins are
+// a free choice within a block. SCK and MOSI are not free even so: SPI1 offers
+// SCK on GP10/GP14/GP26 and MOSI on GP11/GP15/GP27, and the GP14/GP15 pair is
+// where the encoder now sits.
+#define SPI1_SCK_PIN 10
+#define SPI1_MOSI_PIN 11
 
 // TFT display — GMT020-02-7P v1.3 (ST7789, 240x320).
-// The pins are mirrored into TFT_eSPI via build flags in platformio.ini;
-// both must be changed together.
+// The pins are mirrored into TFT_eSPI via build flags in platformio.ini —
+// including TFT_SPI_PORT=1, which is what selects spi1 — and both must be
+// changed together.
 //
-// CS sits on GP16, which is also SPI0's RX pin. That is deliberate and
-// supported: the panel never drives data back, so RX is idle, and TFT_eSPI
-// re-asserts the pin as an output after spi.begin() precisely for this case.
-// It puts the five signals on consecutive header pins 21-26 with GND at 23.
-#define TFT_CS_PIN 16
-#define TFT_DC_PIN 17
-#define TFT_RST_PIN 20
+// The six signals land on consecutive header pins 11 to 16 with GND at 13, so
+// the panel takes one flat connector. Better still, pins 14-15-16 carry SCL,
+// SDA and RES in the module's *own* silkscreen order, which the old GP16-GP20
+// block did not: three of the five wires now run straight across.
+//
+// RST is on GP12, which is also SPI1's RX pin, and CS on GP8, which is the
+// other one. Both are deliberate and harmless: the panel never drives data
+// back, so RX is never enabled — TFT_eSPI passes MISO as -1 to its SPI object —
+// and the two pins stay plain outputs.
+#define TFT_CS_PIN 8
+#define TFT_DC_PIN 9
+#define TFT_RST_PIN 12
 
 // Rotary encoder (EC11) — quadrature + push switch, all active LOW with pullups.
 //
-// SW is on GP8 rather than GP9 so the three signals plus a ground land on four
-// consecutive header pins, 8 to 11: one flat connector, nothing to enjamb.
-#define ENCODER_A_PIN 6
-#define ENCODER_B_PIN 7
-#define ENCODER_SW_PIN 8
+// A, GND, B, SW on header pins 17 to 20 — four consecutive pins carrying the
+// EC11's own terminal order, with the ground the connector needs already in the
+// middle of the block. The switch returns to that same ground, so one flat
+// four-way connector does the whole part with nothing to enjamb.
+#define ENCODER_A_PIN 13
+#define ENCODER_B_PIN 14
+#define ENCODER_SW_PIN 15
 
 // Turning the knob clockwise must count up. Which of the two quadrature pads a
 // maker calls "A" is not standardised, so a reversed knob is a property of the
@@ -41,28 +57,34 @@
 #define ENCODER_REVERSED true
 
 // Panel controls — two dedicated buttons and two status LEDs, on one contiguous
-// block of header pins, 16 to 20, with the ground in the middle:
+// block of header pins, 1 to 5, with the ground in the middle:
 //
-//   16  GP12  green LED anode
-//   17  GP13  red LED anode
-//   18  GND   both LED cathodes and both button commons
-//   19  GP14  START
-//   20  GP15  STOP
+//   1   GP0   START
+//   2   GP1   STOP
+//   3   GND   both button commons and both LED cathodes
+//   4   GP2   green LED anode
+//   5   GP3   red LED anode
 //
 // One flat connector for the whole panel, nothing to enjamb — the same reason
-// the encoder's switch sits on GP8 rather than GP9 above.
+// the encoder takes header pins 17 to 20 above.
+//
+// GP0 and GP1 are UART0's default pins, which nothing here uses: the logs go out
+// over USB CDC and the RS485 bus has UART1. Putting the buttons there does spend
+// the one place a rescue serial console could have been landed, which is the
+// price of having the panel connector at the end of the header the panel loom
+// arrives at.
 
 // START and STOP, both active LOW with internal pullups. Dry contacts to
 // ground: the internal pullup is the only pull there is, as on the encoder.
 //
-// v4 shipped with a single button toggling the session, and GP14 is still that
-// button's wire — it now only starts. A toggle answers the wrong question in
+// v4 shipped with a single button toggling the session, and START is still that
+// button — it now only starts. A toggle answers the wrong question in
 // front of the machine: the operator reaching for it wants to *stop*, and has
 // to know what the dryer is currently doing to predict what the press will do.
 // Two dedicated buttons remove that inference. A press on STOP stops, whatever
 // the state, and neither button can be the other by mistake.
-#define BTN_START_PIN 14
-#define BTN_STOP_PIN 15
+#define BTN_START_PIN 0
+#define BTN_STOP_PIN 1
 
 // Status LEDs — one green, one red, active HIGH, anode on the GPIO and cathode
 // to ground through a series resistor. Two discrete LEDs rather than one RGB
@@ -80,14 +102,20 @@
 // ~3.6 mA through the green (Vf 2.1V), inside the RP2040 pad's default 4 mA
 // drive. Use a *standard* green: a high-brightness InGaN one drops 3.0-3.2V and
 // would leave the resistor 0.1V to work with. See HARDWARE.md.
-#define LED_RUN_PIN 12
-#define LED_FAULT_PIN 13
+#define LED_RUN_PIN 2
+#define LED_FAULT_PIN 3
 
 // RS485 — single Modbus bus carrying both probes and the hydraulic module
 // (UART1 / Serial2 → MAX3485)
+//
+// TX and RX have not moved and cannot: UART1 exists on GP4/GP8/GP12/GP20 for TX
+// and GP5/GP9/GP13/GP21 for RX, and of those only GP4/GP5 are still free once
+// the display has GP8-GP12 and the encoder GP13-GP15. DE moved from GP3 to GP6
+// to let the panel have GP0-GP3, which puts the transceiver on header pins 6 to
+// 9 — TX, RX, GND, DE — one contiguous block again, ground included.
 #define RS485_TX_PIN 4 // UART1 TX → MAX3485 DI
 #define RS485_RX_PIN 5 // UART1 RX ← MAX3485 RO
-#define RS485_DE_PIN 3 // DE/RE direction enable (HIGH = transmit, LOW = receive)
+#define RS485_DE_PIN 6 // DE/RE direction enable (HIGH = transmit, LOW = receive)
 
 // Command outputs — one BC337 per output, NPN in common emitter, low side.
 //
@@ -104,16 +132,34 @@
 // sit low through their default pull-down. See HARDWARE.md — the fan and the
 // electric heater must stay off for that whole window, and output_test reads the
 // resting level of all three pins back before anything drives them.
-#define OUT_FAN_PIN 0
+//
+// The three moved from GP0-GP2 to the far side of the header for the PCB, and
+// that argument survives the move intact: GP16, GP17 and GP22 wake up exactly as
+// GP0-GP2 did, as inputs with the pull-down enabled. The RP2040 pins that do
+// *not* — GP23, GP24, GP25, GP29 — carry board functions on a Pico and never
+// reach the header, so there is no way to land a command on one by accident.
+//
+// One new trap comes with the move, and it is silent: **nothing may ever call
+// SPI.begin()**. That is arduino-pico's default SPI0 object, whose default pins
+// are GP16, GP17, GP18 and GP19 — it would take the fan and the electric heater
+// away from us and hand them to a shift register. Nothing does today; the
+// display owns its own SPIClassRP2040 on spi1 and never touches the default one.
+#define OUT_FAN_PIN 16
 #define OUT_FAN_ACTIVE_LOW false
 // The damper module drives its relay through a BC337, an NPN in common
 // emitter: the stage inverts, so GPIO HIGH now commands extraction and a
 // floating GPIO (the RP2040 pads idle as inputs with a pull-down) leaves the
 // relay released — recirculation, the safe state, during the whole boot window.
 // Checked end to end with the damper_test environment.
-#define OUT_DAMPER_PIN 1
+//
+// It sits on GP22 rather than beside the other two commands so that the whole
+// register loom is one block: command on header pin 29, the two feedbacks on 31
+// and 32, and AGND at 33 for their return. GP22 is also the least capable pin on
+// that side — no SPI, no I2C, no UART, no ADC — which makes it the right one to
+// spend on a plain digital output.
+#define OUT_DAMPER_PIN 22
 #define OUT_DAMPER_ACTIVE_LOW false
-#define OUT_ELECTRIC_PIN 2
+#define OUT_ELECTRIC_PIN 17
 #define OUT_ELECTRIC_ACTIVE_LOW false
 
 // Air damper position feedback — one ADC channel per register.
@@ -269,27 +315,35 @@
 
 // RTC DS1307 on I2C0 — optional, an absent RTC disables ECO mode.
 //
-// On I2C0 rather than I2C1, and on these pins rather than GP26/GP27, because the
-// two damper feedbacks need the ADC channels those carry. GP28 is I2C0 SDA and
-// GP21 is I2C0 SCL: RP2040 datasheet Table 2 "GPIO Functions", column F3, whose
-// I2C pattern is periodic modulo 4 across GP0-GP29 (0 -> I2C0 SDA, 1 -> I2C0
-// SCL, 2 -> I2C1 SDA, 3 -> I2C1 SCL). The Wire library validates both against
-// that same table and would refuse the bus outright if either were wrong.
-#define RTC_I2C_SDA_PIN 28
+// On I2C0 rather than I2C1, and not on GP26/GP27, because the two damper
+// feedbacks need the ADC channels those carry. GP20 is I2C0 SDA and GP21 is I2C0
+// SCL: RP2040 datasheet Table 2 "GPIO Functions", column F3, whose I2C pattern
+// is periodic modulo 4 across GP0-GP29 (0 -> I2C0 SDA, 1 -> I2C0 SCL, 2 -> I2C1
+// SDA, 3 -> I2C1 SCL). The Wire library validates both against that same table
+// and would refuse the bus outright if either were wrong.
+//
+// GP20/GP21 rather than the GP28/GP21 pair used before the PCB, because that
+// pattern leaves exactly one *adjacent* I2C0 pair on this side of the header,
+// and this is it: SDA on pin 26, SCL on 27, GND on 28. Three consecutive pins
+// for a module that has four, the fourth being 3V3. It also gives GP28 back, so
+// ADC2 is a spare channel again rather than a sacrificed one.
+#define RTC_I2C_SDA_PIN 20
 #define RTC_I2C_SCL_PIN 21
 
-// Free for expansion: GP9, GP10, GP11 and GP22, what is left of the seven pins
-// the LoRa radio returned when the remote link moved onto RS485 — the panel
-// buttons and status LEDs took GP12, GP13 and GP15. The whole SPI1 block comes
-// back with them, and so does a second UART.
+// Free for expansion: GP7, GP18, GP19 and GP28.
 //
-// The extension port did not need any of them: it is a slave address on the
-// existing segment, so it costs no transceiver, no UART and no GPIO. They stay
-// free for whatever comes next — and should a future extension ever want a
-// segment of its own, Rs485Bus::kMaxBuses is already 2 and the pins are there.
+// GP18 and GP19 are the useful pair — together they are a whole I2C1 bus, or,
+// with GP16/GP17 borrowed back, a whole SPI0. GP28 is ADC2, the third and last
+// analog channel, free again since the RTC moved to GP20/GP21. GP7 is a bare
+// GPIO on the panel side of the header.
+//
+// The extension port needed none of them: it is a slave address on the existing
+// RS485 segment, so it costs no transceiver, no UART and no GPIO. They stay free
+// for whatever comes next — and should a future extension ever want a segment of
+// its own, Rs485Bus::kMaxBuses is already 2 and the pins are there.
 
 // ========== I2C ADDRESSES ==========
-#define RTC_DS1307_ADDR 0x68 // DS1307 (on I2C Bus 1)
+#define RTC_DS1307_ADDR 0x68 // DS1307 (on i2c0, see RTC_I2C_*_PIN above)
 
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600

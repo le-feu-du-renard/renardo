@@ -36,11 +36,11 @@ struct TestPin
 // Listed in the module's own pin order, so the serial output reads like the
 // connector looks.
 TestPin g_pins[] = {
-    {"SCL", "SPI clock",    SPI0_SCK_PIN,  24, false},
-    {"SDA", "SPI data",     SPI0_MOSI_PIN, 25, false},
-    {"RES", "reset",        TFT_RST_PIN,   26, false},
-    {"DC ", "data/command", TFT_DC_PIN,    22, false},
-    {"CS ", "chip select",  TFT_CS_PIN,    21, false},
+    {"SCL", "SPI clock",    SPI1_SCK_PIN,  14, false},
+    {"SDA", "SPI data",     SPI1_MOSI_PIN, 15, false},
+    {"RES", "reset",        TFT_RST_PIN,   16, false},
+    {"DC ", "data/command", TFT_DC_PIN,    12, false},
+    {"CS ", "chip select",  TFT_CS_PIN,    11, false},
 };
 
 constexpr uint8_t kPinCount = sizeof(g_pins) / sizeof(g_pins[0]);

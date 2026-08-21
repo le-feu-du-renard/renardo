@@ -10,8 +10,8 @@ v3 panel control.
 
 - [x] Strip the v3 hardware layer (voltmeters, MCP23017, LEDs, potentiometers,
       selector, TM1637, SD card) and move to `rpipico`
-- [x] New pin map: SPI0 for the TFT, single RS485 bus, three BC337 command
-      outputs, damper ADC feedback, optional RTC
+- [x] New pin map: hardware SPI for the TFT, single RS485 bus, three BC337
+      command outputs, damper ADC feedback, optional RTC
 - [x] `Rs485Bus` transport, per-probe error and freshness tracking,
       `HydraulicRemote` client for the deported module
 - [x] Sensor freshness interlock, cross-core seqlock snapshot
@@ -30,6 +30,11 @@ v3 panel control.
 - [x] The RS485 extension port itself: telemetry block and command mailbox on
       address 2, a `RemoteModule` base shared with the hydraulic client, and a
       backoff that stops an unplugged module from stalling the poll loop
+- [x] Pin map rearranged for the PCB: every module's signals on consecutive
+      header pins with their ground inside the block, panel and encoder and
+      display and bus on pins 1-20, plant I/O and RTC on 21-40. The display
+      moved to SPI1 to make room, since the ten GPIOs on the plant side would
+      not carry it as well; GP7, GP18, GP19 and GP28 are what is left free
 
 ### Remaining before the board is usable
 

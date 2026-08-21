@@ -12,50 +12,105 @@ carries the probe, the hydraulic module, and the extension port to come.
 
 ## GPIO map
 
-23 of the 26 available GPIOs are used. **GP9, GP10, GP11 and GP22 are free** —
-what is left of the seven the LoRa radio returned when the remote link moved
-onto RS485. The whole SPI1 block and a second UART come back with them.
+22 of the 26 available GPIOs are used. **GP7, GP18, GP19 and GP28 are free.**
 
-| Function | GPIO | Notes |
-|---|---|---|
-| SPI0 SCK | 18 | display only |
-| SPI0 MOSI | 19 | display only; MISO not wired |
-| TFT CS | 16 | SPI0 RX pin, reused as an output |
-| TFT DC | 17 | |
-| TFT RST | 20 | |
-| Encoder A | 6 | EC11, internal pull-up |
-| Encoder B | 7 | EC11, internal pull-up |
-| Encoder SW | 8 | EC11, internal pull-up |
-| Green status LED | 12 | active HIGH, 330 Ω to ground |
-| Red status LED | 13 | active HIGH, 330 Ω to ground |
-| START button | 14 | active LOW, internal pull-up |
-| STOP button | 15 | active LOW, internal pull-up |
-| RS485 DE/RE | 3 | HIGH = transmit |
-| RS485 TX | 4 | UART1 → MAX3485 DI |
-| RS485 RX | 5 | UART1 ← MAX3485 RO |
-| Fan command | 0 | BC337, contactor coil on the collector, **active HIGH** |
-| Damper command | 1 | BC337 driving the damper module, **active HIGH** |
-| Electric heating command | 2 | BC337, contactor coil on the collector, **active HIGH** |
-| Extraction register feedback | 26 | ADC0 |
-| Recycling register feedback | 27 | ADC1 |
-| I2C0 SDA | 28 | optional RTC |
-| I2C0 SCL | 21 | optional RTC |
+The map is laid out **by side of the header**, because that is what the PCB
+routes to. Each module's signals sit on consecutive header pins with the ground
+they need already inside the block, so every peripheral takes one flat connector
+with nothing to enjamb.
+
+**Left side, header pins 1–20 — the front panel, the bus, and the display:**
+
+| Header | GPIO | Function | Notes |
+|---|---|---|---|
+| 1 | 0 | START button | active LOW, internal pull-up |
+| 2 | 1 | STOP button | active LOW, internal pull-up |
+| 3 | GND | panel common | button commons **and** LED cathodes |
+| 4 | 2 | Green status LED | active HIGH, 330 Ω to ground |
+| 5 | 3 | Red status LED | active HIGH, 330 Ω to ground |
+| 6 | 4 | RS485 TX | UART1 → MAX3485 DI |
+| 7 | 5 | RS485 RX | UART1 ← MAX3485 RO |
+| 8 | GND | MAX3485 ground | |
+| 9 | 6 | RS485 DE/RE | HIGH = transmit |
+| 10 | 7 | — | **free** |
+| 11 | 8 | TFT CS | SPI1 RX pin, reused as an output |
+| 12 | 9 | TFT DC | |
+| 13 | GND | display ground | |
+| 14 | 10 | SPI1 SCK | display only; module `SCL` |
+| 15 | 11 | SPI1 MOSI | display only, MISO not wired; module `SDA` |
+| 16 | 12 | TFT RST | module `RES` |
+| 17 | 13 | Encoder A | EC11, internal pull-up |
+| 18 | GND | encoder common | `C` **and** the switch return |
+| 19 | 14 | Encoder B | EC11, internal pull-up |
+| 20 | 15 | Encoder SW | EC11, internal pull-up |
+
+**Right side, header pins 21–40 — everything that leaves for the plant:**
+
+| Header | GPIO | Function | Notes |
+|---|---|---|---|
+| 21 | 16 | Fan command | BC337, contactor coil on the collector, **active HIGH** |
+| 22 | 17 | Electric heating command | BC337, contactor coil on the collector, **active HIGH** |
+| 23 | GND | BC337 emitters | |
+| 24 | 18 | — | **free** (SPI0 SCK / I2C1 SDA) |
+| 25 | 19 | — | **free** (SPI0 MOSI / I2C1 SCL) |
+| 26 | 20 | I2C0 SDA | optional RTC |
+| 27 | 21 | I2C0 SCL | optional RTC |
+| 28 | GND | RTC ground | |
+| 29 | 22 | Damper command | BC337 driving the damper module, **active HIGH** |
+| 31 | 26 | Extraction register feedback | ADC0 |
+| 32 | 27 | Recycling register feedback | ADC1 |
+| 33 | AGND | register feedback return | |
+| 34 | 28 | — | **free** (ADC2) |
+| 36 | 3V3 | supply | RTC, display and MAX3485 |
+| 40 | VBUS | 5 V | bench supply for the probes only |
 
 Pin assignments live in [include/config.h](include/config.h). The TFT pins are
 **duplicated** into the `TFT_eSPI` build flags in
 [platformio.ini](platformio.ini) — change both together or the display will not
 initialise.
 
-## The display owns SPI0 alone
+### What the free pins are worth
+
+GP18 and GP19 are the useful pair: together they are a whole I2C1 bus, or — with
+GP16/GP17 borrowed back from the two contactor commands — a whole SPI0. GP28 is
+ADC2, the third and last analog channel, free again since the RTC moved onto
+GP20/GP21. GP7 is a bare GPIO on the panel side.
+
+The extension port needed none of them: it is a slave address on the existing
+RS485 segment, so it costs no transceiver, no UART and no GPIO. Should a future
+extension ever want a segment of its own, `Rs485Bus::kMaxBuses` is already 2 and
+the pins are there.
+
+## The display owns SPI1 alone
 
 Nothing else goes on this bus, whatever comes to the board later. `TFT_eSPI` on
 the RP2040 may drive the panel through the **PIO** rather than the hardware SPI
 block; a second device on the same pins would then be facing another master
-entirely, and no amount of transaction bracketing would fix it. SPI1 is free and
+entirely, and no amount of transaction bracketing would fix it. SPI0 is free and
 costs two GPIOs — that is the answer if a peripheral ever needs SPI here.
 
-The display is write-only, so SPI0 MISO is not wired at all (`TFT_MISO=-1`), and
+The display is write-only, so SPI1 MISO is not wired at all (`TFT_MISO=-1`), and
 the panel is driven at 40 MHz.
+
+**SPI1 rather than SPI0 since the PCB.** The right-hand side of the header
+exposes ten GPIOs and the plant needs all of them — two contactor commands, the
+register command and its two ADC feedbacks, the RTC's I2C pair. The display was
+the one peripheral whose pins are a free choice within a block, so it is the one
+that moved. `TFT_SPI_PORT=1` in [platformio.ini](platformio.ini) is what selects
+`spi1`; the library defaults it to 0.
+
+### Never call `SPI.begin()`
+
+That is arduino-pico's default SPI0 object, and its default pins are GP16, GP17,
+GP18 and GP19 — **the fan and the electric heating commands are the first two**.
+A call to it would silently take both away from `OutputDriver` and reconfigure
+them as a bus.
+
+Nothing does today, and the display will not do it by accident: `TFT_eSPI`
+instantiates its own `SPIClassRP2040` on `spi1` and never touches the default
+instance. This is a trap the pre-PCB pin map did not have, and it is worth
+knowing before adding any SPI peripheral — use SPI0 by all means, but set its
+pins explicitly to GP18/GP19 and leave GP16/GP17 alone.
 
 ## Command outputs
 
@@ -196,10 +251,16 @@ a time** through the production `OutputDriver`, so the polarity applied is the
 firmware's own, and prints the GPIO level behind each logical state.
 
 It starts with the measurement that matters most here: the resting level of
-GP0, GP1 and GP2 read as plain inputs, **before `pinMode()` runs**, each
+GP16, GP17 and GP22 read as plain inputs, **before `pinMode()` runs**, each
 translated through its `OUT_*_ACTIVE_LOW` into on or off. All three must read
 off. One that does not is a stage wired the other way round, and no amount of
 firmware shortens the two seconds it spends energised on every reset.
+
+The three commands moved off GP0–GP2 when the board was laid out, and the
+argument above survives the move intact: GP16, GP17 and GP22 wake up exactly as
+GP0–GP2 did, as inputs with the pull-down enabled. The RP2040 pins that behave
+otherwise — GP23, GP24, GP25, GP29 — carry board functions on a Pico and never
+reach the header, so a command cannot land on one by accident.
 
 One output at a time is the point rather than a limitation: it is what lets a
 collector be measured with nothing else moving, and on a dryer whose loads are
@@ -445,12 +506,18 @@ tolerant.
 
 | MAX3485 | Also marked | Pico GP | Header pin | Notes |
 |---|---|---|---|---|
-| RO (receiver out) | `TXD` | GP5 | 7 | UART1 RX |
 | DI (driver in) | `RXD` | GP4 | 6 | UART1 TX |
-| DE + RE | `EN` | GP3 | 5 | tied together, HIGH = transmit |
+| RO (receiver out) | `TXD` | GP5 | 7 | UART1 RX |
+| GND | | GND | 8 | |
+| DE + RE | `EN` | GP6 | 9 | tied together, HIGH = transmit |
 | VCC | | 3V3(OUT) | 36 | 3.3 V only |
-| GND | | GND | 3 | |
 | A / B | `D+` / `D−` | — | — | to the probes' A / B, never crossed |
+
+Header pins 6 to 9 are contiguous with the ground inside the block, so the
+transceiver takes one flat connector. TX and RX could not move even if the
+layout wanted them to: UART1 exists on GP4/GP8/GP12/GP20 for TX and
+GP5/GP9/GP13/GP21 for RX, and of those only GP4/GP5 are still free once the
+display has GP8–GP12 and the encoder GP13–GP15.
 
 Two silkscreen conventions exist and they are opposites. A board marked
 `DI`/`RO` names its pins from the transceiver's point of view; one marked
@@ -720,7 +787,24 @@ exactly once.
 
 ## Optional RTC
 
-DS1307 on I2C1, address 0x68. Probed at startup.
+DS1307 on **I2C0**, address 0x68. Probed at startup.
+
+| Module | Pico GP | Header pin |
+|---|---|---|
+| SDA | GP20 | 26 |
+| SCL | GP21 | 27 |
+| GND | GND | 28 |
+| VCC | 3V3(OUT) | 36 |
+
+Three of the module's four pins are consecutive, ground included. That pair is
+not a free choice: the RP2040's I2C function repeats modulo 4 across the GPIOs
+(0 → I2C0 SDA, 1 → I2C0 SCL, 2 → I2C1 SDA, 3 → I2C1 SCL), and GP20/GP21 is the
+only **adjacent** I2C0 pair left on this side of the header once GP26/GP27 are
+spoken for by the register feedbacks. `Wire` validates both pins against the
+same table and would refuse the bus outright if either were wrong.
+
+It runs at 10 kHz with a 1 s timeout, which is generous for a DS1307 and leaves
+a long field cable no excuse.
 
 **With no RTC there is no ECO mode**: the night window cannot be evaluated
 without a wall clock, so the whole ECO submenu is greyed out and the mode is
@@ -749,24 +833,30 @@ easy mistake here.
 
 | Module | Pico GP | Header pin |
 |---|---|---|
-| GND | GND | 23 |
+| CS | GP8 | 11 |
+| DC | GP9 | 12 |
+| GND | GND | 13 |
+| SCL (clock) | GP10 | 14 |
+| SDA (data) | GP11 | 15 |
+| RES | GP12 | 16 |
 | VCC | 3V3(OUT) | 36 |
-| SCL (clock) | GP18 | 24 |
-| SDA (data) | GP19 | 25 |
-| RES | GP20 | 26 |
-| DC | GP17 | 22 |
-| CS | GP16 | 21 |
 
-3.3 V only. The five signals land on header pins 21–26, with GND at 23.
+3.3 V only. The six signals land on header pins 11–16, with GND at 13 — one flat
+connector for the panel. Better still, `SCL`, `SDA` and `RES` sit on 14-15-16 in
+the module's own silkscreen order, so three of the five wires run straight
+across; only `CS` and `DC` cross over.
 
-CS sits on GP16, which is also SPI0's RX pin. The panel never drives data back,
-so RX is idle, and TFT_eSPI re-asserts the pin as an output after `spi.begin()`
-for exactly this case.
+CS sits on GP8 and RES on GP12, which are both SPI1's RX pin. That is harmless:
+the panel never drives data back, TFT_eSPI passes MISO as `-1` to its SPI
+object, so RX is never enabled and the two stay plain outputs.
 
 TFT_eSPI on the RP2040 does not call `spi_init()` or `gpio_set_function()`: it
-calls plain `spi.begin()` and inherits arduino-pico's default SPI0 pins, which
-are MISO 16, CS 17, SCK 18, MOSI 19. SCK and MOSI above match those defaults on
-purpose — moving them would need `SPI.setSCK()`/`setTX()` before `tft.init()`.
+constructs its own `SPIClassRP2040` from `TFT_SCLK` and `TFT_MOSI` and calls
+plain `spi.begin()`. Those two are constrained by the silicon — SPI1 offers SCK
+on GP10/GP14/GP26 and MOSI on GP11/GP15/GP27 — and `SPIClassRP2040` validates
+them against exactly that list. A wrong number there fails at **run time**, with
+a blank panel and no build error, so check it against
+[include/config.h](include/config.h) rather than against a memory of it.
 
 ### Clock polarity
 
@@ -833,10 +923,10 @@ Wire by function, not by position:
 
 | Signal | Also labelled | Pico GP | Header pin |
 |---|---|---|---|
-| A | S1, CLK | GP6 | 9 |
-| B | S2, DT | GP7 | 10 |
-| SW | Key | GP8 | 11 |
-| GND | C, common | GND | 8 |
+| A | S1, CLK | GP13 | 17 |
+| GND | C, common | GND | 18 |
+| B | S2, DT | GP14 | 19 |
+| SW | Key | GP15 | 20 |
 | + | VCC, breakouts only | 3V3(OUT) | 36 |
 
 On the bare component, ground is the **middle** pin of the three-pin side plus
@@ -853,12 +943,14 @@ agree on which way is up.
 
 All three lines are `INPUT_PULLUP` and read active LOW, so a bare EC11 needs no
 external resistor and no supply at all; a breakout's own pull-ups simply sit in
-parallel with the internal ones. **3.3 V only** — GP6, GP7 and GP8 are not
+parallel with the internal ones. **3.3 V only** — GP13, GP14 and GP15 are not
 5 V tolerant.
 
-The three signals plus a ground land on **four consecutive header pins, 8 to
-11**, so the encoder takes one flat connector with nothing to enjamb. That is
-why SW is on GP8 and not GP9.
+The three signals plus a ground land on **four consecutive header pins, 17 to
+20**, in the EC11's own terminal order: A, common, B, SW. The ground the
+connector needs is already inside the block, and the switch returns to that same
+ground, so one flat four-way connector does the whole part with nothing to
+enjamb.
 
 ### Decoding
 
@@ -888,17 +980,22 @@ hides. Four checks, in order:
 
 ## Panel buttons and status LEDs
 
-Four signals on one contiguous block of header pins, 16 to 20, with the ground
-in the middle — one flat connector for the whole panel, the same reason the
-encoder's switch sits on GP8 rather than GP9:
+Four signals on one contiguous block of header pins, 1 to 5, with the ground in
+the middle — one flat connector for the whole panel, the same reason the encoder
+takes header pins 17 to 20:
 
 | Header | GPIO | Signal |
 |---|---|---|
-| 16 | GP12 | green LED anode, 330 Ω to ground |
-| 17 | GP13 | red LED anode, 330 Ω to ground |
-| 18 | GND | both LED cathodes **and** both button commons |
-| 19 | GP14 | START |
-| 20 | GP15 | STOP |
+| 1 | GP0 | START |
+| 2 | GP1 | STOP |
+| 3 | GND | both button commons **and** both LED cathodes |
+| 4 | GP2 | green LED anode, 330 Ω to ground |
+| 5 | GP3 | red LED anode, 330 Ω to ground |
+
+GP0 and GP1 are UART0's default pins, which nothing here uses: the logs go out
+over USB CDC and the RS485 bus has UART1. Putting the buttons there does spend
+the one place a rescue serial console could have been landed — the price of
+having the panel connector at the end of the header the panel loom arrives at.
 
 A connector fitted one row out therefore puts all four signals on the wrong pin
 at once, which is loud rather than subtle: `panel_test` prints the resting level
@@ -906,8 +1003,8 @@ of each pin under its own name.
 
 ### Two buttons, not one
 
-v4 shipped with a single button toggling the session, and GP14 is still that
-button's wire — it now only starts. A toggle answers the wrong question in front
+v4 shipped with a single button toggling the session, and START is still that
+button — it now only starts. A toggle answers the wrong question in front
 of the machine: the operator reaching for it wants to *stop*, and has to know
 what the dryer is currently doing to predict what the press will do. Two
 dedicated buttons remove that inference, and neither can be the other by
@@ -987,7 +1084,7 @@ through the four states, 4 s each. Four checks:
    3.3 V rather than to its GPIO, and is on for the whole boot window of every
    reset.
 2. **Both buttons read released** with nobody touching them. One reading LOW is
-   a stuck contact — or that signal shorted to the ground at header 18, which is
+   a stuck contact — or that signal shorted to the ground at header 3, which is
    what a connector one row out does.
 3. **One press, one line, under the right name.** Two lines per press is bounce;
    the wrong name is two swapped signal wires.
