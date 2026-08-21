@@ -274,7 +274,9 @@ bool TftDisplay::HeaderChanged(const DisplayModel &model) const
 {
   return model.total_elapsed_s != previous_.total_elapsed_s ||
          model.phase != previous_.phase ||
-         model.running != previous_.running;
+         model.running != previous_.running ||
+         model.eco_enabled != previous_.eco_enabled ||
+         model.eco_window != previous_.eco_window;
 }
 
 bool TftDisplay::InletChanged(const DisplayModel &model) const
@@ -379,6 +381,39 @@ void TftDisplay::DrawHeader(const DisplayModel &model)
   DrawText(canvas, &Mono14B, model.running ? UiTheme::kText : UiTheme::kMuted,
            TC_DATUM, duration, kWidth / 2,
            UiLayout::CapTop(center, kMono14BBaseline, kMono14BCapHeight));
+
+  // Eco, in the corner the clock and the phase name leave empty.
+  //
+  // Two states rather than one, because armed and acting are different facts.
+  // Green says the setpoint on the card below has actually been lowered, which
+  // is the only thing on screen that explains why it dropped; blue says the
+  // schedule is set and waiting for its hours. Blue and not grey: grey is this
+  // interface's word for switched off in the configuration, and eco outside its
+  // window is enabled and idle, which is exactly what blue means everywhere
+  // else. Nothing at all is drawn when eco is off — an operator who has never
+  // enabled it should never have to learn what the corner means.
+  if (model.eco_enabled)
+  {
+    // A leaf, a gap, then the word, right-aligned on the margin. The phase name
+    // stops around x=117 and the centred clock ends at 192, so this corner was
+    // the one piece of the layout with nothing in it — and like every other
+    // text cell here, the compiler is the one that checks it still fits.
+    constexpr int16_t kLabelChars = 3; // "ECO"
+    constexpr int16_t kLeafGap    = 4;
+    constexpr int16_t kBadgeX = kWidth - kPad - kLabelChars * kMono12BAdvance -
+                                kLeafGap - UiIcons::kEcoBox;
+
+    static_assert(kBadgeX > kWidth / 2 + (8 * kMono14BAdvance) / 2,
+                  "eco badge runs into the clock");
+
+    const uint16_t eco_color =
+        model.eco_window ? UiTheme::kOk : UiTheme::kNeutral;
+
+    UiIcons::DrawEco(canvas, kBadgeX + UiIcons::kEcoBox / 2, center, eco_color,
+                     UiTheme::kPanelSunken);
+    DrawText(canvas, &Mono12B, eco_color, TR_DATUM, "ECO", kWidth - kPad,
+             UiLayout::CapTop(center, kMono12BBaseline, kMono12BCapHeight));
+  }
 
   canvas.pushSprite(0, kHeaderY);
   canvas.deleteSprite();
@@ -586,9 +621,9 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
                  model.fan_cooling ? UiTheme::kWarn
                                    : (model.fan_on ? UiTheme::kOk : UiTheme::kNeutral));
   bool fan_visible = model.fan_on || (model.fan_cooling && blink_state_);
-  UiIcons::DrawFan(canvas, x1 + kDeviceCellW / 2, kIconCy, kFanR,
+  UiIcons::DrawFan(canvas, x1 + kDeviceCellW / 2, kIconCy,
                    fan_visible ? UiTheme::kOk : UiTheme::kMuted,
-                   model.fan_on ? fan_angle_deg_ : 0.0f);
+                   UiTheme::kPanel, model.fan_on ? fan_angle_deg_ : 0.0f);
 
   // --- Electric heating. Green when it is on, like every other running thing:
   // amber here would read as a warning, and a heater doing its job is not one.
@@ -599,29 +634,43 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   uint16_t heat_color = model.electric_enabled && model.electric_on
                             ? UiTheme::kOk
                             : UiTheme::kMuted;
-  UiIcons::DrawLightning(canvas, x2 + kDeviceCellW / 2, kIconCy, 12, heat_color);
+  UiIcons::DrawHeat(canvas, x2 + kDeviceCellW / 2, kIconCy, heat_color,
+                    UiTheme::kPanel);
   if (!model.electric_enabled)
   {
-    UiIcons::DrawSlash(canvas, x2 + kDeviceCellW / 2, kIconCy, 12, UiTheme::kMuted);
+    UiIcons::DrawSlash(canvas, x2 + kDeviceCellW / 2, kIconCy, kHeatSlashR,
+                       UiTheme::kMuted);
   }
 
   // --- The two registers.
   //
-  // Both openings are on screen at once and as figures: the registers are
-  // asymmetric, so one of them does not describe the other, and which leads
-  // which is the reading that gives away a jammed vane or a dead feedback wire.
-  // The commanded air path is not printed as a word — it is the register whose
-  // vane is green, the same green that marks everything else in use.
+  // Each carries its own icon — air leaving a box for extraction, the recycling
+  // loop for recirculation — where they used to share one drawing of a duct
+  // with a vane in it. Two cells side by side showing the same picture is the
+  // one thing a status row must not do: it makes the operator read the caption
+  // to learn which is which, every time.
+  //
+  // What the vane's angle used to say, the words below say instead.
+  // FormatDamperState writes FERME, OUVERT, OUV. nn% or -- from the measured
+  // position, so the opening is still on screen; and an unusable feedback,
+  // which the vaneless duct used to signal, raises RECOPIE REGISTRE HS in the
+  // hint bar, where it gets a full line rather than an absence to be noticed.
+  //
+  // Both openings are shown at once: the registers are asymmetric, so one of
+  // them does not describe the other, and which leads which is the reading that
+  // gives away a jammed vane or a dead feedback wire. The commanded air path is
+  // not printed as a word — it is the register whose icon is green, the same
+  // green that marks everything else in use.
   char text[16];
 
   UiTheme::FormatDamperState(model.extraction_position, text, sizeof(text));
   DrawDeviceCell(canvas, x3, "EXTR.", text,
                  model.extraction_moving ? UiTheme::kWarn
                  : (model.damper_open ? UiTheme::kOk : UiTheme::kNeutral));
-  UiIcons::DrawDamper(canvas, x3 + kDeviceCellW / 2, kIconCy, 11,
-                      model.extraction_position, UiTheme::kBorder,
-                      model.extraction_moving ? UiTheme::kWarn
-                      : (model.damper_open ? UiTheme::kOk : UiTheme::kMuted));
+  UiIcons::DrawExtraction(canvas, x3 + kDeviceCellW / 2, kIconCy,
+                          model.extraction_moving ? UiTheme::kWarn
+                          : (model.damper_open ? UiTheme::kOk : UiTheme::kMuted),
+                          UiTheme::kPanel);
 
   // On a dryer with a single register the cell says ABSENT rather than dashes,
   // the same word the hydraulic module gets when it is not answering. Dashes
@@ -633,15 +682,15 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
                  !recycling_fitted     ? UiTheme::kMuted
                  : model.recycling_moving ? UiTheme::kWarn
                  : (!model.damper_open ? UiTheme::kOk : UiTheme::kNeutral));
-  UiIcons::DrawDamper(canvas, x4 + kDeviceCellW / 2, kIconCy, 11,
-                      recycling_fitted ? model.recycling_position : NAN,
-                      UiTheme::kBorder,
-                      !recycling_fitted     ? UiTheme::kMuted
-                      : model.recycling_moving ? UiTheme::kWarn
-                      : (!model.damper_open ? UiTheme::kOk : UiTheme::kMuted));
+  UiIcons::DrawRecycling(canvas, x4 + kDeviceCellW / 2, kIconCy,
+                         !recycling_fitted        ? UiTheme::kMuted
+                         : model.recycling_moving ? UiTheme::kWarn
+                         : (!model.damper_open ? UiTheme::kOk : UiTheme::kMuted),
+                         UiTheme::kPanel);
   if (!recycling_fitted)
   {
-    UiIcons::DrawSlash(canvas, x4 + kDeviceCellW / 2, kIconCy, 11, UiTheme::kMuted);
+    UiIcons::DrawSlash(canvas, x4 + kDeviceCellW / 2, kIconCy, kRecycleSlashR,
+                       UiTheme::kMuted);
   }
 
   canvas.pushSprite(0, kDeviceY);
@@ -695,7 +744,7 @@ void TftDisplay::DrawHintBar(const DisplayModel &model)
 
 void TftDisplay::DrawFanIcon(const DisplayModel &model)
 {
-  // Just the disc: a 28x28 canvas costs 1.5 KB and a negligible slice of the
+  // Just the disc: a 30x30 canvas costs 1.8 KB and a negligible slice of the
   // shared SPI bus, against 46 KB and ~9 ms for the whole device row.
   TFT_eSprite canvas(&tft_);
   if (!CreateCanvas(canvas, kFanBox, kFanBox))
@@ -706,7 +755,7 @@ void TftDisplay::DrawFanIcon(const DisplayModel &model)
 
   bool fan_visible = model.fan_on || (model.fan_cooling && blink_state_);
   uint16_t fan_color = fan_visible ? UiTheme::kOk : UiTheme::kMuted;
-  UiIcons::DrawFan(canvas, kFanBox / 2, kFanBox / 2, kFanR, fan_color,
+  UiIcons::DrawFan(canvas, kFanBox / 2, kFanBox / 2, fan_color, UiTheme::kPanel,
                    model.fan_on ? fan_angle_deg_ : 0.0f);
 
   canvas.pushSprite(kMargin + kDeviceCellW / 2 - kFanBox / 2,

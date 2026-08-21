@@ -4,37 +4,63 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-// Status icons, drawn procedurally rather than stored as bitmaps.
+// Status icons, rasterised from the Material Design set that Hack Nerd Font
+// carries — the same font file the interface text is generated from, so the
+// icons cost no new asset, no new dependency and no download.
 //
-// The fan has to animate, and hand-authoring rotation frames as byte arrays
-// costs flash and locks the animation to a fixed number of steps. Computing the
-// blades from an angle gives smooth rotation at any speed for a few hundred
-// bytes of code, and the same approach keeps every icon scalable to whatever
-// size the layout needs.
+// They used to be built out of triangles and circles instead. The argument for
+// that was the fan: it has to rotate, and authoring rotation frames as byte
+// arrays by hand is miserable work that locks the animation to whatever number
+// of steps one has the patience for. Generating them answers it — the five
+// frames below come out of tools/make_icons.py, not out of a text editor — and
+// what was paid for procedural drawing was visible: angular blades, a stepped
+// rim, and one single glyph doing duty for both registers because drawing a
+// second one by hand was not worth the trouble.
 //
-// All icons draw centred on (cx, cy) inside a box of 2*radius.
+// Each icon is a 4-bit alpha mask, blended between `background` and `color` as
+// it is drawn. That is where the smooth edges come from, and it is why
+// `background` has to be the colour actually underneath — the card fill in the
+// device row, the header fill behind the eco badge. Passing the wrong one
+// leaves a halo in the wrong colour around every icon.
+//
+// All icons draw centred on (cx, cy). Their sizes are settled at generation, so
+// unlike the procedural ones they take no radius.
 namespace UiIcons
 {
 
-// Three blades rotating with `angle_deg`. Pass a fixed angle to show it stopped.
-void DrawFan(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-             uint16_t color, float angle_deg);
+// Two icons' boxes, the only ones a caller has to know: the fan because the
+// animation gives it a sprite of its own and has to size it, and the leaf
+// because the eco badge sets a label beside it and has to place it. Both are
+// checked against the generated bitmaps in the implementation, so neither can
+// drift from what make_icons.py produced.
+constexpr int16_t kFanBox = 26;
+constexpr int16_t kEcoBox = 13;
 
-// Lightning bolt — electric heating.
-void DrawLightning(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-                   uint16_t color);
+// Ventilation. `angle_deg` picks the rotation frame — pass a fixed angle to
+// show the fan stopped, or a running one to make it turn.
+void DrawFan(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
+             uint16_t background, float angle_deg);
 
-// A register: a square duct with a vane pivoting inside it, upright when the
-// register is shut and swung flat when it is wide open, so the opening is
-// legible as a shape before the percentage next to it is read.
-//
-// `opening` is a percentage; NAN draws the duct with no vane at all, which is
-// how a register with no usable feedback tells itself apart from a shut one.
-void DrawDamper(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
-                float opening, uint16_t frame_color, uint16_t vane_color);
+// Electric heating: a lightning bolt.
+void DrawHeat(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
+              uint16_t background);
+
+// The extraction register: air leaving the dryer.
+void DrawExtraction(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
+                    uint16_t background);
+
+// The recirculation register: air going round again.
+void DrawRecycling(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
+                   uint16_t background);
+
+// Eco mode: a leaf, for the header badge.
+void DrawEco(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
+             uint16_t background);
 
 // Diagonal bar across an icon: the function exists but is unavailable or
-// switched off. Drawn over whatever icon was just rendered.
+// switched off. Drawn over whatever icon was just rendered, and the one icon
+// still drawn rather than generated — two diagonal lines have nothing to gain
+// from a bitmap, and being separate is what lets it cross any of the others.
 void DrawSlash(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                uint16_t color);
 

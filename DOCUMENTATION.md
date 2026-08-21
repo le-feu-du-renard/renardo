@@ -284,8 +284,8 @@ from across the room and never need the word underneath it read.
 |---|---|---|
 | Red `#ff5a5a` | broken, wants attention now | sensor alarm, hydraulic `ABSENT` |
 | Amber `#ffb020` | transient or noteworthy, nothing wrong | register in transit, `REFROID.`, edit mode, extraction phase |
-| Green `#5bd97f` | running as intended | fan, heater, circulator, the register on the commanded air path |
-| Blue `#5aa9e6` | available and idle, or a plain reading | `OFF` pills, water temperatures, the warm-up phase |
+| Green `#5bd97f` | running as intended | fan, heater, circulator, the register on the commanded air path, eco while it lowers the setpoint |
+| Blue `#5aa9e6` | available and idle, or a plain reading | `OFF` pills, water temperatures, the warm-up phase, eco outside its hours |
 | Grey `#6f8a88` | switched off in the configuration, or a caption | `DESACT.`, captions, unavailable menu rows |
 | Cyan `#3fe6d4` | live, or selected | injection figures, menu cursor, brassage phase |
 | White `#e9f4f2` | asked for, not measured | setpoint figures, the clock |
@@ -309,9 +309,36 @@ corner they used to share could only ever hold the shortest of them.
 
 A missing reading renders as `--.-`, never as `0.0`.
 
+The header's right-hand corner carries the eco badge — a leaf and the word
+`ECO` — in two states, because armed and acting are different facts. Green says
+the setpoint on the card below has actually been lowered, which is the only
+thing on screen that explains why it dropped; blue says the schedule is set and
+waiting for its hours, blue rather than grey because eco outside its window is
+enabled and idle, not switched off. Nothing is drawn when eco is off, and nothing is
+drawn without an RTC, since eco cannot keep a schedule it cannot read the clock
+for. That corner was the one piece of the layout with nothing in it: the phase
+name stops around x=117 and the centred clock ends at 192.
+
+### The icons
+
+They are rasterised from the Material Design set carried by Hack Nerd Font —
+the same font file the interface type is generated from — rather than drawn out
+of triangles as they were. See `tools/make_icons.py`.
+
+The two registers each have their own icon now: air leaving a box for
+extraction, the recycling loop for recirculation. They used to share one drawing
+of a duct with a vane in it, which is the one thing two neighbouring status
+cells must not do — it makes the operator read the caption to learn which is
+which, every time.
+
+What the vane's angle used to say, the words below it say instead: `FERME`,
+`OUVERT`, `OUV. nn%` or `--` from the measured position. A feedback that has
+become unusable, which the vaneless duct used to signal by absence, raises
+`RECOPIE REGISTRE HS` in the hint bar, where it gets a full line.
+
 Rendering stays region-based: each frame is compared against the previous model
 and only the regions whose contents changed are redrawn, each through its own
-sprite. The fan animation repaints only its 28×28 disc, not the 320×72 device
+sprite. The fan animation repaints only its 30×30 disc, not the 320×72 device
 row.
 
 ### Menu

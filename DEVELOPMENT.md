@@ -161,6 +161,38 @@ to be able to report that everything loaded after it failed.
 
 ---
 
+## Screen icons
+
+Same contract as the fonts: `include/icons/IconBitmaps.h` is generated and
+committed, so the firmware builds without Python.
+
+```bash
+python3 tools/make_icons.py           # regenerate the header
+python3 tools/make_icons.py --proof   # and write tools/icon-proof.png
+```
+
+The icons are **not drawn** — they are rasterised out of the same Hack Nerd Font
+the type comes from, which carries the whole Material Design Icons set. Changing
+an icon means changing a code point in the `ICONS` table at the top of the
+script; the Nerd Font cheat sheet is where the names in the comments come from.
+
+Note the script uses `HackNerdFont-Bold.ttf`, without the `Mono` the text fonts
+take. The Mono cut squeezes every icon into one single-width text cell and
+flattens its proportions.
+
+Each icon is stored as a 4-bit alpha mask and blended against the colour behind
+it by `UiIcons::DrawIcon`, which is what keeps the edges smooth — a 1-bit
+threshold of a rotated glyph comes apart into stair steps. Callers must pass the
+colour actually underneath, or every icon gets a halo in the wrong colour.
+
+The fan animates, and its frames are generated rather than authored: the glyph
+has four-fold rotational symmetry, so five frames spanning a quarter turn cover
+the whole cycle, and 90° / 18° per animation tick means every one of them lands.
+Check the proof sheet after changing the fan — the first and last frames have to
+run into each other as smoothly as any neighbouring pair.
+
+---
+
 ## Configuration
 
 `include/config.h` holds the pin map and the **factory defaults**. Anything

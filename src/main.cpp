@@ -643,6 +643,13 @@ static void UpdateDisplay()
   model.recycling_moving     = damper->Recycling().IsMoving();
   model.damper_count         = damper->GetCount();
 
+  // IsEcoActive() is the operating mode, which ApplySettings already refuses to
+  // set without an RTC, so the badge never claims a schedule the dryer cannot
+  // keep. IsEcoWindowActive() is the narrower question of whether the setpoint
+  // above has been lowered right now.
+  model.eco_enabled = temperature_manager->IsEcoActive();
+  model.eco_window  = dryer.IsEcoWindowActive();
+
   model.sensor_fault          = !temperature_manager->GetHeatingPermitted();
   model.airflow_fault         = dryer.GetAirflowBlocked();
   model.damper_feedback_fault = dryer.GetDamperFeedbackFault();

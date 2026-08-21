@@ -5,6 +5,7 @@
 #include <TFT_eSPI.h>
 
 #include "DisplayModel.h"
+#include "UiIcons.h"
 
 // Main screen on the GMT020-02-7P (ST7789 240x320), used in landscape.
 //
@@ -162,9 +163,16 @@ private:
   void DrawFanIcon(const DisplayModel &model);
 
   // Fan disc position within the first device cell, and as its own canvas.
+  // Two pixels of margin around the icon: the sprite is filled with the card
+  // colour before the icon goes down, and the margin is what guarantees the
+  // previous frame's blades are painted out wherever the new ones are not.
   static constexpr int16_t kIconCy  = 22; // cell-relative centre of every icon
-  static constexpr int16_t kFanR    = 12;
-  static constexpr int16_t kFanBox  = 2 * kFanR + 4;
+  static constexpr int16_t kFanBox  = UiIcons::kFanBox + 4;
+
+  // Radii for the slash overlay, which is drawn rather than generated and so
+  // has to be told how far to reach. Half of each icon's box.
+  static constexpr int16_t kHeatSlashR    = 12;
+  static constexpr int16_t kRecycleSlashR = 11;
 
   // One device cell: icon, caption, and a state word under it. `pill_color`
   // carries the meaning — green running, amber transient, red stopped, grey

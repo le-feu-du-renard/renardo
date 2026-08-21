@@ -64,6 +64,19 @@ struct DisplayModel
   // is dead, and the screen should not blur the two.
   uint8_t damper_count;
 
+  // --- Eco mode ---
+  // Two flags rather than one, because armed and acting are different things
+  // the operator needs to tell apart. Eco lowers the setpoint only inside its
+  // configured hours, and `target_temperature` above is already the lowered
+  // figure: without `eco_window` on screen, the setpoint card would simply drop
+  // one evening with nothing anywhere saying why.
+  //
+  // `eco_enabled` is the running mode, not the stored setting: it is false when
+  // no RTC answered at boot, whatever the configuration says, because eco
+  // cannot know what time it is.
+  bool eco_enabled;
+  bool eco_window;
+
   // --- Alarms ---
   bool sensor_fault;          // inlet probe stale, heating blocked
   bool airflow_fault;         // both registers shut: session refused and stopped
@@ -93,6 +106,8 @@ struct DisplayModel
         recycling_position(NAN),
         recycling_moving(false),
         damper_count(1),
+        eco_enabled(false),
+        eco_window(false),
         sensor_fault(false),
         airflow_fault(false),
         damper_feedback_fault(false) {}
