@@ -54,13 +54,13 @@
 // part, not a wiring fault — hence a flag rather than a swap of the two pins
 // above, which would leave config.h disagreeing with the silkscreen and with
 // HARDWARE.md. Flip it if encoder_test reports CCW while you turn right.
-#define ENCODER_REVERSED true
+#define ENCODER_REVERSED false
 
 // Panel controls — two dedicated buttons and two status LEDs, on one contiguous
 // block of header pins, 1 to 5, with the ground in the middle:
 //
-//   1   GP0   START
-//   2   GP1   STOP
+//   1   GP0   STOP
+//   2   GP1   START
 //   3   GND   both button commons and both LED cathodes
 //   4   GP2   green LED anode
 //   5   GP3   red LED anode
@@ -77,14 +77,17 @@
 // START and STOP, both active LOW with internal pullups. Dry contacts to
 // ground: the internal pullup is the only pull there is, as on the encoder.
 //
-// v4 shipped with a single button toggling the session, and START is still that
-// button — it now only starts. A toggle answers the wrong question in
-// front of the machine: the operator reaching for it wants to *stop*, and has
-// to know what the dryer is currently doing to predict what the press will do.
-// Two dedicated buttons remove that inference. A press on STOP stops, whatever
-// the state, and neither button can be the other by mistake.
-#define BTN_START_PIN 0
-#define BTN_STOP_PIN 1
+// v4 shipped with a single button toggling the session. A toggle answers the
+// wrong question in front of the machine: the operator reaching for it wants to
+// *stop*, and has to know what the dryer is currently doing to predict what the
+// press will do. Two dedicated buttons remove that inference. A press on STOP
+// stops, whatever the state, and neither button can be the other by mistake.
+//
+// STOP takes GP0 and START GP1 — the other way round from v4 — because that is
+// the order the panel loom arrives in. Which end of the loom carries which
+// button is a property of the panel, not a wiring fault, so it is fixed here.
+#define BTN_START_PIN 1
+#define BTN_STOP_PIN 0
 
 // Status LEDs — one green, one red, active HIGH, anode on the GPIO and cathode
 // to ground through a series resistor. Two discrete LEDs rather than one RGB

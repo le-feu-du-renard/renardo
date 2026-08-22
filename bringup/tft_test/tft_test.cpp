@@ -94,7 +94,7 @@ void setup()
   Serial.println("========================================");
 
   tft.init();
-  tft.setRotation(1);
+  tft.setRotation(3); // landscape, flipped 180 degrees — matches TftDisplay
 
   ReportEffectiveSetup();
 

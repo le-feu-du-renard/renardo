@@ -23,8 +23,8 @@ with nothing to enjamb.
 
 | Header | GPIO | Function | Notes |
 |---|---|---|---|
-| 1 | 0 | START button | active LOW, internal pull-up |
-| 2 | 1 | STOP button | active LOW, internal pull-up |
+| 1 | 0 | STOP button | active LOW, internal pull-up |
+| 2 | 1 | START button | active LOW, internal pull-up |
 | 3 | GND | panel common | button commons **and** LED cathodes |
 | 4 | 2 | Green status LED | active HIGH, 330 Ω to ground |
 | 5 | 3 | Red status LED | active HIGH, 330 Ω to ground |
@@ -818,7 +818,8 @@ clock coming back at the build date means the battery needs replacing.
 ## Display
 
 **GMT020-02-7P v1.3**, ST7789, 240×320, used in **landscape (320×240)** via
-`setRotation(1)`.
+`setRotation(3)` — landscape flipped 180°, so the panel reads the right way up
+in its enclosure.
 
 The 7-pin connector carries no backlight control; the backlight is permanently
 on — so a lit backlight proves the supply, and nothing else.
@@ -986,8 +987,8 @@ takes header pins 17 to 20:
 
 | Header | GPIO | Signal |
 |---|---|---|
-| 1 | GP0 | START |
-| 2 | GP1 | STOP |
+| 1 | GP0 | STOP |
+| 2 | GP1 | START |
 | 3 | GND | both button commons **and** both LED cathodes |
 | 4 | GP2 | green LED anode, 330 Ω to ground |
 | 5 | GP3 | red LED anode, 330 Ω to ground |
@@ -1003,12 +1004,16 @@ of each pin under its own name.
 
 ### Two buttons, not one
 
-v4 shipped with a single button toggling the session, and START is still that
-button — it now only starts. A toggle answers the wrong question in front
-of the machine: the operator reaching for it wants to *stop*, and has to know
-what the dryer is currently doing to predict what the press will do. Two
-dedicated buttons remove that inference, and neither can be the other by
+v4 shipped with a single button toggling the session. A toggle answers the wrong
+question in front of the machine: the operator reaching for it wants to *stop*,
+and has to know what the dryer is currently doing to predict what the press will
+do. Two dedicated buttons remove that inference, and neither can be the other by
 mistake.
+
+STOP takes GP0 and START GP1 — the other way round from v4 — because that is the
+order the panel loom arrives in. Which end of the loom carries which button is a
+property of the panel, not a wiring fault, so it is fixed in
+[include/config.h](include/config.h).
 
 Both are dry contacts to ground with no external resistor: the RP2040's internal
 pull-up is the only pull there is, as on the encoder. Both are debounced 50 ms

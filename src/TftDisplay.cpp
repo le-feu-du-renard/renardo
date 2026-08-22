@@ -118,7 +118,7 @@ TftDisplay::TftDisplay()
 void TftDisplay::Begin()
 {
   tft_.init();
-  tft_.setRotation(1); // landscape, 320 x 240
+  tft_.setRotation(3); // landscape, 320 x 240, flipped 180 degrees
 
   // Nothing clears the splash here: it has to survive the rest of setup, where
   // the radio probe alone can block for several seconds. EndSplash() retires it
