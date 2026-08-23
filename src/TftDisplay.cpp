@@ -1,4 +1,5 @@
 #include "TftDisplay.h"
+#include "StatusIndicator.h"
 #include "UiIcons.h"
 #include "UiTheme.h"
 #include "fonts/MonoFonts.h"
@@ -101,7 +102,7 @@ constexpr int16_t kLongestStripLabel  = 11; // HYDRAULIQUE
 constexpr int16_t kLongestDeviceLabel = 7;  // RECIRC.
 constexpr int16_t kLongestDeviceState = 8;  // REFROID., OUV. 65%
 constexpr int16_t kLongestPhaseName   = 14; // INITIALISATION
-constexpr int16_t kLongestHint        = 38; // the feedback alarm
+constexpr int16_t kLongestHint        = 38; // the feedback and hydraulic alarms
 
 } // namespace
 
@@ -319,9 +320,7 @@ bool TftDisplay::DevicesChanged(const DisplayModel &model) const
 
 bool TftDisplay::HintChanged(const DisplayModel &model) const
 {
-  return model.sensor_fault != previous_.sensor_fault ||
-         model.airflow_fault != previous_.airflow_fault ||
-         model.damper_feedback_fault != previous_.damper_feedback_fault;
+  return model.fault != previous_.fault;
 }
 
 // --- Regions ----------------------------------------------------------------
@@ -714,22 +713,35 @@ void TftDisplay::DrawHintBar(const DisplayModel &model)
   static_assert(kLongestHint * kMono12BAdvance <= kWidth,
                 "hint bar text is wider than the screen");
 
-  // One band, three possible alarms, so they are ranked rather than queued:
-  // blocked airflow first because it is the only one that stops the dryer, then
-  // the feedback that refuses the next start, then the probe that blocks the
-  // heating. Rotating them would make the worst news the hardest to catch.
+  // One band, one alarm: Dryer::FaultReason() has already ranked them, so the
+  // renderer only translates. Each line names the cause and what it costs,
+  // because a red LED on its own has the operator guessing — and every one of
+  // these now refuses a start, which is exactly the thing that needs saying.
   const char *hint = nullptr;
-  if (model.airflow_fault)
+  switch (static_cast<DryerFault>(model.fault))
   {
-    hint = "REGISTRES FERMES - PAS DE CIRCULATION";
-  }
-  else if (model.damper_feedback_fault)
-  {
-    hint = "RECOPIE REGISTRE HS - DEMARRAGE BLOQUE";
-  }
-  else if (model.sensor_fault)
-  {
-    hint = "SONDE INJECTION HS - CHAUFFAGE BLOQUE";
+    case DryerFault::kAirflowBlocked:
+      hint = "REGISTRES FERMES - PAS DE CIRCULATION";
+      break;
+    case DryerFault::kDamperFeedback:
+      hint = "RECOPIE REGISTRE HS - DEMARRAGE BLOQUE";
+      break;
+    // Was "CHAUFFAGE BLOQUE", which is still true and no longer the headline:
+    // the heat going off is now the opening move of a purge that ends the batch
+    // at SENSOR_SESSION_TIMEOUT_MS. The operator has under a minute to reseat a
+    // connector, and the line has to say that rather than describe a steady
+    // state the dryer is not in.
+    case DryerFault::kSensorStale:
+      hint = "SONDE INJECTION HS - ARRET IMMINENT";
+      break;
+    // The way out of this one is the menu, not a spanner, so the line says so:
+    // a dryer with no hydraulic fitted is meant to have the source switched off
+    // under Sources, and until it is, the module counts as missing.
+    case DryerFault::kHydraulicOffline:
+      hint = "HYDRAULIQUE INJOIGNABLE - VOIR SOURCES";
+      break;
+    case DryerFault::kNone:
+      break;
   }
 
   if (hint != nullptr)

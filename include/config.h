@@ -392,7 +392,24 @@
 
 // ========== TIMING CONSTANTS ==========
 #define SENSOR_UPDATE_INTERVAL 2000  // ms
-#define SENSOR_TIMEOUT_MS 10000      // ms — heating disabled if inlet sensor silent for this long
+
+// Two thresholds on the same silence, because the two decisions cost very
+// different things. Core 1 polls the inlet probe every SENSOR_UPDATE_INTERVAL,
+// so both are really counted in missed polls: 5 to cut the heat, 30 to end the
+// batch.
+//
+// Cutting the heat is instantly reversible — the reading comes back and the
+// heaters resume where they left off. Ending a batch is not, and under the
+// fault rules the dryer cannot even be restarted until the probe answers again.
+// One number for both would have to be short enough to be safe, which would put
+// a ten-second bus hiccup in a position to destroy a night's drying.
+//
+// The gap between them is not idle waiting: it is the purge window in
+// Dryer::UpdateFaultResponse() — heat off, extraction open, phases frozen — so
+// the machine spends it shedding heat rather than hoping the probe returns.
+#define SENSOR_TIMEOUT_MS 10000         // ms — 5 missed polls: heating blocked
+#define SENSOR_SESSION_TIMEOUT_MS 60000 // ms — 30 missed polls: session stopped
+
 #define CONTROL_LOOP_INTERVAL 1000   // ms
 #define SETTINGS_SAVE_INTERVAL 60000 // ms (1 minute)
 #define DATA_LOG_INTERVAL 60000      // ms (1 minute)

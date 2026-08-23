@@ -9,7 +9,10 @@ Dryer::Dryer()
       session_manager_(&temperature_manager_, &humidity_manager_),
       inlet_temperature_(0.0f),
       inlet_humidity_(0.0f),
-      last_control_update_ms_(0) {}
+      last_control_update_ms_(0),
+      purging_(false),
+      purge_since_ms_(0),
+      purge_fault_(DryerFault::kNone) {}
 
 void Dryer::Begin()
 {
@@ -20,25 +23,48 @@ void Dryer::Begin()
   Logger::Info("Dryer: initialized");
 }
 
+DryerFault Dryer::FaultReason() const
+{
+  DryerFault fault = DryerFault::kNone;
+
+  if (air_damper_.IsAirflowBlocked())
+  {
+    fault = DryerFault::kAirflowBlocked;
+  }
+  else if (!air_damper_.IsFeedbackUsable())
+  {
+    fault = DryerFault::kDamperFeedback;
+  }
+  else if (!temperature_manager_.GetHeatingPermitted())
+  {
+    fault = DryerFault::kSensorStale;
+  }
+  else if (temperature_manager_.GetHydraulicEnabled() &&
+           !temperature_manager_.GetHydraulicOnline())
+  {
+    fault = DryerFault::kHydraulicOffline;
+  }
+
+  return ApplyFaultGrace(fault, millis());
+}
+
 void Dryer::Start()
 {
   if (session_manager_.IsRunning()) return;
 
-  // The first preconditions this dryer has ever had on starting. Every other
-  // interlock in the firmware gates the heat sources and leaves the session
-  // alone; these two cannot, because what they protect is the air path itself.
+  // No session begins while anything is wrong. The refusal reads from the same
+  // FaultReason() the panel LED does, so a button that will not take is always
+  // a button next to a blinking red LED and an alarm line naming the cause —
+  // the operator is never left pressing a dead switch.
   //
-  // They sit here rather than at the button, so every route into a session —
-  // the button, a restored one at boot, whatever comes later — goes through the
-  // same door.
-  if (air_damper_.IsAirflowBlocked())
+  // It sits here rather than at the button, so every route into a session — the
+  // button, whatever comes later — goes through the same door. RestoreSession()
+  // deliberately does not: a reboot mid-batch has to pick the batch back up, and
+  // Update() below stops it within the loop if the air path is genuinely shut.
+  DryerFault fault = FaultReason();
+  if (fault != DryerFault::kNone)
   {
-    Logger::Warning("Dryer: start refused — both registers shut, no airflow");
-    return;
-  }
-  if (!air_damper_.IsFeedbackUsable())
-  {
-    Logger::Warning("Dryer: start refused — register feedback unusable");
+    Logger::Warning("Dryer: start refused — %s", FaultName(fault));
     return;
   }
 
@@ -50,6 +76,15 @@ void Dryer::Start()
 void Dryer::Stop()
 {
   if (!session_manager_.IsRunning()) return;
+
+  // Cleared directly rather than through EndPurge(), which announces a recovery
+  // that is not happening here. The damper is left where the purge put it: no
+  // HumidityManager::Update() runs during the cooldown, so an extraction opened
+  // to shed heat stays open for the fan to finish the job through.
+  purging_     = false;
+  purge_fault_ = DryerFault::kNone;
+  humidity_manager_.SetPurge(false);
+
   temperature_manager_.SetFanActive(false);
   session_manager_.Stop();
   Logger::Info("Dryer: session stopped");
@@ -59,16 +94,16 @@ void Dryer::Update()
 {
   session_manager_.UpdateCooldown();
 
-  // Checked before the early return, and before anything else: a fan pushing
-  // against two shut vanes moves no air, and no amount of heating logic is worth
-  // running until that is resolved. A feedback that goes unusable mid-cycle does
-  // *not* stop anything — a wire failing must not cost the batch — it only
-  // refuses the next start.
-  if (session_manager_.IsRunning() && air_damper_.IsAirflowBlocked())
+  // Checked before anything else: no heating logic is worth running on a dryer
+  // that has to come down.
+  //
+  // This is also the interlock a session restored from flash goes through:
+  // RestoreSession() takes no preconditions, because a reboot mid-batch has to
+  // pick the batch back up, and one pass through here is all it takes to bring
+  // it down again if the machine it woke into is not fit to run.
+  if (session_manager_.IsRunning())
   {
-    Logger::Error("Dryer: no airflow — stopping session");
-    Stop();
-    return;
+    UpdateFaultResponse();
   }
 
   if (!session_manager_.IsRunning())
@@ -82,9 +117,76 @@ void Dryer::Update()
   }
 }
 
+// What a running session does about a fault: nothing, purge and wait, or stop.
+void Dryer::UpdateFaultResponse()
+{
+  DryerFault fault   = FaultReason();
+  uint32_t   holdoff = FaultStopHoldoffMs(fault);
+  uint32_t   now     = millis();
+
+  if (holdoff == kFaultNeverStops)
+  {
+    EndPurge();
+    return;
+  }
+
+  // A different fault restarts the clock: the new one has its own deadline and
+  // no claim on time already served under the old.
+  if (!purging_ || fault != purge_fault_)
+  {
+    purging_        = true;
+    purge_fault_    = fault;
+    purge_since_ms_ = now;
+
+    if (holdoff > 0)
+    {
+      // Shed heat rather than sit and hope. The probe is the control input, so
+      // this is exactly the window in which nothing can be measured — including
+      // by the safety_max cutoff, which is reading the same dead probe. Opening
+      // the extraction is the one heat-removal action left that does not depend
+      // on knowing the temperature.
+      temperature_manager_.AllOff();
+      humidity_manager_.SetPurge(true);
+      Logger::Error("Dryer: %s — heat off, extraction open, stopping in %u s",
+                    FaultName(fault), holdoff / 1000U);
+    }
+  }
+
+  if (now - purge_since_ms_ >= holdoff)
+  {
+    Logger::Error("Dryer: stopping session — %s", FaultName(purge_fault_));
+    Stop();
+  }
+}
+
+void Dryer::EndPurge()
+{
+  if (!purging_) return;
+
+  purging_     = false;
+  purge_fault_ = DryerFault::kNone;
+
+  // Deliberately not forced shut. Letting the next HumidityManager::Update()
+  // apply the phase's own mode is the whole point of the override sitting above
+  // it — and on the path where the session ends instead, that update never
+  // comes, so the register stays open through the fan cooldown, which is where
+  // an open extraction was wanted anyway.
+  humidity_manager_.SetPurge(false);
+  Logger::Info("Dryer: fault cleared — session resumes");
+}
+
 void Dryer::UpdateControl()
 {
-  session_manager_.Update(inlet_temperature_, inlet_humidity_);
+  // Phase transitions are suspended for the duration of a purge. Init, Brassage
+  // and Extraction all end on a humidity threshold, and the reading behind that
+  // threshold is stale — being stale is what started the purge. Letting them
+  // run would have a batch reach a finish it never actually got to, on the
+  // strength of the last number the probe managed to send.
+  if (!purging_)
+  {
+    session_manager_.Update(inlet_temperature_, inlet_humidity_);
+  }
+
   temperature_manager_.Update(inlet_temperature_);
   humidity_manager_.Update(inlet_humidity_);
 }

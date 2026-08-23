@@ -1022,35 +1022,62 @@ by `PushButton` and fire once per press, however long they are held.
 STOP is read first every pass, so pressing both within one debounce window ends
 with the dryer stopped. `Dryer::Start()` and `Dryer::Stop()` each return
 immediately when the dryer is already in the state being asked for, so a press
-that changes nothing costs nothing — and the start preconditions stay where they
-were, inside `Dryer::Start()`, whatever route asks for a session.
+that changes nothing costs nothing — and the start precondition stays where it
+was, inside `Dryer::Start()`, whatever route asks for a session: no session
+begins while `Dryer::FaultReason()` reports anything wrong, which is the same
+condition the red LED beside the button is blinking for.
 
 ### Two LEDs, not one RGB
 
-Two discrete LEDs say the four states on one GPIO less than an RGB part would,
-and they are what the machine can be read by from across the room:
+Two discrete LEDs say more than an RGB part would on one GPIO less, because they
+are two independent lines and can therefore carry **two axes at once** — green
+for the session, red for the fault:
 
-| State | Green | Red |
+| | Green | Red |
 |---|---|---|
-| running | steady | out |
-| cooling down (`FAN_COOLDOWN_DURATION_S`) | blinking | out |
+| running | steady | — |
+| cooling down (`FAN_COOLDOWN_DURATION_S`) | blinking | — |
 | stopped | out | steady |
-| fault | out | blinking |
+| *and* a fault | *unchanged* | **blinking** |
+
+A running dryer with something wrong therefore shows **steady green and blinking
+red**, which no other condition does. Red means two things and the blink is what
+separates them: steady is a machine at rest, blinking is a machine in fault. The
+operator reads the green for motion and the red for trouble, and never has to
+work out which of the two the panel decided to show — the earlier design folded
+both into one lamp, and a fault silently swallowed the running indication.
 
 No state leaves both LEDs dark, so an unpowered board or a dead LED does not
 look like a dryer sitting quietly at rest. The blink is 500 ms on, 500 ms off —
 the same half period as the screen's own blink, so the panel LED and the
 cooldown icon beat together.
 
-The fault wins over a running session. A stale probe blocks the heat sources but
-not the fan, so the dryer can be turning while something is wrong, and that is
-precisely when the panel must say so rather than show a reassuring steady green.
-Three conditions light it: **no airflow** (both registers shut), **a silent
-inlet probe** (`SENSOR_TIMEOUT_MS`), and **a hydraulic module that stopped
-answering** — the last only when the hydraulic source is enabled in the menu,
-since a dryer fitted without one would otherwise blink red for ever. An unusable
-register feedback is deliberately not among them: it refuses a start and says so
-on screen, but nothing is wrong with a machine standing there stopped.
+Four conditions blink the red, ranked worst first by `Dryer::FaultReason()`:
+**no airflow** (both registers shut), **an unusable register feedback**, **a
+silent inlet probe** (`SENSOR_TIMEOUT_MS`), and **a hydraulic module that
+stopped answering** — the last only when the hydraulic source is enabled in the
+menu, since a dryer fitted without one would otherwise blink red for ever.
+
+Every one of them also refuses a start, and the screen's alarm band names the
+same ranked reason, so a blinking red LED, a button that will not take and a
+line of text on screen are always the same fault seen three ways. The two polled
+faults are held back for `STATUS_FAULT_GRACE_MS` after boot, where neither the
+probe nor the module has been asked yet; the two air-path faults read off the
+ADC from the first loop and are not.
+
+All but the hydraulic one also **stop a session already running** — the module
+is optional at runtime and losing it degrades to electric-only, whereas a shut
+air path, a dead register recopy and a silent inlet probe each leave the dryer
+unable to vouch for what it is doing. A dead recopy in particular does not cost
+one indicator: it disarms the airflow interlock, which reads no signal as
+not-shut.
+
+The probe is the only one given a hold-off before the batch ends: 5 missed polls
+cut the heat, 30 end the session, and the 50 s between them is spent purging —
+heat off, extraction held open, phase transitions suspended. With the probe dead
+the `safety_max` cutoff is blind on the same wire, so venting is the only heat
+removal left that does not depend on knowing the temperature. See
+[Status LEDs](DOCUMENTATION.md#status-leds) for the whole table.
 
 Nothing is reported for the first 15 s after boot (`STATUS_FAULT_GRACE_MS`).
 The probe and the hydraulic module are both silent until Core 1 has completed

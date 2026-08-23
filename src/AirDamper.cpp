@@ -91,7 +91,20 @@ void AirDamper::UpdateInterlock()
   {
     if (airflow_blocked_)
     {
-      Logger::Info("AirDamper: airflow restored");
+      // "Not shut" and "cannot tell" arrive here as the same answer, because
+      // IsClosed() reads a dead feedback as not-shut. Only the first is a
+      // recovery. Announcing one for the second would put the single most
+      // misleading line this firmware can print into the log at the exact
+      // moment the interlock goes blind — and it is the line an operator would
+      // reach for afterwards to work out what the machine thought it was doing.
+      //
+      // Clearing the flag either way is right: it may only be asserted on a
+      // positive reading, and there is none. The blind case is not left
+      // unguarded — it becomes kDamperFeedback, which stops the session on the
+      // same pass and outranks nothing it should not.
+      Logger::Info(IsFeedbackUsable()
+                       ? "AirDamper: airflow restored"
+                       : "AirDamper: feedback lost — airflow can no longer be judged");
     }
     both_closed_     = false;
     airflow_blocked_ = false;

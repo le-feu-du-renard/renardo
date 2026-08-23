@@ -391,33 +391,148 @@ stuck low at boot is treated as already consumed — otherwise a stuck STOP woul
 end a session restored from flash the moment the board came back up.
 
 STOP is read first, so pressing both at once stops the dryer. Asking for the
-state the dryer is already in does nothing, and the start preconditions — the
-airflow interlock and a usable register feedback — stay inside `Dryer::Start()`,
-so every route into a session goes through the same door.
+state the dryer is already in does nothing, and the start precondition — that
+`Dryer::FaultReason()` reports nothing wrong — stays inside `Dryer::Start()`, so
+every route into a session goes through the same door. A refused start is always
+a start refused beside a blinking red LED and an on-screen reason; see
+[Status LEDs](#status-leds).
 
 ## Status LEDs
 
 Two LEDs on the panel, green and red, say what the machine is doing from across
 the room:
 
-| State | Green | Red |
+Two axes on two lamps, read independently — **green is the session, red is the
+fault** — rather than one lamp per state:
+
+| | Green | Red |
 |---|---|---|
-| running | steady | out |
-| cooling down | blinking | out |
+| running | steady | — |
+| cooling down | blinking | — |
 | stopped | out | steady |
-| fault | out | blinking |
+| *and* a fault | *unchanged* | **blinking** |
+
+So a running dryer with something wrong shows **steady green and blinking red**,
+which no other condition does. Red carries two meanings and the blink separates
+them: steady red is a machine at rest, blinking red is a machine in fault.
+Reading it needs no table — the operator looks at the green for motion and the
+red for trouble, and the panel never has to choose between the two.
 
 No state leaves both dark, so an unpowered board does not look like a dryer at
 rest. The cooldown is the fan still turning after a stop, for
 `FAN_COOLDOWN_DURATION_S` — a blinking green rather than the steady red of a
 machine that has actually finished.
 
-A fault wins over a running session: a silent probe blocks the heat sources but
-not the fan, so the dryer can be turning while something is wrong, and that is
-when the panel must say so. Three conditions light it — no airflow, a silent
-inlet probe, and a hydraulic module that stopped answering while its source is
-enabled in the menu. Nothing is reported for the first 15 s after boot, where
-neither the probe nor the hydraulic module has answered yet.
+### What blinks red, and why
+
+`Dryer::FaultReason()` returns the single worst thing wrong, ranked, as a
+`DryerFault`. One reason rather than a set of flags, because everything
+downstream wants exactly one: the LED blinks or it does not, the screen's alarm
+band has room for one line, and `Start()` refuses with one message.
+
+| `DryerFault` | Condition | Alarm band |
+|---|---|---|
+| `kAirflowBlocked` | both registers shut | `REGISTRES FERMES - PAS DE CIRCULATION` |
+| `kDamperFeedback` | a declared register reports no usable opening | `RECOPIE REGISTRE HS - DEMARRAGE BLOQUE` |
+| `kSensorStale` | inlet probe silent (`SENSOR_TIMEOUT_MS`) | `SONDE INJECTION HS - ARRET IMMINENT` |
+| `kHydraulicOffline` | module not answering, source enabled in the menu | `HYDRAULIQUE INJOIGNABLE - VOIR SOURCES` |
+
+**Every one of them refuses a start**, and the panel, the alarm band and the
+interlock all read the same `FaultReason()`. That is the point of the single
+enum: a button that will not take is always a button beside a blinking red LED
+and a line on screen naming the cause. The operator is never left pressing a
+dead switch.
+
+### What a fault does to a session already running
+
+Three of the four bring it down, via `FaultStopHoldoffMs()` in
+`Dryer::UpdateFaultResponse()`. The dividing line is not severity — it is
+whether the dryer can still be trusted to be doing what it says.
+
+| `DryerFault` | Running session | Hold-off | Why |
+|---|---|---|---|
+| `kAirflowBlocked` | **stopped** | none | a fan against two shut vanes moves no air, and the electric heater sits in that duct |
+| `kDamperFeedback` | **stopped** | none | the recopy is the only evidence the air path is open — see below |
+| `kSensorStale` | **stopped** | 50 s, purging | the probe is the control input, and its threshold is a timeout rather than a measurement |
+| `kHydraulicOffline` | continues | — | optional at runtime, degrades to electric-only |
+
+A stop runs the normal `FAN_COOLDOWN_DURATION_S` purge, so the heater gives up
+its heat before the fan quits.
+
+### The probe hold-off, and the purge
+
+Only the probe waits, and only because it is the one fault whose *detection* is
+a timeout rather than a measurement. The other two arrive already confirmed —
+`DAMPER_BLOCKED_CONFIRM_MS` of both registers reading shut,
+`DAMPER_SIGNAL_CONFIRM_SAMPLES` below the signal floor — so by the time they are
+reported there is nothing left to wait for, and waiting again would be the same
+debounce served twice on a dryer that is provably unfit.
+
+Core 1 polls the inlet every `SENSOR_UPDATE_INTERVAL` (2 s), so the two sensor
+thresholds are really counted in missed polls:
+
+| | Silence | Missed polls | What happens |
+|---|---|---|---|
+| `SENSOR_TIMEOUT_MS` | 10 s | 5 | heat cut, fault raised, **purge starts** |
+| `SENSOR_SESSION_TIMEOUT_MS` | 60 s | 30 | session stopped |
+
+Two thresholds because the two decisions cost very different things. Cutting the
+heat is instantly reversible — the reading comes back and the heaters resume.
+Ending a batch is not, and under the fault rules the dryer cannot even be
+restarted until the probe answers again, so a ten-second bus hiccup must not be
+in a position to destroy a night's drying.
+
+The 50 s between them is not idle waiting. It is a **purge**:
+
+- **heat off** — `TemperatureManager::AllOff()`, both sources;
+- **extraction held open** — `HumidityManager::SetPurge(true)`;
+- **phase transitions suspended** — Init, Brassage and Extraction all end on a
+  humidity threshold, and that reading is stale by definition; letting them run
+  would have a batch reach a finish it never actually got to.
+
+Opening the extraction matters more than it first looks. With the probe dead
+there is no temperature reading at all, so the `safety_max` cutoff is blind on
+the same wire — venting is the one heat-removal action left that does not depend
+on knowing the temperature.
+
+`SetPurge()` is an override *above* the mode rather than a mode of its own,
+because the mode belongs to the phase and the phase has not ended.
+`HumidityManager::Update()` is a pure function of mode every cycle, so clearing
+the purge restores whatever the phase wanted with nothing to save and nothing to
+put back. If the session ends instead, the damper is left open: no `Update()`
+runs during the fan cooldown, which is exactly where an open extraction was
+wanted anyway.
+
+`kDamperFeedback` is the one most easily argued out of that list, and the one
+that most needs to be in it. `DamperFeedback::IsClosed()` reads NAN as *not
+known to be shut* — deliberately, so the interlock only ever trips on a positive
+reading. The consequence is that a dead recopy does not leave the dryer one
+indicator short: it **silently disarms the airflow interlock**, which is the
+thing that would have caught the failure. A dryer that cannot tell whether air
+is moving must not keep heating on the assumption that it is.
+
+The same asymmetry once produced a genuinely misleading log line. If the recopy
+died while a blockage was already confirmed, `AirDamper::UpdateInterlock()` saw
+`both_shut` go false and printed *"airflow restored"* — announcing recovery at
+the instant the interlock went blind. It now distinguishes the two and says
+`feedback lost — airflow can no longer be judged`.
+
+`RestoreSession()` takes no preconditions, because a reboot mid-batch has to
+pick the batch back up; one pass through `Dryer::Update()` brings it down again
+if the machine it woke into is not fit to run.
+
+The hydraulic module only counts when its source is enabled — a dryer fitted
+without one would otherwise blink red for ever — and the way out of that fault
+is the **Sources** menu toggle, which is what the alarm line says.
+
+The two polled faults, `kSensorStale` and `kHydraulicOffline`, are held back for
+`STATUS_FAULT_GRACE_MS` (15 s) after boot: neither the probe nor the module has
+been asked yet, so nobody is late. The two air-path faults come off the ADC,
+which reads from the first loop, and are not graced — fifteen seconds in which a
+dryer with both registers shut would accept a start is fifteen seconds too many.
+
+Each transition is logged once, with the cause:
+`Status: running — fault: hydraulic module not answering`.
 
 ---
 

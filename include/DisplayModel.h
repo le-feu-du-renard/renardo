@@ -78,9 +78,11 @@ struct DisplayModel
   bool eco_window;
 
   // --- Alarms ---
-  bool sensor_fault;          // inlet probe stale, heating blocked
-  bool airflow_fault;         // both registers shut: session refused and stopped
-  bool damper_feedback_fault; // two registers declared, a feedback unusable
+  // DryerFault, held as its underlying type for the same reason as `phase`
+  // above: this header stays independent of the modules that produce it. One
+  // ranked reason rather than a flag each, because the band has room for one
+  // line and the ranking is Dryer's to make, not the renderer's.
+  uint8_t fault;
 
   DisplayModel()
       : total_elapsed_s(0),
@@ -108,9 +110,7 @@ struct DisplayModel
         damper_count(1),
         eco_enabled(false),
         eco_window(false),
-        sensor_fault(false),
-        airflow_fault(false),
-        damper_feedback_fault(false) {}
+        fault(0) {}
 };
 
 #endif // DISPLAY_MODEL_H

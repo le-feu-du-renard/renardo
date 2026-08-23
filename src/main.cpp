@@ -412,19 +412,30 @@ static void UpdateStatusLed()
   // stopped session is the cooldown.
   bool fan_active = dryer.GetFanOutput() > 0.0f;
 
-  DryerStatus status =
-      ResolveStatus(dryer.IsRunning(), fan_active, dryer.HasFault(), now);
+  PanelState state = ResolvePanel(dryer.IsRunning(), fan_active, dryer.FaultReason());
 
-  static DryerStatus last_status = DryerStatus::kStopped;
-  static bool        status_seen = false;
-  if (!status_seen || status != last_status)
+  static PanelState last_state{DryerStatus::kStopped, DryerFault::kNone};
+  static bool       status_seen = false;
+  if (!status_seen || state.status != last_state.status || state.fault != last_state.fault)
   {
     status_seen = true;
-    last_status = status;
-    Logger::Info("Status: %s", StatusName(status));
+    last_state  = state;
+
+    // The cause goes in the transition line, once. A red LED that blinks for
+    // ten minutes with nothing in the log saying what set it off is a fault
+    // report that has to be reproduced to be read.
+    if (state.fault == DryerFault::kNone)
+    {
+      Logger::Info("Status: %s", StatusName(state.status));
+    }
+    else
+    {
+      Logger::Info("Status: %s — fault: %s", StatusName(state.status),
+                   FaultName(state.fault));
+    }
   }
 
-  status_led.Apply(PatternFor(status, now));
+  status_led.Apply(PatternFor(state, now));
 }
 
 // ========== DAMPER POSITION FEEDBACK ==========
@@ -650,9 +661,9 @@ static void UpdateDisplay()
   model.eco_enabled = temperature_manager->IsEcoActive();
   model.eco_window  = dryer.IsEcoWindowActive();
 
-  model.sensor_fault          = !temperature_manager->GetHeatingPermitted();
-  model.airflow_fault         = dryer.GetAirflowBlocked();
-  model.damper_feedback_fault = dryer.GetDamperFeedbackFault();
+  // The same ranked reason the panel LED reads, so the alarm band always names
+  // the fault the red LED is blinking for.
+  model.fault = static_cast<uint8_t>(dryer.FaultReason());
 
   display.RenderMain(model);
 }

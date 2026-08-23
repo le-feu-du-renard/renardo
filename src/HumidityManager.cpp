@@ -4,6 +4,7 @@
 HumidityManager::HumidityManager(AirDamper *air_damper)
     : air_damper_(air_damper),
       mode_(Mode::kDisabled),
+      purge_(false),
       target_humidity_(0.0f),
       current_inlet_humidity_(0.0f),
       action_next_allowed_ms_(0) {}
@@ -11,6 +12,7 @@ HumidityManager::HumidityManager(AirDamper *air_damper)
 void HumidityManager::Begin()
 {
   mode_                   = Mode::kDisabled;
+  purge_                  = false;
   target_humidity_        = 0.0f;
   current_inlet_humidity_ = 0.0f;
   action_next_allowed_ms_ = 0;
@@ -21,6 +23,14 @@ void HumidityManager::Begin()
 void HumidityManager::Update(float inlet_humidity)
 {
   current_inlet_humidity_ = inlet_humidity;
+
+  // Above the mode, and before the threshold logic reads a humidity that is by
+  // definition not to be trusted while a purge is running.
+  if (purge_)
+  {
+    air_damper_->Open();
+    return;
+  }
 
   if (mode_ == Mode::kDisabled)
   {
@@ -67,6 +77,24 @@ void HumidityManager::SetMode(Mode mode)
                                                  : "kThreshold";
   Logger::Info("HumidityManager: mode -> %s", name);
   mode_ = mode;
+}
+
+void HumidityManager::SetPurge(bool purge)
+{
+  if (purge == purge_) return;
+  purge_ = purge;
+
+  // The cooldown is armed against threshold chatter, and the purge has just
+  // moved the damper without consulting it. Clearing it lets kThreshold act on
+  // the first good reading after the probe comes back rather than sitting on a
+  // wide-open register for another ten seconds.
+  if (!purge_)
+  {
+    ResetCooldown();
+  }
+
+  Logger::Info("HumidityManager: purge %s", purge_ ? "on — damper held open"
+                                                   : "off — mode resumes");
 }
 
 void HumidityManager::SetTargetHumidity(float target)

@@ -29,6 +29,17 @@ public:
   void SetMode(Mode mode);
   Mode GetMode() const { return mode_; }
 
+  // Hold the damper open regardless of mode, to shed heat while the dryer is
+  // riding out a fault it may yet be brought down by.
+  //
+  // An override above the mode rather than a mode of its own, because the mode
+  // belongs to the phase and the phase has not ended: the purge is a thing
+  // happening *to* a session, not a stage of one. Update() is a pure function
+  // of mode every cycle, so clearing this restores whatever the phase wanted
+  // with nothing to save and nothing to put back.
+  void SetPurge(bool purge);
+  bool IsPurging() const { return purge_; }
+
   // Set humidity threshold (%RH) — used for kThreshold mode and transition logic.
   void  SetTargetHumidity(float target);
   float GetTargetHumidity()   const { return target_humidity_; }
@@ -44,6 +55,7 @@ private:
   AirDamper *air_damper_;
 
   Mode     mode_;
+  bool     purge_;
   float    target_humidity_;
   float    current_inlet_humidity_;
   uint32_t action_next_allowed_ms_;

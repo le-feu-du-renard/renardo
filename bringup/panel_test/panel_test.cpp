@@ -55,26 +55,44 @@ namespace
   // whole cycle is seen without waiting.
   constexpr uint32_t kAutoStateMs = 4000;
 
-  const DryerStatus kAllStates[] = {DryerStatus::kStopped, DryerStatus::kRunning,
-                                    DryerStatus::kCooling, DryerStatus::kFault};
+  // Five appearances, not four: green and red are two independent axes, so a
+  // fault over a running session is its own thing to look at and the one most
+  // easily got wrong in the driver.
+  const PanelState kAllStates[] = {
+      {DryerStatus::kStopped, DryerFault::kNone},
+      {DryerStatus::kRunning, DryerFault::kNone},
+      {DryerStatus::kCooling, DryerFault::kNone},
+      {DryerStatus::kStopped, DryerFault::kSensorStale},
+      {DryerStatus::kRunning, DryerFault::kSensorStale},
+  };
   constexpr uint8_t kStateCount = sizeof(kAllStates) / sizeof(kAllStates[0]);
 
-  DryerStatus g_status = DryerStatus::kStopped;
-  bool        g_auto = true;
-  bool        g_both = false; // both LEDs held on, for the brightness check
-  uint8_t     g_auto_index = 0;
-  uint32_t    g_last_auto = 0;
+  PanelState g_state{DryerStatus::kStopped, DryerFault::kNone};
+  bool       g_auto = true;
+  bool       g_both = false; // both LEDs held on, for the brightness check
+  uint8_t    g_auto_index = 0;
+  uint32_t   g_last_auto = 0;
 
   // What each state is supposed to look like, printed next to the state so the
   // panel can be checked against words rather than against memory.
-  const char *Appearance(DryerStatus status)
+  const char *Appearance(const PanelState &state)
   {
-    switch (status)
+    if (state.fault != DryerFault::kNone)
+    {
+      switch (state.status)
+      {
+        case DryerStatus::kRunning: return "green steady, red blinking";
+        case DryerStatus::kCooling: return "green blinking, red blinking";
+        case DryerStatus::kStopped: return "green out, red blinking";
+      }
+      return "?";
+    }
+
+    switch (state.status)
     {
       case DryerStatus::kRunning: return "green steady, red out";
       case DryerStatus::kCooling: return "green blinking, red out";
       case DryerStatus::kStopped: return "green out, red steady";
-      case DryerStatus::kFault:   return "green out, red blinking";
     }
     return "?";
   }
@@ -102,8 +120,9 @@ namespace
 
   void PrintHelp()
   {
-    Serial.println("Keys: s = stopped   r = running   c = cooling   f = fault");
-    Serial.println("      a = cycle the four states, 4 s each (default)");
+    Serial.println("Keys: s = stopped   r = running   c = cooling");
+    Serial.println("      f = toggle a fault over whichever of those is showing");
+    Serial.println("      a = cycle the five appearances, 4 s each (default)");
     Serial.println("      b = both LEDs on, for the brightness check");
     Serial.println("      0 = both LEDs off      h = wiring + help");
     Serial.println();
@@ -114,15 +133,16 @@ namespace
 
   void ShowState(const char *how)
   {
-    Serial.printf("State: %-8s (%s)  [%s]\n", StatusName(g_status),
-                  Appearance(g_status), how);
+    Serial.printf("State: %-8s %-8s (%s)  [%s]\n", StatusName(g_state.status),
+                  g_state.fault == DryerFault::kNone ? "" : "+ fault",
+                  Appearance(g_state), how);
   }
 
-  void SetState(DryerStatus status, const char *how)
+  void SetState(DryerStatus status, DryerFault fault, const char *how)
   {
-    g_auto   = false;
-    g_both   = false;
-    g_status = status;
+    g_auto  = false;
+    g_both  = false;
+    g_state = PanelState{status, fault};
     ShowState(how);
   }
 
@@ -223,22 +243,28 @@ void loop()
     switch (key)
     {
     case 's':
-      SetState(DryerStatus::kStopped, "held");
+      SetState(DryerStatus::kStopped, DryerFault::kNone, "held");
       break;
     case 'r':
-      SetState(DryerStatus::kRunning, "held");
+      SetState(DryerStatus::kRunning, DryerFault::kNone, "held");
       break;
     case 'c':
-      SetState(DryerStatus::kCooling, "held");
+      SetState(DryerStatus::kCooling, DryerFault::kNone, "held");
       break;
+    // The fault is a modifier on whatever the session is doing, so the key
+    // toggles it in place rather than replacing the state — which is the only
+    // way to watch green hold steady while red starts blinking over it.
     case 'f':
-      SetState(DryerStatus::kFault, "held");
+      SetState(g_state.status,
+               g_state.fault == DryerFault::kNone ? DryerFault::kSensorStale
+                                                  : DryerFault::kNone,
+               "held");
       break;
     case 'a':
       g_auto      = true;
       g_both      = false;
       g_last_auto = now;
-      Serial.println("Cycling the four states, 4 s each.");
+      Serial.println("Cycling the five appearances, 4 s each.");
       break;
     case 'b':
       g_auto = false;
@@ -269,19 +295,19 @@ void loop()
   if (g_stop_button.IsPressed())
   {
     Serial.println("STOP pressed");
-    SetState(DryerStatus::kStopped, "from the button");
+    SetState(DryerStatus::kStopped, g_state.fault, "from the button");
   }
   if (g_start_button.IsPressed())
   {
     Serial.println("START pressed");
-    SetState(DryerStatus::kRunning, "from the button");
+    SetState(DryerStatus::kRunning, g_state.fault, "from the button");
   }
 
   if (g_auto && (now - g_last_auto) >= kAutoStateMs)
   {
     g_last_auto  = now;
     g_auto_index = (g_auto_index + 1) % kStateCount;
-    g_status     = kAllStates[g_auto_index];
+    g_state      = kAllStates[g_auto_index];
     ShowState("cycling");
   }
 
@@ -291,7 +317,7 @@ void loop()
   }
   else
   {
-    g_status_led.Apply(PatternFor(g_status, now));
+    g_status_led.Apply(PatternFor(g_state, now));
   }
 
   delay(10);
