@@ -367,12 +367,28 @@
 #define MODBUS_REG_TEMPERATURE 0x0001 // raw / MODBUS_RAW_SCALE = C
 #define MODBUS_RAW_SCALE 10.0f        // sensor raw value divisor
 
-// Hydraulic module register map (FC03 read / FC06 write)
-#define HYDRO_REG_STATE 0x0000       // write: 0 = off, 1 = on
-#define HYDRO_REG_WATER_TARGET 0x0001 // write: water setpoint x10 (C)
-#define HYDRO_REG_WATER_TEMP 0x0010  // read: circulating water temperature x10
-#define HYDRO_REG_TANK_TEMP 0x0011   // read: storage tank temperature x10
-#define HYDRO_REG_STATUS 0x0012      // read: status bits
+// Hydraulic module register map.
+//
+// Two blocks, both driven by the dryer because a slave never speaks unprompted:
+// one FC16 out with the permission and the setpoint, one FC03 back with the
+// measurements. The wire format is in HydraulicProtocol.h, which the module
+// firmware compiles too — that header and these addresses are mirrored in the
+// dryer-extension repository and the two copies must stay identical.
+//
+// Readings are **signed tenths** in an unsigned register: cast to int16_t
+// before dividing, because the water loop legitimately reads below zero. A
+// reading the module does not have is INT16_MIN, never a zero.
+#define HYDRO_REG_STATE 0x0000          // write: 0 = stand down, 1 = cleared to run
+#define HYDRO_REG_WATER_TARGET 0x0001   // write: water setpoint x10 (C)
+#define HYDRO_REG_DRYER_AIR_TEMP 0x0002 // write: inlet air temperature x10, signed
+#define HYDRO_COMMAND_COUNT 3
+
+#define HYDRO_REG_WATER_TEMP 0x0010      // read: circulating water temperature x10
+#define HYDRO_REG_TANK_TEMP 0x0011       // read: storage tank temperature x10
+#define HYDRO_REG_STATUS 0x0012          // read: status bits
+#define HYDRO_REG_FAKE_WATER_TEMP 0x0013 // read: what the valve is being told, x10
+#define HYDRO_REG_PUMP_SPEED 0x0014      // read: commanded circulator speed, percent
+#define HYDRO_TELEMETRY_COUNT 5
 
 // Extension port register map.
 //
