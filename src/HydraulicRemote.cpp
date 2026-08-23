@@ -5,7 +5,7 @@
 HydraulicRemote::HydraulicRemote(Rs485Bus *bus)
     : RemoteModule(bus, MODBUS_HYDRAULIC_ADDRESS, "HydraulicRemote",
                    kTimeoutMs, kRetryMs),
-      requested_state_(false),
+      enabled_(false),
       water_target_(WATER_TARGET_DEFAULT),
       water_temperature_(NAN),
       tank_temperature_(NAN),
@@ -24,10 +24,11 @@ void HydraulicRemote::SetWaterTarget(float celsius)
 
 bool HydraulicRemote::Update()
 {
-  // Command block: state then water setpoint, written in one FC16 transaction
-  // so the module never sees a state change with a stale setpoint.
+  // Permission block: run permission then water setpoint, written in one FC16
+  // transaction so the module never sees the permission raised with a stale
+  // setpoint.
   uint16_t command[2];
-  command[0] = requested_state_ ? 1 : 0;
+  command[0] = enabled_ ? 1 : 0;
   command[1] = static_cast<uint16_t>(lroundf(water_target_ * 10.0f));
 
   uint16_t telemetry[3] = {0, 0, 0};

@@ -30,7 +30,11 @@
 // immediately before the checksum, so the record is shorter and every stored one
 // is discarded: the factory values come back, **and the register calibration
 // with them** — it has to be captured again from the menu after this upgrade.
-#define SETTINGS_VERSION 4
+// v5 dropped the four hydraulic regulation knobs, which stopped meaning anything
+// once the remote module took back its own start and regulation, and added the
+// air-renewal window in their place. Same consequence as v4: every stored record
+// is discarded and the register calibration has to be captured again.
+#define SETTINGS_VERSION 5
 #define SESSION_VERSION 1
 
 // Everything the menu can change.
@@ -43,7 +47,9 @@ struct DryerSettings
   float target_humidity;
   float water_target;        // fixed setpoint pushed to the hydraulic module
 
-  // Sources
+  // Sources. `hydraulic_enabled` is a run permission, not a regulation input:
+  // the module handles its own start and its own water loop, so there is
+  // nothing here to tune it with.
   bool hydraulic_enabled;
   bool electric_enabled;
 
@@ -59,15 +65,12 @@ struct DryerSettings
   uint32_t extraction_phase_duration;
   uint32_t extraction_damper_open_duration;
 
-  // Regulation
-  float band_hydraulic;
+  // Regulation — the electric is the only regulated source
   float band_electric;
-  float horizon_hydraulic;
   float horizon_electric;
-  float hydraulic_t_on_min;
-  float hydraulic_t_off_min;
   float electric_t_on_min;
   float electric_t_off_min;
+  float air_renewal_window;
   float safety_max;
 
   // Air registers.

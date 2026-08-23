@@ -172,6 +172,12 @@ void Dryer::EndPurge()
   // comes, so the register stays open through the fan cooldown, which is where
   // an open extraction was wanted anyway.
   humidity_manager_.SetPurge(false);
+
+  // The register is about to travel back to whatever the phase wanted, and the
+  // chamber to climb out of however far the purge let it fall. That is an air
+  // renewal by any other name, so it gets the same tolerance.
+  temperature_manager_.NotifyAirRenewal();
+
   Logger::Info("Dryer: fault cleared — session resumes");
 }
 
@@ -246,15 +252,12 @@ void Dryer::ApplySettings(const DryerSettings &settings, bool rtc_available)
   temperature_manager_.SetElectricEnabled(settings.electric_enabled);
 
   TemperatureParams &params = temperature_manager_.GetParams();
-  params.band_hydraulic      = settings.band_hydraulic;
-  params.band_electric       = settings.band_electric;
-  params.horizon_hydraulic   = settings.horizon_hydraulic;
-  params.horizon_electric    = settings.horizon_electric;
-  params.hydraulic_t_on_min  = settings.hydraulic_t_on_min;
-  params.hydraulic_t_off_min = settings.hydraulic_t_off_min;
-  params.electric_t_on_min   = settings.electric_t_on_min;
-  params.electric_t_off_min  = settings.electric_t_off_min;
-  params.safety_max          = settings.safety_max;
+  params.band_electric      = settings.band_electric;
+  params.horizon_electric   = settings.horizon_electric;
+  params.electric_t_on_min  = settings.electric_t_on_min;
+  params.electric_t_off_min = settings.electric_t_off_min;
+  params.air_renewal_window = settings.air_renewal_window;
+  params.safety_max         = settings.safety_max;
   params.eco_start_hour        = settings.eco_start_hour;
   params.eco_end_hour          = settings.eco_end_hour;
   params.eco_target_percentage = settings.eco_target_percentage;
@@ -293,15 +296,12 @@ void Dryer::CaptureSettings(DryerSettings &settings) const
   settings.hydraulic_enabled = temperature_manager_.GetHydraulicEnabled();
   settings.electric_enabled  = temperature_manager_.GetElectricEnabled();
 
-  settings.band_hydraulic      = params.band_hydraulic;
-  settings.band_electric       = params.band_electric;
-  settings.horizon_hydraulic   = params.horizon_hydraulic;
-  settings.horizon_electric    = params.horizon_electric;
-  settings.hydraulic_t_on_min  = params.hydraulic_t_on_min;
-  settings.hydraulic_t_off_min = params.hydraulic_t_off_min;
-  settings.electric_t_on_min   = params.electric_t_on_min;
-  settings.electric_t_off_min  = params.electric_t_off_min;
-  settings.safety_max          = params.safety_max;
+  settings.band_electric      = params.band_electric;
+  settings.horizon_electric   = params.horizon_electric;
+  settings.electric_t_on_min  = params.electric_t_on_min;
+  settings.electric_t_off_min = params.electric_t_off_min;
+  settings.air_renewal_window = params.air_renewal_window;
+  settings.safety_max         = params.safety_max;
 
   settings.eco_enabled           = temperature_manager_.IsEcoActive();
   settings.eco_start_hour        = params.eco_start_hour;

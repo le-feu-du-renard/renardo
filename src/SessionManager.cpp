@@ -48,7 +48,9 @@ void SessionManager::Stop()
   // Turn off both heat sources immediately
   temperature_manager_->AllOff();
 
-  // Disable humidity control and close damper
+  // Disable humidity control and close damper. Not through SetDamperMode(): a
+  // stop is not a transient to be ridden out, and there is nothing left running
+  // for a tolerance window to protect.
   humidity_manager_->SetTargetHumidity(0.0f);
   humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
   humidity_manager_->ResetCooldown();
@@ -108,33 +110,46 @@ void SessionManager::EnterPhase(DryerPhase phase)
   current_phase_  = phase;
   phase_start_ms_ = millis();
 
+  // Only Init resets the control outright, because only Init is a session
+  // start. Brassage and Extraction arm the air-renewal window instead: cutting
+  // the heater and clearing its timers at the exact moment cold air arrives is
+  // what used to make every transition a step backwards.
   switch (phase)
   {
     case DryerPhase::kInit:
-      humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
-      humidity_manager_->ResetCooldown();
+      SetDamperMode(HumidityManager::Mode::kDisabled);
       init_extraction_end_ms_ = 0;
       temperature_manager_->ResetControl();
       Logger::Info("SessionManager: entering Init phase");
       break;
 
     case DryerPhase::kBrassage:
-      humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
-      humidity_manager_->ResetCooldown();
-      temperature_manager_->ResetControl();
+      SetDamperMode(HumidityManager::Mode::kDisabled);
       Logger::Info("SessionManager: entering Brassage phase");
       break;
 
     case DryerPhase::kExtraction:
       // Force damper open for the full extraction phase duration
-      humidity_manager_->SetMode(HumidityManager::Mode::kForceOpen);
-      humidity_manager_->ResetCooldown();
-      temperature_manager_->ResetControl();
+      SetDamperMode(HumidityManager::Mode::kForceOpen);
       Logger::Info("SessionManager: entering Extraction phase");
       break;
 
     default:
       break;
+  }
+}
+
+// Every damper movement the session commands goes through here, so the
+// regulation is told about all of them and not just the ones that happen to
+// coincide with a phase change — the Init sub-extraction is a damper movement
+// in the middle of a phase, and it used to tell the regulation nothing at all.
+void SessionManager::SetDamperMode(HumidityManager::Mode mode)
+{
+  bool changed = humidity_manager_->SetMode(mode);
+  humidity_manager_->ResetCooldown();
+  if (changed)
+  {
+    temperature_manager_->NotifyAirRenewal();
   }
 }
 
@@ -155,7 +170,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
           if (millis() >= init_extraction_end_ms_)
           {
             init_extraction_end_ms_ = 0;
-            humidity_manager_->SetMode(HumidityManager::Mode::kDisabled);
+            SetDamperMode(HumidityManager::Mode::kDisabled);
             Logger::Info("SessionManager: Init extraction done");
           }
         }
@@ -165,7 +180,7 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
           if (remaining > durations_.extraction_damper_open)
           {
             init_extraction_end_ms_ = millis() + (uint32_t)durations_.extraction_damper_open * 1000UL;
-            humidity_manager_->SetMode(HumidityManager::Mode::kForceOpen);
+            SetDamperMode(HumidityManager::Mode::kForceOpen);
             Logger::Info("SessionManager: Init humidity reached, extracting for %us",
                          durations_.extraction_damper_open);
           }

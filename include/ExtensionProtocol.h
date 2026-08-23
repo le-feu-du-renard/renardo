@@ -116,7 +116,7 @@ struct ExtensionTelemetry
   bool running;
   bool fan_on;
   bool electric_on;
-  bool hydraulic_on;
+  bool hydraulic_demand;
   bool hydraulic_online;
   bool damper_open;
   bool sensor_fault;
@@ -134,7 +134,7 @@ struct ExtensionTelemetry
         extraction_position(NAN), recycling_position(NAN),
         session_elapsed_s(0), uptime_s(0), phase(0),
         running(false), fan_on(false), electric_on(false),
-        hydraulic_on(false), hydraulic_online(false), damper_open(false),
+        hydraulic_demand(false), hydraulic_online(false), damper_open(false),
         sensor_fault(false), airflow_fault(false), feedback_fault(false),
         ack_sequence(0), ack_result(kExtResultOk) {}
 };

@@ -69,14 +69,15 @@ void HumidityManager::Update(float inlet_humidity)
   }
 }
 
-void HumidityManager::SetMode(Mode mode)
+bool HumidityManager::SetMode(Mode mode)
 {
-  if (mode == mode_) return;
+  if (mode == mode_) return false;
   const char *name = (mode == Mode::kDisabled)  ? "kDisabled"
                    : (mode == Mode::kForceOpen)  ? "kForceOpen"
                                                  : "kThreshold";
   Logger::Info("HumidityManager: mode -> %s", name);
   mode_ = mode;
+  return true;
 }
 
 void HumidityManager::SetPurge(bool purge)

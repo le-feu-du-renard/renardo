@@ -66,7 +66,7 @@ uint16_t ExtEncodeFlags(const ExtensionTelemetry &telemetry)
   if (telemetry.running)        flags |= kExtFlagRunning;
   if (telemetry.fan_on)         flags |= kExtFlagFan;
   if (telemetry.electric_on)    flags |= kExtFlagElectric;
-  if (telemetry.hydraulic_on)   flags |= kExtFlagHydraulic;
+  if (telemetry.hydraulic_demand)   flags |= kExtFlagHydraulic;
   if (telemetry.damper_open)    flags |= kExtFlagDamperOpen;
   if (telemetry.sensor_fault)   flags |= kExtFlagSensorFault;
   if (telemetry.airflow_fault)  flags |= kExtFlagAirflowFault;

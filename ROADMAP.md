@@ -16,6 +16,9 @@ v3 panel control.
       `HydraulicRemote` client for the deported module
 - [x] Sensor freshness interlock, cross-core seqlock snapshot
 - [x] Replace the circulator PID with two independent on/off sources
+- [x] Hand the hydraulic back to its own module — a run permission over RS485
+      instead of a second regulator — and give the electric a tolerance window
+      each time the damper moves
 - [x] `OutputDriver` with per-output polarity, damper position readback
 - [x] LittleFS persistence for settings and session progress
 - [x] Rotary encoder with a bounce-proof quadrature decoder
@@ -44,7 +47,9 @@ v3 panel control.
 - [ ] `panel_test` on the wired panel: both LEDs dark at boot, one line per
       press under the right name, the green readable in daylight
 - [ ] Record the damper end-stop ADC values and calibrate
-- [ ] Build the deported hydraulic module against the register map in HARDWARE.md
+- [ ] Build the deported hydraulic module against the register map in
+      HARDWARE.md, now that `0x0000` is settled as a run permission held for the
+      whole session rather than an on/off command
 - [ ] Exercise the extension port against a Modbus slave simulator on address 2
       before any module firmware exists
 
@@ -54,9 +59,56 @@ v3 panel control.
       beginning and was never used; the cycle loops until STOP.
 - [ ] `HumidityManager::Mode::kThreshold` is implemented but never selected —
       expose it from the menu, or remove it.
-- [ ] `ResetControl()` fires on every phase transition, so roughly every
-      19 minutes. Worth keeping now that the hydraulic timers are 300 s?
 - [ ] Day/night water setpoint for the hydraulic module when an RTC is fitted.
+- [ ] Init exits on `GetTargetTemperature()`, the raw setpoint, not the
+      ECO-effective one. Under ECO the loop holds the reduced setpoint, which
+      the exit test never sees, so Init runs its full hour. Move the test, or
+      decide that warming up at the full target is what Init is for.
+
+## Done — the hydraulic module owns its own heat
+
+v4 arrived carrying two regulators pointed at one three-way valve. The module
+holds its water setpoint and fires its own circulator; the dryer cycled it on top
+of that, on a 1.5 °C band on *air* temperature with 300 s minimum on and off
+times. **The slower of the two controllers was never ours**, and the valve takes
+minutes to travel. What leaves now is a run permission — raised when the source is
+enabled and a session is running with the interlocks holding, held across every
+phase transition, withdrawn when they fail — and the dryer regulates the electric
+heater and nothing else.
+
+The second half is the air renewal. Extraction injects outside air and the inlet
+temperature drops, which is the point of the phase. The damage was on the way
+back: with the register shut the chamber recovers far faster than any approach to
+setpoint the 60 s horizon was sized for, the predictive shutoff read that as an
+impending overshoot, and `CTRL_T_OFF_MIN` then held the heater off for another
+minute. Two minutes off-setpoint per cycle is an accepted cost of renewing air;
+sagging for ten because the loop was fighting its own transient is not.
+
+Three things the plan did not foresee:
+
+- **The 300 s valve protection was never real.** `ResetControl()` fired on every
+  phase entry and reset the hydraulic timers with everything else, so the guard
+  was wiped roughly every 19 minutes — and extraction is shorter than the guard
+  it was wiping. The phase machine could drop the valve out and re-energise it
+  seconds later, all cycle long. Removing the loop removed the timers, and the
+  open question about `ResetControl()` answered itself on the way past.
+- **The window belongs to the damper, not the phase.** Hooking phase transitions
+  was the obvious move and would have missed two real cases: Init's
+  sub-extraction, which opens the register for two minutes in the middle of a
+  phase and told the regulation nothing at all, and the end of a fault purge,
+  which puts the register back wherever the phase wanted it. Every damper
+  movement the session commands now goes through one place that announces it.
+- **The transition was cutting the heater at the worst possible moment.**
+  `ResetControl()` opened the contactor on entry to every phase — exactly as cold
+  air arrived and the chamber most needed heat — then let it close again a tick
+  later. That was never the intent; it was a full reset borrowed for a job that
+  only needed a hint.
+
+The settings record went to v5 for it. Four hydraulic knobs left the Régulation
+page and the persisted struct, and `air_renewal_window` took their place. Same
+cost as the v4 bump: every stored record is discarded and the register
+calibration has to be captured again — which is free today, and would not have
+been after bring-up.
 
 ## Done — the RS485 extension port
 
@@ -78,7 +130,7 @@ Three things the plan did not foresee:
 - **The shape shared with `HydraulicRemote` was worth extracting.** Address,
   availability timeout and error counter are the same on both, so they moved into
   `RemoteModule`. The two clients differ only in their register blocks and in
-  which way authority runs — the dryer commands the hydraulic module and obeys
+  which way authority runs — the dryer permits the hydraulic module and obeys
   neither.
 - **An absent module was already stalling the poll loop**, before any extension
   existed. ModbusMaster's response timeout is fixed at 2 s, so an unplugged
@@ -105,6 +157,9 @@ but no remote launches a dryer nobody is standing in front of.
 
 - [ ] Diagnostics screen: bus state and error counters
 - [ ] Version report over the extension port
+- [ ] Surface `HydraulicRemote::GetStatusBits()`. It is read every cycle and used
+      nowhere, and it is what would let the screen show whether the module is
+      actually firing rather than whether it was cleared to
 
 ## Completed in v3
 

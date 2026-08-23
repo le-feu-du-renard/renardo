@@ -11,8 +11,9 @@ enum class OperatingMode : uint8_t
   PERFORMANCE = 1,  // Full target at all times
 };
 
-// Which heat sources are actually usable this cycle. Reporting only — the two
-// sources are regulated independently, there is no mode to switch between.
+// Which heat sources are usable this cycle. Reporting only — the electric is
+// the one source regulated here, and the hydraulic is not regulated at all, so
+// there is no mode to switch between.
 enum class ControlState : uint8_t
 {
   OFF                = 0,  // no source usable (fault, safety, fan off, all disabled)
@@ -27,15 +28,12 @@ struct TemperatureParams
 {
   float temperature_target;
 
-  float band_hydraulic;      // °C, error above which the hydraulic is requested
-  float band_electric;       // °C, error above which the electric is requested
-  float horizon_hydraulic;   // s, predictive shutoff window, hydraulic
-  float horizon_electric;    // s, predictive shutoff window, electric
-  float hydraulic_t_on_min;  // s, anti-short-cycle
-  float hydraulic_t_off_min; // s
-  float electric_t_on_min;   // s
-  float electric_t_off_min;  // s
-  float safety_max;          // °C, hard cutoff
+  float band_electric;      // °C, error above which the electric is requested
+  float horizon_electric;   // s, predictive shutoff window
+  float electric_t_on_min;  // s, anti-short-cycle
+  float electric_t_off_min; // s
+  float air_renewal_window; // s, tolerance window after the damper moves
+  float safety_max;         // °C, hard cutoff
 
   uint8_t eco_start_hour;
   uint8_t eco_end_hour;
@@ -43,38 +41,39 @@ struct TemperatureParams
 
   TemperatureParams()
       : temperature_target(TEMPERATURE_TARGET),
-        band_hydraulic(CTRL_BANDE_HYDRO),
         band_electric(CTRL_BANDE_ELEC),
-        horizon_hydraulic(CTRL_HYDRO_HORIZON),
         horizon_electric(CTRL_HORIZON),
-        hydraulic_t_on_min(CTRL_HYDRO_T_ON_MIN),
-        hydraulic_t_off_min(CTRL_HYDRO_T_OFF_MIN),
         electric_t_on_min(CTRL_T_ON_MIN),
         electric_t_off_min(CTRL_T_OFF_MIN),
+        air_renewal_window(CTRL_AIR_RENEWAL_S),
         safety_max(TEMPERATURE_SAFETY_MAX),
         eco_start_hour(ECO_START_HOUR),
         eco_end_hour(ECO_END_HOUR),
         eco_target_percentage(ECO_NIGHT_TARGET_PERCENTAGE) {}
 };
 
-// Regulates the dryer air temperature with two independent on/off heat sources.
+// Regulates the dryer air temperature. Two heat sources, only one of them
+// regulated here — the split is one of authority, not of speed.
 //
-// Hydraulic — base heat, commanded on/off on a wide hysteresis band with long
-//   minimum on/off times. The remote module holds a fixed water setpoint; its
-//   three-way valve is far too slow to be modulated, which is why v3's PID on
-//   the circulator was dropped.
-// Electric — fine trim on a narrow band, with predictive shutoff so thermal
-//   inertia does not carry the temperature past the setpoint.
-//
-// Because the bands differ (hydraulic 1.5°C, electric 0.5°C), a large error
-// engages both sources while the last fraction of a degree is closed by the
-// electric alone.
+// Electric — the source the dryer commands. Narrow hysteresis band with
+//   predictive shutoff, so thermal inertia does not carry the temperature past
+//   the setpoint.
+// Hydraulic — the source the dryer only asks for. The remote module owns its
+//   start, its circulator and its water regulation; what leaves here is a run
+//   permission, held for as long as the source is enabled and the interlocks
+//   hold, and dropped when they do not. Cycling it on air temperature would put
+//   two regulators on one three-way valve, and the slower one is not ours.
 //
 // Four independent conditions gate heating, all of which must hold:
 //   heating_permitted_ — inlet probe is fresh (sensor timeout interlock)
 //   fan_active_        — no heat without airflow
 //   *_enabled_         — user toggles from the menu
-//   hydraulic_online_  — the remote module is answering on RS485
+//   hydraulic_online_  — the remote module is answering on RS485 (reporting and
+//                        the fault only; an unreachable module cannot be written
+//                        to, so the permission itself does not consult it)
+//
+// NotifyAirRenewal() must be called whenever the damper moves — see the method
+// for what it relaxes and for how long.
 //
 // SetCurrentHour() must be called each loop (from the optional RTC) for the ECO
 // window. Without an RTC the mode stays PERFORMANCE.
@@ -122,12 +121,19 @@ public:
   bool GetFanActive() const { return fan_active_; }
 
   // --- Current outputs (for the display and telemetry) ---
-  bool GetElectricOn()  const { return electric_on_; }
-  bool GetHydraulicOn() const { return hydraulic_on_; }
+  bool GetElectricOn() const { return electric_on_; }
 
-  float GetElectricOnTimer()  const { return elec_on_timer_; }
-  float GetHydraulicOnTimer() const { return hydro_on_timer_; }
+  // The run permission published to the remote module over RS485. True while
+  // the source is enabled and a session is running with every interlock holding
+  // — never a statement about whether the circulator is actually turning, which
+  // is the module's business and only the module's.
+  bool GetHydraulicDemand() const { return hydraulic_demand_; }
+
+  float GetElectricOnTimer() const { return elec_on_timer_; }
   float GetTemperatureDerivative() const { return dT_dt_; }
+
+  // Seconds left on the air-renewal tolerance window, 0 when it is closed.
+  float GetAirRenewalRemaining() const { return air_renewal_timer_s_; }
 
   ControlState GetControlState() const { return control_state_; }
   static const char *GetControlStateName(ControlState state);
@@ -143,10 +149,24 @@ public:
   // True when ECO is selected and the current time is inside the night window
   bool IsEcoWindowActive() const;
 
-  // Turn both sources off immediately, preserving the anti-short-cycle timers.
+  // Cut the electric and withdraw the hydraulic permission immediately,
+  // preserving the anti-short-cycle timers.
   void AllOff() { ForceAllOff(); }
 
-  // Reset both sources and their timers — called on phase transitions
+  // The damper has just moved, and the air behind the probe is about to be
+  // replaced. Opens a tolerance window of params_.air_renewal_window seconds in
+  // which the predictive shutoff is suspended and the electric minimum off-time
+  // is waived, so the loop works through the transient instead of sawtoothing
+  // against it. The band, the error ≤ 0 cutoff, the minimum on-time and the
+  // safety maximum are untouched.
+  //
+  // Deliberately does not cut the electric or disturb the timers: the heater is
+  // most wanted at the moment cold air arrives, and the phase machine used to
+  // open the circuit at exactly that instant.
+  void NotifyAirRenewal();
+
+  // Full reset of the control state — session start only. A phase transition
+  // gets NotifyAirRenewal() instead.
   void ResetControl();
 
   void PrintDebug() const;
@@ -165,7 +185,7 @@ private:
   bool fan_active_;         // fan interlock
 
   bool electric_on_;
-  bool hydraulic_on_;
+  bool hydraulic_demand_;
 
   ControlState control_state_;
 
@@ -175,19 +195,19 @@ private:
 
   float elec_on_timer_;
   float elec_off_timer_;
-  float hydro_on_timer_;
-  float hydro_off_timer_;
+
+  float air_renewal_timer_s_;  // counts down; > 0 while the window is open
 
   float debug_log_timer_s_;
 
   OperatingMode operating_mode_;
   uint8_t       current_hour_;
 
-  // Switch a source; resets the matching anti-short-cycle timer.
+  // Switch the electric; resets the matching anti-short-cycle timer.
   void SetElectric(bool on);
-  void SetHydraulic(bool on);
 
-  // Force both sources off without disturbing the anti-short-cycle timers.
+  // Cut the electric and drop the hydraulic permission without disturbing the
+  // anti-short-cycle timers.
   void ForceAllOff();
 
   // True when the temperature is rising fast enough that it would overshoot

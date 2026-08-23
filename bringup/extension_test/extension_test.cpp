@@ -338,8 +338,11 @@ void PrintHydraulicCommand()
   last_state = g_hydro_command[0];
   last_target = g_hydro_command[1];
 
-  Serial.printf("\n[hydraulic] the dryer asks: circulator %s, water setpoint %.1f C\n\n",
-                g_hydro_command[0] ? "ON" : "off",
+  // "cleared to run", not "circulator ON": the register is a permission the
+  // dryer holds for a whole session, and a bench log saying otherwise would
+  // have someone waiting for a toggle that never comes.
+  Serial.printf("\n[hydraulic] the dryer says: %s, water setpoint %.1f C\n\n",
+                g_hydro_command[0] ? "cleared to run" : "stand down",
                 static_cast<int16_t>(g_hydro_command[1]) / 10.0f);
 }
 
@@ -632,7 +635,8 @@ void PrintHydraulicState()
 {
   Serial.println("\n--- hydraulic module ---");
   Serial.printf("  %-14s %s\n", "on the bus", g_hydraulic_online ? "yes" : "NO — answering nothing");
-  Serial.printf("  %-14s %s\n", "circulator", g_hydro_command[0] ? "ON" : "off");
+  Serial.printf("  %-14s %s\n", "permission",
+                g_hydro_command[0] ? "cleared to run" : "stand down");
   Serial.printf("  %-14s %6.1f C   (asked by the dryer)\n", "setpoint",
                 static_cast<int16_t>(g_hydro_command[1]) / 10.0f);
   Serial.printf("  %-14s %6.1f C   (reported by us)\n", "water",

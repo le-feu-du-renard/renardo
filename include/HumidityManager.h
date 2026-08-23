@@ -26,7 +26,9 @@ public:
   void Update(float inlet_humidity);
 
   // Set operating mode (called by SessionManager on phase transitions).
-  void SetMode(Mode mode);
+  // Returns true when the mode actually changed, which is the caller's cue that
+  // the register is about to travel and the air behind the probe to be replaced.
+  bool SetMode(Mode mode);
   Mode GetMode() const { return mode_; }
 
   // Hold the damper open regardless of mode, to shed heat while the dryer is

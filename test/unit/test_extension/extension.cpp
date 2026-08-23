@@ -92,7 +92,7 @@ void test_each_flag_sits_on_its_own_bit(void)
 
   telemetry.fan_on = true;
   telemetry.electric_on = true;
-  telemetry.hydraulic_on = true;
+  telemetry.hydraulic_demand = true;
   telemetry.damper_open = true;
   telemetry.sensor_fault = true;
   telemetry.airflow_fault = true;

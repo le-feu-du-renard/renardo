@@ -40,7 +40,7 @@ struct DisplayModel
   // --- Hydraulic block ---
   bool  hydraulic_online;   // remote module answering
   bool  hydraulic_enabled;  // menu toggle
-  bool  hydraulic_on;       // circulator currently running
+  bool  hydraulic_demand;   // run permission published to the module
   float water_temperature;
   float tank_temperature;
 
@@ -95,7 +95,7 @@ struct DisplayModel
         target_humidity(NAN),
         hydraulic_online(false),
         hydraulic_enabled(false),
-        hydraulic_on(false),
+        hydraulic_demand(false),
         water_temperature(NAN),
         tank_temperature(NAN),
         fan_on(false),

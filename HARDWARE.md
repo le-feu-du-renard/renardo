@@ -615,24 +615,34 @@ that the wrong register is being read.
 
 ### Hydraulic module (to be built)
 
-Deported over RS485. It owns the three-way valve and the circulator; the dryer
-only tells it to run and at what water temperature, because the valve is far too
-slow to be modulated from here.
+Deported over RS485. It owns the three-way valve, the circulator, **and its own
+regulation** — the module decides when to fire and holds the water at whatever
+setpoint it is handed. The valve is far too slow to be modulated from here, and
+cycling it from here on air temperature would put two controllers on one valve.
 
 | Register | Direction | Contents |
 |---|---|---|
-| `0x0000` | write | requested state, 0 = off, 1 = on |
+| `0x0000` | write | run permission, 0 = stand down, 1 = cleared to run |
 | `0x0001` | write | water setpoint ×10 (°C) |
 | `0x0010` | read | circulating water temperature ×10, signed |
 | `0x0011` | read | storage tank temperature ×10, signed |
 | `0x0012` | read | status bits |
 
-State and setpoint are written in **one FC16 transaction**, so the module never
-sees a state change paired with a stale setpoint.
+`0x0000` is a **permission, not a command**, and this is the part the module
+firmware has to be written against: the dryer raises it once when a session
+starts with the hydraulic enabled and holds it for the whole session, across
+every phase transition, dropping it only when the session ends or an interlock
+fails. It is not a request to fire now. A module that treats each `1` as a start
+pulse, or that expects the dryer to cycle it, will do nothing for hours.
+
+Permission and setpoint are written in **one FC16 transaction**, so the module
+never sees the permission raised paired with a stale setpoint.
 
 **The module must implement its own watchdog** and shut down if it receives no
-frame for 60 s. The dryer marks it unavailable after 30 s of silence and falls
-back to electric-only.
+frame for 60 s. This is load-bearing rather than belt-and-braces: the dryer no
+longer cycles the module, so if the bus dies with the permission raised, that
+watchdog is the only thing left that can stop it. The dryer marks it unavailable
+after 30 s of silence and falls back to electric-only.
 
 ## Extension port
 
@@ -691,7 +701,7 @@ Flag bits, `0x0001`:
 | 0 | session running |
 | 1 | fan on |
 | 2 | electric heater on |
-| 3 | hydraulic heat on |
+| 3 | hydraulic cleared to run — the permission, not a measured circulator |
 | 4 | air register open (extracting) |
 | 5 | sensor fault — the inlet probe is stale and heating is inhibited |
 | 6 | hydraulic module **unreachable** (note the polarity) |

@@ -12,15 +12,14 @@ TemperatureManager::TemperatureManager(ElectricHeater *electric_heater)
       heating_permitted_(false),  // no reading yet at construction
       fan_active_(false),
       electric_on_(false),
-      hydraulic_on_(false),
+      hydraulic_demand_(false),
       control_state_(ControlState::OFF),
       dT_dt_(0.0f),
       prev_temp_(0.0f),
       first_tick_(true),
       elec_on_timer_(0.0f),
-      elec_off_timer_(CTRL_T_OFF_MIN),        // allow immediate first activation
-      hydro_on_timer_(0.0f),
-      hydro_off_timer_(CTRL_HYDRO_T_OFF_MIN), // idem
+      elec_off_timer_(CTRL_T_OFF_MIN),  // allow immediate first activation
+      air_renewal_timer_s_(0.0f),
       debug_log_timer_s_(0.0f),
       operating_mode_(OperatingMode::PERFORMANCE),
       current_hour_(0) {}
@@ -30,13 +29,11 @@ void TemperatureManager::Begin()
   electric_heater_->Begin();
   last_update_ms_ = millis();
 
-  Logger::Info("TemperatureManager: initialized (dual on/off sources)");
-  Logger::Info("  hydraulic: band=%FC on>=%Fs off>=%Fs horizon=%Fs",
-               params_.band_hydraulic, params_.hydraulic_t_on_min,
-               params_.hydraulic_t_off_min, params_.horizon_hydraulic);
-  Logger::Info("  electric:  band=%FC on>=%Fs off>=%Fs horizon=%Fs",
+  Logger::Info("TemperatureManager: initialized (electric regulated, hydraulic on permission)");
+  Logger::Info("  electric: band=%FC on>=%Fs off>=%Fs horizon=%Fs",
                params_.band_electric, params_.electric_t_on_min,
                params_.electric_t_off_min, params_.horizon_electric);
+  Logger::Info("  air renewal window: %Fs", params_.air_renewal_window);
 }
 
 void TemperatureManager::Update(float current_temperature)
@@ -66,20 +63,10 @@ void TemperatureManager::SetElectric(bool on)
     elec_off_timer_ = 0.0f;  // start counting a new OFF period
 }
 
-void TemperatureManager::SetHydraulic(bool on)
-{
-  if (on == hydraulic_on_) return;
-  hydraulic_on_ = on;
-  if (on)
-    hydro_on_timer_ = 0.0f;
-  else
-    hydro_off_timer_ = 0.0f;
-}
-
 void TemperatureManager::ForceAllOff()
 {
   SetElectric(false);
-  SetHydraulic(false);
+  hydraulic_demand_ = false;
   electric_heater_->SetPower(0.0f);
 }
 
@@ -99,6 +86,15 @@ void TemperatureManager::UpdateHeating(float dt)
 {
   float setpoint = GetEffectiveTargetTemperature();
   float T = current_temperature_;
+
+  // Ahead of the early returns below, so a window armed while heating is blocked
+  // still expires on time rather than waiting for the interlock to clear.
+  bool air_renewal = air_renewal_timer_s_ > 0.0f;
+  if (air_renewal)
+  {
+    air_renewal_timer_s_ -= dt;
+    if (air_renewal_timer_s_ < 0.0f) air_renewal_timer_s_ = 0.0f;
+  }
 
   // --- Sensor fault ---
   if (isnan(T) || T < -20.0f || T > 200.0f)
@@ -144,29 +140,15 @@ void TemperatureManager::UpdateHeating(float dt)
   bool hydro_usable = hydraulic_online_ && hydraulic_enabled_;
   bool elec_usable  = electric_enabled_;
 
-  // --- Hydraulic: base heat, wide band, slow cycling ---
-  if (!hydro_usable)
-  {
-    SetHydraulic(false);
-  }
-  else if (!hydraulic_on_)
-  {
-    if (hydro_off_timer_ >= params_.hydraulic_t_off_min && error > params_.band_hydraulic)
-    {
-      SetHydraulic(true);
-      Logger::Info("TempMgr: hydraulic -> ON (err=%F)", error);
-    }
-  }
-  else
-  {
-    bool overshoot = WillOvershoot(T, setpoint, params_.horizon_hydraulic);
-    if (hydro_on_timer_ >= params_.hydraulic_t_on_min && (error <= 0.0f || overshoot))
-    {
-      SetHydraulic(false);
-      Logger::Info("TempMgr: hydraulic -> OFF (err=%F dT=%F overshoot=%d)",
-                   error, dT_dt_, (int)overshoot);
-    }
-  }
+  // --- Hydraulic: a run permission, not a command ---
+  //
+  // Everything that would withdraw it — a fault, the safety cutoff, a stale
+  // probe, the fan stopping, the session ending — has already returned above
+  // through ForceAllOff(). Reaching here with the source enabled is the whole
+  // condition. Deliberately not gated on hydraulic_online_: an unreachable
+  // module cannot be written to either way, and folding it in would make the
+  // flag restate what the availability check already says.
+  hydraulic_demand_ = hydraulic_enabled_;
 
   // --- Electric: fine trim, narrow band, fast cycling ---
   if (!elec_usable)
@@ -175,15 +157,23 @@ void TemperatureManager::UpdateHeating(float dt)
   }
   else if (!electric_on_)
   {
-    if (elec_off_timer_ >= params_.electric_t_off_min && error > params_.band_electric)
+    // The minimum off-time is waived while the air is being renewed: the cold
+    // front arriving is exactly when the heater is wanted, and making it sit out
+    // a minute first is how the transient turns into a sag.
+    bool off_time_met = air_renewal || elec_off_timer_ >= params_.electric_t_off_min;
+    if (off_time_met && error > params_.band_electric)
     {
       SetElectric(true);
-      Logger::Info("TempMgr: electric -> ON (err=%F)", error);
+      Logger::Info("TempMgr: electric -> ON (err=%F%s)", error,
+                   air_renewal ? " air-renewal" : "");
     }
   }
   else
   {
-    bool overshoot = WillOvershoot(T, setpoint, params_.horizon_electric);
+    // Suspended for the same window. The recovery ramp once the register shuts
+    // is far steeper than any approach to setpoint the horizon was sized for,
+    // and reading it as an impending overshoot cuts the heater degrees short.
+    bool overshoot = !air_renewal && WillOvershoot(T, setpoint, params_.horizon_electric);
     if (elec_on_timer_ >= params_.electric_t_on_min && (error <= 0.0f || overshoot))
     {
       SetElectric(false);
@@ -211,21 +201,17 @@ void TemperatureManager::UpdateHeating(float dt)
   else
     elec_off_timer_ += dt;
 
-  if (hydraulic_on_)
-    hydro_on_timer_ += dt;
-  else
-    hydro_off_timer_ += dt;
-
   // --- Periodic debug log ---
   debug_log_timer_s_ += dt;
   if (debug_log_timer_s_ >= 2.0f)
   {
     debug_log_timer_s_ = 0.0f;
-    Logger::Info("TempMgr: [%s] sp=%FC T=%FC err=%F dT=%F/s hydro=%s elec=%s",
+    Logger::Info("TempMgr: [%s] sp=%FC T=%FC err=%F dT=%F/s hydro=%s elec=%s%s",
                  GetControlStateName(control_state_), setpoint, T, error, dT_dt_,
-                 hydraulic_on_ ? "ON" : "OFF", electric_on_ ? "ON" : "OFF");
-    Logger::Debug("TempMgr: elec_on=%Fs elec_off=%Fs hydro_on=%Fs hydro_off=%Fs",
-                  elec_on_timer_, elec_off_timer_, hydro_on_timer_, hydro_off_timer_);
+                 hydraulic_demand_ ? "RUN" : "OFF", electric_on_ ? "ON" : "OFF",
+                 air_renewal ? " [air renewal]" : "");
+    Logger::Debug("TempMgr: elec_on=%Fs elec_off=%Fs renewal=%Fs",
+                  elec_on_timer_, elec_off_timer_, air_renewal_timer_s_);
   }
 }
 
@@ -240,28 +226,42 @@ const char *TemperatureManager::GetControlStateName(ControlState state)
   }
 }
 
+void TemperatureManager::NotifyAirRenewal()
+{
+  air_renewal_timer_s_ = params_.air_renewal_window;
+
+  // The derivative is restarted, not carried across. Either side of a damper
+  // movement the probe is reading a different body of air, so the filtered slope
+  // built up before it describes nothing that is still true.
+  dT_dt_      = 0.0f;
+  first_tick_ = true;
+
+  Logger::Info("TemperatureManager: air renewal — tolerance window %Fs",
+               params_.air_renewal_window);
+}
+
 void TemperatureManager::ResetControl()
 {
-  electric_on_  = false;
-  hydraulic_on_ = false;
-  elec_on_timer_   = 0.0f;
-  elec_off_timer_  = params_.electric_t_off_min;   // allow immediate activation in the new phase
-  hydro_on_timer_  = 0.0f;
-  hydro_off_timer_ = params_.hydraulic_t_off_min;
-  dT_dt_ = 0.0f;
+  electric_on_      = false;
+  hydraulic_demand_ = false;
+  elec_on_timer_    = 0.0f;
+  elec_off_timer_   = params_.electric_t_off_min;  // allow immediate activation
+  air_renewal_timer_s_ = 0.0f;
+  dT_dt_      = 0.0f;
   first_tick_ = true;
   control_state_ = ControlState::OFF;
   electric_heater_->SetPower(0.0f);
-  Logger::Info("TemperatureManager: control reset (phase transition)");
+  Logger::Info("TemperatureManager: control reset");
 }
 
 void TemperatureManager::PrintDebug() const
 {
-  Logger::Info("[TempMgr] state=%s T=%FC sp=%FC dT=%F/s | hydro=%s on=%Fs off=%Fs | elec=%s on=%Fs off=%Fs",
+  Logger::Info("[TempMgr] state=%s T=%FC sp=%FC dT=%F/s | hydro=%s | elec=%s on=%Fs off=%Fs | renewal=%Fs",
                GetControlStateName(control_state_), current_temperature_,
                GetEffectiveTargetTemperature(), dT_dt_,
-               hydraulic_on_ ? "ON" : "OFF", hydro_on_timer_, hydro_off_timer_,
-               electric_on_ ? "ON" : "OFF", elec_on_timer_, elec_off_timer_);
+               hydraulic_demand_ ? "RUN" : "OFF",
+               electric_on_ ? "ON" : "OFF", elec_on_timer_, elec_off_timer_,
+               air_renewal_timer_s_);
 }
 
 void TemperatureManager::SetTargetTemperature(float temperature)
@@ -306,8 +306,10 @@ void TemperatureManager::SetHydraulicOnline(bool online)
   if (hydraulic_online_ == online)
     return;
   hydraulic_online_ = online;
-  // Timers are preserved: the transition is applied on the next tick and the
-  // anti-short-cycle protection must survive a bus dropout.
+  // The permission is untouched. It says what the dryer wants, and losing the
+  // bus does not change that — it only stops the answer getting through. What
+  // happens to a module left running behind a dead bus is the module's own
+  // watchdog to handle; nothing here can reach it to say otherwise.
   Logger::Info("TemperatureManager: hydraulic module %s",
                online ? "online" : "offline");
 }
@@ -317,6 +319,13 @@ void TemperatureManager::SetHydraulicEnabled(bool enabled)
   if (hydraulic_enabled_ == enabled)
     return;
   hydraulic_enabled_ = enabled;
+  // Withdrawn at once rather than on the next tick: switching the source off at
+  // the menu has to reach the module on the next RS485 cycle, not after the
+  // control loop next happens to run — which, outside a session, it never does.
+  if (!enabled)
+  {
+    hydraulic_demand_ = false;
+  }
   Logger::Info("TemperatureManager: hydraulic source %s", enabled ? "enabled" : "disabled");
 }
 

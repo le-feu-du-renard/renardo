@@ -92,6 +92,11 @@ private:
 
     void EnterPhase(DryerPhase phase);
     void CheckPhaseTransition(float current_temperature, float current_humidity);
+
+    // Command the damper and, when it actually moves, tell the regulation the
+    // air is about to be renewed. Every movement the session asks for goes
+    // through here so none of them is missed.
+    void SetDamperMode(HumidityManager::Mode mode);
 };
 
 #endif // SESSION_MANAGER_H

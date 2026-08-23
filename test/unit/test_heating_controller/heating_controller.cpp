@@ -1,10 +1,14 @@
 // Unit tests for TemperatureManager — the real class, compiled natively.
 //
-// v4 replaced the PID on the circulator with two independent on/off sources:
-// the hydraulic as base heat (wide band, slow cycling) and the electric as fine
-// trim (narrow band, predictive shutoff). These tests drive the production code
-// directly through the shim clock, so a change in config.h or in the control
-// logic shows up here instead of silently diverging.
+// The dryer regulates one source. The electric is commanded on a narrow band
+// with predictive shutoff; the hydraulic is not regulated here at all — what
+// leaves for the remote module is a run permission, and these tests pin down
+// exactly what raises and withdraws it. The third group covers the air-renewal
+// window, the tolerance the loop is given each time the damper moves.
+//
+// They drive the production code directly through the shim clock, so a change
+// in config.h or in the control logic shows up here instead of silently
+// diverging.
 
 #include <unity.h>
 
@@ -69,7 +73,7 @@ void test_no_heating_without_fan(void)
   h.Hold(20.0f, 5);
 
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
   TEST_ASSERT_EQUAL(static_cast<int>(ControlState::OFF),
                     static_cast<int>(h.manager.GetControlState()));
 }
@@ -88,7 +92,7 @@ void test_no_heating_when_reading_is_stale(void)
   h.Hold(20.0f, 5);
 
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
 }
 
 void test_safety_cutoff_stops_both_sources(void)
@@ -104,7 +108,7 @@ void test_safety_cutoff_stops_both_sources(void)
   h.Tick(TEMPERATURE_SAFETY_MAX + 1.0f);
 
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
 }
 
 void test_sensor_fault_stops_both_sources(void)
@@ -117,7 +121,7 @@ void test_sensor_fault_stops_both_sources(void)
   h.Tick(NAN);
 
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
 }
 
 // --- Electric trim ----------------------------------------------------------
@@ -223,51 +227,38 @@ void test_predictive_shutoff_fires_on_genuine_rise(void)
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
 }
 
-// --- Hydraulic base heat ----------------------------------------------------
+// --- Hydraulic run permission -----------------------------------------------
+//
+// The dryer does not regulate the hydraulic. These pin down the only question
+// it does answer: is the module cleared to run.
 
-void test_hydraulic_turns_on_beyond_its_wider_band(void)
-{
-  Harness h;
-  h.Arm();
-  h.manager.SetTargetTemperature(40.0f);
-
-  h.Tick(35.0f); // error 5.0 > CTRL_BANDE_HYDRO
-
-  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
-  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
-}
-
-void test_small_error_is_trimmed_by_electric_alone(void)
-{
-  Harness h;
-  h.Arm();
-  h.manager.SetTargetTemperature(40.0f);
-
-  // Error 1.0: above the electric band, below the hydraulic band.
-  h.Hold(39.0f, 5);
-
-  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
-}
-
-void test_hydraulic_respects_its_long_minimum_on_time(void)
+void test_hydraulic_permission_is_raised_while_the_loop_runs(void)
 {
   Harness h;
   h.Arm();
   h.manager.SetTargetTemperature(40.0f);
 
   h.Tick(35.0f);
-  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
 
-  // Setpoint reached, but the valve must not be cycled before its minimum.
-  h.Hold(41.0f, static_cast<uint32_t>(CTRL_HYDRO_T_ON_MIN) - 10);
-  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
-
-  h.Hold(41.0f, 20);
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicDemand());
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
-void test_hydraulic_stays_off_when_module_is_offline(void)
+void test_hydraulic_permission_does_not_depend_on_the_error(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  // Sitting above the setpoint. The old firmware cycled the module out on a
+  // 1.5°C band; the permission is not a band and must not care.
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicDemand());
+}
+
+void test_hydraulic_permission_survives_a_bus_dropout(void)
 {
   Harness h;
   h.Arm(/*hydraulic_online=*/false);
@@ -275,22 +266,29 @@ void test_hydraulic_stays_off_when_module_is_offline(void)
 
   h.Hold(30.0f, 5);
 
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
-  TEST_ASSERT_TRUE(h.manager.GetElectricOn()); // electric still trims
+  // Deliberate: what the dryer wants has not changed just because it cannot say
+  // so. Only the reported state degrades, and the electric carries on trimming.
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicDemand());
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
   TEST_ASSERT_EQUAL(static_cast<int>(ControlState::ELECTRIC_ONLY),
                     static_cast<int>(h.manager.GetControlState()));
 }
 
-void test_hydraulic_stays_off_when_disabled_in_menu(void)
+void test_hydraulic_permission_is_withdrawn_at_the_menu(void)
 {
   Harness h;
   h.Arm();
   h.manager.SetTargetTemperature(40.0f);
+  h.Hold(30.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicDemand());
+
+  // Immediately, not on the next tick: outside a session there is no next tick,
+  // and the module has to hear about it on the next RS485 cycle regardless.
   h.manager.SetHydraulicEnabled(false);
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
 
   h.Hold(30.0f, 5);
-
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
   TEST_ASSERT_TRUE(h.manager.GetElectricOn());
 }
 
@@ -304,7 +302,7 @@ void test_electric_stays_off_when_disabled_in_menu(void)
   h.Hold(30.0f, 5);
 
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
-  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicDemand());
   TEST_ASSERT_EQUAL(static_cast<int>(ControlState::HYDRAULIC_ONLY),
                     static_cast<int>(h.manager.GetControlState()));
 }
@@ -400,9 +398,158 @@ void test_eco_window_handles_non_wrapping_range(void)
   TEST_ASSERT_FALSE(h.manager.IsEcoWindowActive());
 }
 
-// --- Phase transitions ------------------------------------------------------
+// --- Air renewal ------------------------------------------------------------
+//
+// Every damper movement replaces the air behind the probe. The window that
+// follows is where the loop is told to stop fighting the transient.
 
-void test_reset_control_clears_both_sources(void)
+void test_air_renewal_leaves_a_running_electric_running(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Tick(35.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // The regression: EnterPhase() used to call ResetControl() here, opening the
+  // contactor at the exact moment cold air arrived.
+  h.manager.NotifyAirRenewal();
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  h.Tick(34.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_air_renewal_waives_the_minimum_off_time(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  // Drive a full cycle so the electric is off with its OFF timer just started.
+  h.Tick(39.0f);
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  // Without the window this is the case test_electric_respects_minimum_off_time
+  // covers, and the heater waits out CTRL_T_OFF_MIN.
+  h.manager.NotifyAirRenewal();
+  h.Tick(39.0f);
+
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_air_renewal_suspends_the_predictive_shutoff(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Tick(35.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+  h.Hold(35.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+
+  h.manager.NotifyAirRenewal();
+
+  // The same 0.5°C/s climb that cuts the electric in
+  // test_predictive_shutoff_fires_on_genuine_rise. Here it is the chamber
+  // recovering after the register shut, which is not an approach to setpoint
+  // and must not be read as one.
+  for (int i = 1; i <= 6; i++)
+  {
+    h.Tick(35.0f + 0.5f * i);
+  }
+
+  TEST_ASSERT_TRUE(h.manager.GetTemperatureDerivative() > CTRL_DT_PREDICT_MIN);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_predictive_shutoff_returns_once_the_window_closes(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Tick(35.0f);
+  h.manager.NotifyAirRenewal();
+
+  h.Hold(35.0f, static_cast<uint32_t>(CTRL_AIR_RENEWAL_S) + 2);
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, h.manager.GetAirRenewalRemaining());
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  for (int i = 1; i <= 6 && h.manager.GetElectricOn(); i++)
+  {
+    h.Tick(35.0f + 0.5f * i);
+  }
+
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+}
+
+void test_air_renewal_still_cuts_the_electric_at_the_setpoint(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Tick(39.0f);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // The window relaxes when the heater may restart, never how hot it may get.
+  h.manager.NotifyAirRenewal();
+  h.Hold(41.0f, static_cast<uint32_t>(CTRL_T_ON_MIN) + 2);
+
+  TEST_ASSERT_TRUE(h.manager.GetAirRenewalRemaining() > 0.0f);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+}
+
+void test_air_renewal_still_honours_the_minimum_on_time(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Tick(39.0f);
+  h.manager.NotifyAirRenewal();
+
+  h.Tick(41.0f); // above setpoint, but the contactor has just closed
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_air_renewal_window_expires(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.manager.NotifyAirRenewal();
+  TEST_ASSERT_EQUAL_FLOAT(CTRL_AIR_RENEWAL_S, h.manager.GetAirRenewalRemaining());
+
+  h.Hold(39.0f, static_cast<uint32_t>(CTRL_AIR_RENEWAL_S) / 2);
+  TEST_ASSERT_TRUE(h.manager.GetAirRenewalRemaining() > 0.0f);
+
+  h.Hold(39.0f, static_cast<uint32_t>(CTRL_AIR_RENEWAL_S) / 2 + 2);
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, h.manager.GetAirRenewalRemaining());
+}
+
+void test_air_renewal_window_expires_while_heating_is_blocked(void)
+{
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+  h.manager.NotifyAirRenewal();
+
+  // An interlock returns before the control body, but the clock must keep
+  // running: a window frozen behind a fault would reopen stale on recovery.
+  h.manager.SetFanActive(false);
+  h.Hold(39.0f, static_cast<uint32_t>(CTRL_AIR_RENEWAL_S) + 2);
+
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, h.manager.GetAirRenewalRemaining());
+}
+
+// --- Session start ----------------------------------------------------------
+
+void test_reset_control_clears_everything(void)
 {
   Harness h;
   h.Arm();
@@ -410,12 +557,14 @@ void test_reset_control_clears_both_sources(void)
 
   h.Tick(30.0f);
   TEST_ASSERT_TRUE(h.manager.GetElectricOn());
-  TEST_ASSERT_TRUE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_TRUE(h.manager.GetHydraulicDemand());
+  h.manager.NotifyAirRenewal();
 
   h.manager.ResetControl();
 
   TEST_ASSERT_FALSE(h.manager.GetElectricOn());
-  TEST_ASSERT_FALSE(h.manager.GetHydraulicOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, h.manager.GetAirRenewalRemaining());
 }
 
 int main(int argc, char **argv)
@@ -436,12 +585,11 @@ int main(int argc, char **argv)
   RUN_TEST(test_predictive_shutoff_ignores_sensor_noise);
   RUN_TEST(test_predictive_shutoff_fires_on_genuine_rise);
 
-  // Hydraulic base heat
-  RUN_TEST(test_hydraulic_turns_on_beyond_its_wider_band);
-  RUN_TEST(test_small_error_is_trimmed_by_electric_alone);
-  RUN_TEST(test_hydraulic_respects_its_long_minimum_on_time);
-  RUN_TEST(test_hydraulic_stays_off_when_module_is_offline);
-  RUN_TEST(test_hydraulic_stays_off_when_disabled_in_menu);
+  // Hydraulic run permission
+  RUN_TEST(test_hydraulic_permission_is_raised_while_the_loop_runs);
+  RUN_TEST(test_hydraulic_permission_does_not_depend_on_the_error);
+  RUN_TEST(test_hydraulic_permission_survives_a_bus_dropout);
+  RUN_TEST(test_hydraulic_permission_is_withdrawn_at_the_menu);
   RUN_TEST(test_electric_stays_off_when_disabled_in_menu);
   RUN_TEST(test_both_disabled_reports_off);
 
@@ -452,8 +600,18 @@ int main(int argc, char **argv)
   RUN_TEST(test_eco_window_ignored_in_performance_mode);
   RUN_TEST(test_eco_window_handles_non_wrapping_range);
 
-  // Phase transitions
-  RUN_TEST(test_reset_control_clears_both_sources);
+  // Air renewal
+  RUN_TEST(test_air_renewal_leaves_a_running_electric_running);
+  RUN_TEST(test_air_renewal_waives_the_minimum_off_time);
+  RUN_TEST(test_air_renewal_suspends_the_predictive_shutoff);
+  RUN_TEST(test_predictive_shutoff_returns_once_the_window_closes);
+  RUN_TEST(test_air_renewal_still_cuts_the_electric_at_the_setpoint);
+  RUN_TEST(test_air_renewal_still_honours_the_minimum_on_time);
+  RUN_TEST(test_air_renewal_window_expires);
+  RUN_TEST(test_air_renewal_window_expires_while_heating_is_blocked);
+
+  // Session start
+  RUN_TEST(test_reset_control_clears_everything);
 
   return UNITY_END();
 }

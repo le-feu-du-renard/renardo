@@ -455,41 +455,21 @@
 
 // ===== Heating Control Parameters =====
 //
-// Two independent on/off sources share the same measured air temperature:
+// The dryer regulates one source. The two are not symmetrical, and the reason
+// is authority rather than speed:
 //
-//   Hydraulic — base heat. The remote module holds a fixed water setpoint and
-//     is commanded on/off. Its three-way valve is far too slow to modulate, so
-//     it runs on a wide hysteresis band with long minimum on/off times.
-//   Electric — fine trim. Narrow hysteresis with predictive shutoff, closing
-//     the last degree that the hydraulic cannot resolve.
-//
-// CTRL_BANDE_HYDRO must stay well above CTRL_BANDE_ELEC so a large error
-// engages both sources while a small one is trimmed by the electric alone.
-
-// CTRL_BANDE_HYDRO — error (°C) above which the hydraulic source is requested.
-//   Raise if the hydraulic engages for gaps the electric could close alone.
-//   Starting point: 1.5°C
-#define CTRL_BANDE_HYDRO 1.5f
-
-// CTRL_HYDRO_T_ON_MIN / CTRL_HYDRO_T_OFF_MIN — minimum time (seconds) the
-//   hydraulic must stay on, respectively off, per cycle. These protect the
-//   three-way valve and the circulator, and must exceed the time the valve
-//   needs to travel and the loop to reach temperature.
-//   Starting point: 300s (5 minutes) each
-#define CTRL_HYDRO_T_ON_MIN 300.0f
-#define CTRL_HYDRO_T_OFF_MIN 300.0f
-
-// CTRL_HYDRO_HORIZON — prediction window (seconds) for hydraulic shutoff.
-//   Longer than the electric horizon: the water loop keeps giving off heat well
-//   after the circulator stops.
-//   Starting point: 180s
-#define CTRL_HYDRO_HORIZON 180.0f
+//   Hydraulic — the remote module owns its start, its circulator and its water
+//     regulation. The dryer publishes a run permission and a fixed water
+//     setpoint over RS485 and reads telemetry back; it never cycles the module
+//     on air temperature. Nothing here parameterises it.
+//   Electric — the one source the dryer commands. Narrow hysteresis with
+//     predictive shutoff, on the measured inlet temperature.
 
 // ===== Electric Trim Parameters =====
 
 // CTRL_BANDE_ELEC — hysteresis band (°C) for the electric heater.
 //   Electric turns ON when error > CTRL_BANDE_ELEC, OFF when error ≤ 0 or an
-//   overshoot is predicted. Must stay well below CTRL_BANDE_HYDRO.
+//   overshoot is predicted.
 //   Starting point: 0.5°C
 #define CTRL_BANDE_ELEC 0.5f
 
@@ -516,14 +496,30 @@
 //   Starting point: 60s  →  try range [60 – 300s]
 #define CTRL_T_OFF_MIN 60.0f
 
+// ===== Air renewal =====
+// CTRL_AIR_RENEWAL_S — how long (seconds) the loop stops second-guessing itself
+//   after the damper moves. Opening the extraction injects outside air and the
+//   inlet temperature falls; closing it again, the temperature climbs back at a
+//   rate the predictive shutoff would read as an impending overshoot and cut the
+//   electric well below setpoint, where CTRL_T_OFF_MIN would then hold it.
+//   Inside this window the prediction is suspended and the minimum off-time is
+//   waived, so the electric is free to work through the transient. The band and
+//   the error ≤ 0 cutoff still apply, and so does the safety maximum: the window
+//   relaxes when the heater may restart, never how hot it is allowed to get.
+//   Sized on the register itself — the Belimo takes ~150 s to travel and the
+//   extraction window is 120 s — and on two minutes off-setpoint being an
+//   accepted cost of renewing the air.
+//   Starting point: 120s
+#define CTRL_AIR_RENEWAL_S 120.0f
+
 // ===== Derivative filter =====
 // DERIVATIVE_FILTER — low-pass coefficient (0–1) applied to dT_dt, which feeds
-//   both predictive shutoffs. Lower → more smoothing.
+//   the predictive shutoff. Lower → more smoothing.
 #define DERIVATIVE_FILTER 0.3f
 
 // ===== Safety =====
-// Hard cutoff: if the measured temperature exceeds this value, both heat sources
-// are forced OFF immediately.
+// Hard cutoff: if the measured temperature exceeds this value, the electric is
+// forced OFF and the hydraulic run permission is withdrawn immediately.
 // Set this to ~5–10°C above the maximum expected operating setpoint.
 #define TEMPERATURE_SAFETY_MAX 50.0f // °C
 

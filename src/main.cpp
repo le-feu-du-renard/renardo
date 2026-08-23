@@ -61,10 +61,11 @@ Dryer dryer;
 
 static SharedSensorState g_sensor_state;
 
-// Hydraulic command travels the other way, Core 0 -> Core 1. A single bool and
-// a float are each written by one core and read by the other, so they need no
-// seqlock: a torn read simply means the command applies one cycle later.
-static volatile bool  g_hydraulic_request = false;
+// The hydraulic run permission travels the other way, Core 0 -> Core 1. A
+// single bool and a float are each written by one core and read by the other,
+// so they need no seqlock: a torn read simply means the permission applies one
+// cycle later.
+static volatile bool  g_hydraulic_demand = false;
 static volatile float g_water_target = WATER_TARGET_DEFAULT;
 
 // Extension port, Core 0 -> Core 1: what to report on the next exchange.
@@ -126,7 +127,7 @@ void loop1()
   // pay it: they only reach the screen, and availability is judged on 30 s.
   g_sensor_state.Publish(snapshot);
 
-  hydraulic_remote.SetState(g_hydraulic_request);
+  hydraulic_remote.SetEnabled(g_hydraulic_demand);
   hydraulic_remote.SetWaterTarget(g_water_target);
   hydraulic_remote.Update();
 
@@ -394,8 +395,9 @@ static void UpdateOutputs()
   fan_output.Set(dryer.GetFanOutput() > 0.0f);
   damper_output.Set(dryer.GetDamperOutput());
 
-  // Hand the hydraulic on/off request to the core that owns the RS485 bus.
-  g_hydraulic_request = dryer.GetHydraulicOn();
+  // Hand the hydraulic run permission to the core that owns the RS485 bus. It
+  // is a permission, not a command: the module decides when it fires.
+  g_hydraulic_demand = dryer.GetHydraulicDemand();
 }
 
 // ========== STATUS LEDS ==========
@@ -639,7 +641,7 @@ static void UpdateDisplay()
 
   model.hydraulic_online  = temperature_manager->GetHydraulicOnline();
   model.hydraulic_enabled = temperature_manager->GetHydraulicEnabled();
-  model.hydraulic_on      = temperature_manager->GetHydraulicOn();
+  model.hydraulic_demand  = temperature_manager->GetHydraulicDemand();
   model.water_temperature = g_sensors.water_temperature;
   model.tank_temperature  = g_sensors.tank_temperature;
 
@@ -765,7 +767,7 @@ static void UpdateExtensionTelemetry()
   telemetry.running          = dryer.IsRunning();
   telemetry.fan_on           = dryer.GetFanOutput() > 0.5f;
   telemetry.electric_on      = dryer.GetHeaterOutput() > 0.5f;
-  telemetry.hydraulic_on     = dryer.GetHydraulicOn();
+  telemetry.hydraulic_demand = dryer.GetHydraulicDemand();
   telemetry.hydraulic_online = g_sensors.hydraulic_available;
   telemetry.damper_open      = dryer.GetDamperOutput();
   telemetry.sensor_fault     = !g_inlet_fresh;

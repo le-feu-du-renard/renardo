@@ -262,6 +262,12 @@ probe fresh, the source enabled in the menu, and for the hydraulic, the module
 answering on RS485. The periodic `TempMgr:` log line reports which sources are
 in play.
 
+For the hydraulic specifically, `hydro=RUN` on that line means the dryer has
+cleared the module to run, not that the module is firing — it regulates itself
+and the dryer never asked to be told. A module that stays cold with `hydro=RUN`
+is a module-side problem, and the likeliest one is firmware treating `0x0000` as
+a start pulse rather than the permission HARDWARE.md specifies.
+
 ### An output is on at boot
 
 Polarity. The fan and the electric heating must be wired active HIGH so a

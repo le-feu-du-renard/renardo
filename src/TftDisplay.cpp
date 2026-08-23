@@ -296,7 +296,7 @@ bool TftDisplay::StripChanged(const DisplayModel &model) const
 {
   return model.hydraulic_online != previous_.hydraulic_online ||
          model.hydraulic_enabled != previous_.hydraulic_enabled ||
-         model.hydraulic_on != previous_.hydraulic_on ||
+         model.hydraulic_demand != previous_.hydraulic_demand ||
          ValueChanged(model.water_temperature, previous_.water_temperature) ||
          ValueChanged(model.tank_temperature, previous_.tank_temperature);
 }
@@ -535,8 +535,12 @@ void TftDisplay::DrawStrip(const DisplayModel &model)
 
   // The hydraulic cell carries four states, not two, and each takes the colour
   // its situation deserves: a module that has stopped answering is a fault and
-  // is red, one switched off at the menu is grey, a running circulator is
+  // is red, one switched off at the menu is grey, a module cleared to run is
   // green, and one merely idle is blue — normal, and not worth an alarm colour.
+  //
+  // `ON` reads "cleared to run", not "the circulator is turning". The module
+  // regulates itself and the dryer never asked to be told when it fires, so
+  // claiming more than the permission would be claiming what nobody measured.
   const char *state = "OFF";
   uint16_t state_color = UiTheme::kNeutral;
   if (!model.hydraulic_online)
@@ -549,7 +553,7 @@ void TftDisplay::DrawStrip(const DisplayModel &model)
     state = "DESACT.";
     state_color = UiTheme::kMuted;
   }
-  else if (model.hydraulic_on)
+  else if (model.hydraulic_demand)
   {
     state = "ON";
     state_color = UiTheme::kOk;

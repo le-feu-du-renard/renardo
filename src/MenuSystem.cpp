@@ -63,7 +63,7 @@ MenuItem g_setpoint_items[4];
 MenuItem g_source_items[3];
 MenuItem g_eco_items[5];
 MenuItem g_phase_items[5];
-MenuItem g_control_items[10];
+MenuItem g_control_items[7];
 MenuItem g_clock_items[8];
 MenuItem g_system_items[4];
 MenuItem g_damper_items[13];
@@ -73,7 +73,7 @@ MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
 MenuPage g_source_page{"Sources", g_source_items, 3};
 MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Phases", g_phase_items, 5};
-MenuPage g_control_page{"Regulation", g_control_items, 10};
+MenuPage g_control_page{"Regulation", g_control_items, 7};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
 MenuPage g_damper_page{"Registres", g_damper_items, 13};
 MenuPage g_system_page{"Systeme", g_system_items, 4};
@@ -353,25 +353,21 @@ void MenuSystem::Begin(DryerSettings *settings)
                                30.0f, 900.0f, 30.0f, " s");
   g_phase_items[4] = MakeBack();
 
-  g_control_items[0] = MakeValue("Bande hydro", MenuValueType::kFloat,
-                                 &s.band_hydraulic, 0.2f, 5.0f, 0.1f, " C");
-  g_control_items[1] = MakeValue("Bande elec", MenuValueType::kFloat,
+  // The four hydraulic knobs are gone: the module regulates itself, and a page
+  // offering to tune something the dryer does not control is a page that lies.
+  g_control_items[0] = MakeValue("Bande elec", MenuValueType::kFloat,
                                  &s.band_electric, 0.1f, 3.0f, 0.1f, " C");
-  g_control_items[2] = MakeValue("Horizon hydro", MenuValueType::kFloat,
-                                 &s.horizon_hydraulic, 0.0f, 600.0f, 10.0f, " s");
-  g_control_items[3] = MakeValue("Horizon elec", MenuValueType::kFloat,
+  g_control_items[1] = MakeValue("Horizon elec", MenuValueType::kFloat,
                                  &s.horizon_electric, 0.0f, 300.0f, 10.0f, " s");
-  g_control_items[4] = MakeValue("Hydro ON min", MenuValueType::kFloat,
-                                 &s.hydraulic_t_on_min, 0.0f, 1800.0f, 30.0f, " s");
-  g_control_items[5] = MakeValue("Hydro OFF min", MenuValueType::kFloat,
-                                 &s.hydraulic_t_off_min, 0.0f, 1800.0f, 30.0f, " s");
-  g_control_items[6] = MakeValue("Elec ON min", MenuValueType::kFloat,
+  g_control_items[2] = MakeValue("Elec ON min", MenuValueType::kFloat,
                                  &s.electric_t_on_min, 0.0f, 600.0f, 5.0f, " s");
-  g_control_items[7] = MakeValue("Elec OFF min", MenuValueType::kFloat,
+  g_control_items[3] = MakeValue("Elec OFF min", MenuValueType::kFloat,
                                  &s.electric_t_off_min, 0.0f, 600.0f, 5.0f, " s");
-  g_control_items[8] = MakeValue("Securite max", MenuValueType::kFloat,
+  g_control_items[4] = MakeValue("Renouv. air", MenuValueType::kFloat,
+                                 &s.air_renewal_window, 0.0f, 600.0f, 30.0f, " s");
+  g_control_items[5] = MakeValue("Securite max", MenuValueType::kFloat,
                                  &s.safety_max, 30.0f, 70.0f, 1.0f, " C");
-  g_control_items[9] = MakeBack();
+  g_control_items[6] = MakeBack();
 
   // These entries edit the staging copy, not the RTC: nothing reaches the chip
   // until "Valider". Like the ECO page, they all depend on the clock and are

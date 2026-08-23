@@ -23,15 +23,12 @@ void DryerSettings::Reset()
   extraction_phase_duration       = EXTRACTION_PHASE_DURATION;
   extraction_damper_open_duration = EXTRACTION_DAMPER_OPEN_DURATION;
 
-  band_hydraulic      = CTRL_BANDE_HYDRO;
-  band_electric       = CTRL_BANDE_ELEC;
-  horizon_hydraulic   = CTRL_HYDRO_HORIZON;
-  horizon_electric    = CTRL_HORIZON;
-  hydraulic_t_on_min  = CTRL_HYDRO_T_ON_MIN;
-  hydraulic_t_off_min = CTRL_HYDRO_T_OFF_MIN;
-  electric_t_on_min   = CTRL_T_ON_MIN;
-  electric_t_off_min  = CTRL_T_OFF_MIN;
-  safety_max          = TEMPERATURE_SAFETY_MAX;
+  band_electric      = CTRL_BANDE_ELEC;
+  horizon_electric   = CTRL_HORIZON;
+  electric_t_on_min  = CTRL_T_ON_MIN;
+  electric_t_off_min = CTRL_T_OFF_MIN;
+  air_renewal_window = CTRL_AIR_RENEWAL_S;
+  safety_max         = TEMPERATURE_SAFETY_MAX;
 
   // One register out of the box: a dryer that has never been configured behaves
   // exactly as the firmware did before the count was a setting, and declaring

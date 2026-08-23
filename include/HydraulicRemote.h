@@ -7,11 +7,14 @@
 
 // Client for the remote hydraulic module on RS485 bus A.
 //
-// The module owns the three-way valve and the circulator. It accepts only a
-// requested state and a fixed water setpoint, and reports the circulating and
-// storage-tank water temperatures. The valve is far too slow to be modulated
-// from here, so the dryer commands it on/off and trims the air temperature
-// with the electric heater instead.
+// The module owns the three-way valve, the circulator, and its own regulation:
+// it decides when to fire and holds the water at the setpoint it is given. What
+// travels from here is a **run permission** and that setpoint — not an on/off
+// command. The dryer raises the permission for as long as the source is enabled
+// and a session is running with the interlocks holding, and regulates the air
+// temperature with the electric heater alone. Cycling the module on air
+// temperature would put a second regulator on a valve that takes minutes to
+// travel, and the slower of the two controllers is not this one.
 //
 // Register map is declared in config.h (HYDRO_REG_*) so the module firmware
 // and this client stay in agreement.
@@ -32,16 +35,16 @@ public:
 
   void Begin();
 
-  // Requested state — pushed to the module on the next Update().
-  void SetState(bool on) { requested_state_ = on; }
-  bool GetRequestedState() const { return requested_state_; }
+  // Run permission — pushed to the module on the next Update().
+  void SetEnabled(bool enabled) { enabled_ = enabled; }
+  bool GetEnabled() const { return enabled_; }
 
   // Fixed water setpoint in C, set from the menu.
   void  SetWaterTarget(float celsius);
   float GetWaterTarget() const { return water_target_; }
 
-  // One exchange with the module: write the command, then read telemetry.
-  // Returns true when both transactions succeed.
+  // One exchange with the module: write the permission block, then read
+  // telemetry. Returns true when both transactions succeed.
   bool Update();
 
   float    GetWaterTemperature() const { return water_temperature_; }
@@ -49,7 +52,7 @@ public:
   uint16_t GetStatusBits()       const { return status_bits_; }
 
 private:
-  bool  requested_state_;
+  bool  enabled_;
   float water_target_;
 
   float    water_temperature_;

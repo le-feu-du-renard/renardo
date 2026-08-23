@@ -46,58 +46,103 @@ The cycle loops until STOP is pressed — there is no automatic end.
 - **Exit:** always runs its full duration.
 - **Damper:** open.
 
-Every phase transition calls `TemperatureManager::ResetControl()`, which clears
-both sources and their anti-short-cycle timers.
+Every phase transition moves the damper, and every damper movement calls
+`TemperatureManager::NotifyAirRenewal()` — including the Init sub-extraction,
+which happens in the middle of a phase and used to announce itself to nothing.
+See [Air renewal](#air-renewal--the-two-minutes-the-loop-is-told-to-ignore).
+Only entering Init resets the control outright, because only entering Init is a
+session start.
 
 ---
 
 ## Temperature Control
 
-Two **independent on/off sources** share the same measured inlet temperature.
-There is no PID: the remote hydraulic module only accepts a state and a fixed
-water setpoint, and its three-way valve is far too slow to be modulated, so
-there is nothing left for a continuous output to act on.
+Two heat sources, and the dryer regulates **one** of them. The split is one of
+authority, not of speed.
 
-### Hydraulic — base heat
+### The hydraulic is not regulated here
 
-Wide hysteresis, slow cycling. The module holds a fixed water temperature set
-from the menu; the dryer only decides when it runs.
+The remote module owns the three-way valve, the circulator, **and its own
+regulation**: it decides when to fire and holds the water at the setpoint it is
+given. What travels over RS485 is a *run permission* and that setpoint, and the
+permission is held for the whole session rather than toggled.
 
-| Condition | Effect |
+Earlier firmware cycled the module on a 1.5 °C band with 300 s minimum on and off
+times, which put a second regulator on a valve that takes minutes to travel — and
+the slower of the two controllers was not this one. Worse, the protection was not
+real: `ResetControl()` fired on every phase transition, so the 300 s guard was
+wiped roughly every 19 minutes and the phase machine could drop the valve out and
+re-energise it seconds later. Handing the loop back to the module removes the
+argument and the timers along with it.
+
+| Condition | Permission |
 |---|---|
-| error > `CTRL_BANDE_HYDRO` (1.5 °C) and OFF for ≥ `CTRL_HYDRO_T_OFF_MIN` | turn ON |
-| error ≤ 0, or overshoot predicted, and ON for ≥ `CTRL_HYDRO_T_ON_MIN` | turn OFF |
+| `hydraulic_enabled` at the menu, a session running, every interlock holding | raised |
+| anything in [Safety Interlocks](#safety-interlocks) failing, or the session ending | withdrawn |
 
-The long minimum on/off times (300 s each) protect the valve and the
-circulator, and must exceed the time the valve needs to travel.
+Deliberately **not** conditioned on the module answering: an unreachable module
+cannot be written to either way, and folding that in would only restate what the
+availability check already says. If the bus dies while the module is running,
+nothing on the dryer can reach it — that is the module's own watchdog to handle,
+and [HARDWARE.md](HARDWARE.md) requires one for exactly this reason.
 
-### Electric — fine trim
+### Electric — the regulated source
 
-Narrow hysteresis, fast cycling, closing the last fraction of a degree the
-hydraulic cannot resolve.
+Narrow hysteresis on the measured inlet temperature, fast cycling.
 
 | Condition | Effect |
 |---|---|
 | error > `CTRL_BANDE_ELEC` (0.5 °C) and OFF for ≥ `CTRL_T_OFF_MIN` | turn ON |
 | error ≤ 0, or overshoot predicted, and ON for ≥ `CTRL_T_ON_MIN` | turn OFF |
 
-Because `CTRL_BANDE_HYDRO` sits well above `CTRL_BANDE_ELEC`, a large error
-engages both sources while a small one is trimmed by the electric alone.
+There is no PID here either, and for the same reason there never was: the
+electric is a contactor. A continuous output would have nothing to act on.
 
 ### Predictive shutoff
 
-Both sources cut out early when the temperature is climbing fast enough to
-sail past the setpoint on inertia alone:
+The electric cuts out early when the temperature is climbing fast enough to sail
+past the setpoint on inertia alone:
 
 ```
-T + dT_dt × horizon ≥ setpoint   →   turn off
+T + dT_dt × CTRL_HORIZON ≥ setpoint   →   turn off
 ```
 
 This only applies when `dT_dt > CTRL_DT_PREDICT_MIN` (0.05 °C/s). The probes
 report in 0.1 °C steps, and a single quantisation step produces a filtered
 derivative around 0.03 °C/s — without that gate, sensor noise alone would cut
-the heating short. The hydraulic uses a longer horizon than the electric,
-because the water loop keeps giving off heat well after the circulator stops.
+the heating short.
+
+### Air renewal — the two minutes the loop is told to ignore
+
+Opening the extraction injects outside air, and the inlet temperature falls. That
+part is fine and expected. The damage was on the way back: with the register shut
+again the chamber recovers at a rate far steeper than any approach to setpoint the
+60 s horizon was sized for, the prediction above reads it as an impending
+overshoot, and the electric is cut degrees short — where `CTRL_T_OFF_MIN` then
+holds it for another minute. A short transient turned into a sag, every cycle.
+
+So every damper movement calls `NotifyAirRenewal()`, which opens a window of
+`CTRL_AIR_RENEWAL_S` (120 s) and restarts the derivative — either side of the
+movement the probe is reading a different body of air, and the slope built up
+before it describes nothing still true.
+
+| Inside the window | |
+|---|---|
+| **Suspended** | the predictive shutoff, and the electric minimum off-time |
+| **Untouched** | the band, the error ≤ 0 cutoff, the minimum on-time, the safety maximum, every interlock |
+
+The window relaxes **when the heater may restart, never how hot it is allowed to
+get**. Two minutes off-setpoint while the air is being renewed is an accepted
+cost; the controller sawtoothing because of it was not.
+
+It hangs off the damper rather than the phase because the damper is what causes
+it. Init's sub-extraction opens the register for two minutes in the middle of a
+phase, and hooking phase transitions would have missed it entirely. So does the
+end of a fault purge, which returns the register to whatever the phase wanted.
+
+The transition itself no longer cuts the electric. `ResetControl()` used to fire
+on every phase entry — opening the contactor at the exact moment cold air arrived
+and the chamber most needed heat — and is now reserved for session start.
 
 ### Reported state
 
@@ -112,22 +157,24 @@ Four independent conditions gate heating. All must hold.
 
 | Interlock | Effect when false |
 |---|---|
-| `heating_permitted_` — inlet probe fresher than `SENSOR_TIMEOUT_MS` | both sources off |
-| `fan_active_` — the fan is running | both sources off |
+| `heating_permitted_` — inlet probe fresher than `SENSOR_TIMEOUT_MS` | electric off, hydraulic permission withdrawn |
+| `fan_active_` — the fan is running | electric off, hydraulic permission withdrawn |
 | `electric_enabled_` / `hydraulic_enabled_` — menu toggles | that source off |
-| `hydraulic_online_` — the module answered within 30 s | hydraulic off |
+| `hydraulic_online_` — the module answered within 30 s | the fault and the display only |
 
 Plus two hard cutoffs inside the control loop: a sensor fault (NaN, or outside
 −20…200 °C) and the measured temperature exceeding the configurable safety
-maximum.
+maximum. Both withdraw the hydraulic permission as well as cutting the electric.
 
 **Sensor freshness matters most.** If the probe goes silent, its last value
 would otherwise sit frozen forever while the heaters chased it. The reading
 carries a timestamp published across cores, and heating is blocked as soon as
 it goes stale. A fault is shown as `SONDE` in the status bar.
 
-Losing the hydraulic module degrades to electric-only; it never stops a
-session.
+`hydraulic_online_` is the one row that gates nothing. It raises the fault and
+greys the cell, but the permission says what the dryer *wants* and losing the bus
+does not change that — it only stops the answer getting through. Losing the module
+degrades the machine to electric-only; it never stops a session.
 
 ### The airflow interlock — the one that acts on the session
 
@@ -284,7 +331,7 @@ from across the room and never need the word underneath it read.
 |---|---|---|
 | Red `#ff5a5a` | broken, wants attention now | sensor alarm, hydraulic `ABSENT` |
 | Amber `#ffb020` | transient or noteworthy, nothing wrong | register in transit, `REFROID.`, edit mode, extraction phase |
-| Green `#5bd97f` | running as intended | fan, heater, circulator, the register on the commanded air path, eco while it lowers the setpoint |
+| Green `#5bd97f` | running as intended | fan, heater, hydraulic cleared to run, the register on the commanded air path, eco while it lowers the setpoint |
 | Blue `#5aa9e6` | available and idle, or a plain reading | `OFF` pills, water temperatures, the warm-up phase, eco outside its hours |
 | Grey `#6f8a88` | switched off in the configuration, or a caption | `DESACT.`, captions, unavailable menu rows |
 | Cyan `#3fe6d4` | live, or selected | injection figures, menu cursor, brassage phase |
@@ -296,6 +343,10 @@ answering are three different situations, and only the last is a fault; painting
 all three red — which is what colouring "not ON" invites — teaches the operator
 to ignore red. For the same reason a running heater is green like everything
 else that runs, not amber: a heater doing its job is not a warning.
+
+On the hydraulic cell, `ON` reads "cleared to run", not "the circulator is
+turning". The module regulates itself and never reports when it fires, so
+claiming more would be claiming something nobody measured.
 
 Degraded states stay words rather than a missing `ON`: the hydraulic cell reads
 `ABSENT` when the module has stopped answering and `DESACT.` when it is switched
