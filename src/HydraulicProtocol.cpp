@@ -68,7 +68,6 @@ uint16_t HydroEncodeStatus(const HydraulicTelemetry &telemetry)
   if (telemetry.tank_too_cold)     bits |= kHydroFlagTankTooCold;
   if (telemetry.water_probe_fault) bits |= kHydroFlagWaterProbeFault;
   if (telemetry.tank_probe_fault)  bits |= kHydroFlagTankProbeFault;
-  if (telemetry.fake_probe_fault)  bits |= kHydroFlagFakeProbeFault;
   if (telemetry.watchdog_tripped)  bits |= kHydroFlagWatchdogTripped;
   if (telemetry.setpoint_missed)   bits |= kHydroFlagSetpointMissed;
 
@@ -82,7 +81,6 @@ void HydroDecodeStatus(uint16_t bits, HydraulicTelemetry &telemetry)
   telemetry.tank_too_cold     = (bits & kHydroFlagTankTooCold) != 0;
   telemetry.water_probe_fault = (bits & kHydroFlagWaterProbeFault) != 0;
   telemetry.tank_probe_fault  = (bits & kHydroFlagTankProbeFault) != 0;
-  telemetry.fake_probe_fault  = (bits & kHydroFlagFakeProbeFault) != 0;
   telemetry.watchdog_tripped  = (bits & kHydroFlagWatchdogTripped) != 0;
   telemetry.setpoint_missed   = (bits & kHydroFlagSetpointMissed) != 0;
 }
@@ -116,8 +114,6 @@ void HydroEncodeTelemetry(const HydraulicTelemetry &telemetry, uint16_t *registe
   registers[kHydroRegTankTemp] =
       static_cast<uint16_t>(HydroEncodeValue(telemetry.tank_temperature));
   registers[kHydroRegStatus] = HydroEncodeStatus(telemetry);
-  registers[kHydroRegFakeWaterTemp] =
-      static_cast<uint16_t>(HydroEncodeValue(telemetry.fake_water_temperature));
   registers[kHydroRegPumpSpeed] = HydroEncodeSpeed(telemetry.pump_speed_percent);
 }
 
@@ -128,7 +124,5 @@ void HydroDecodeTelemetry(const uint16_t *registers, HydraulicTelemetry &telemet
   telemetry.tank_temperature =
       HydroDecodeValue(static_cast<int16_t>(registers[kHydroRegTankTemp]));
   HydroDecodeStatus(registers[kHydroRegStatus], telemetry);
-  telemetry.fake_water_temperature =
-      HydroDecodeValue(static_cast<int16_t>(registers[kHydroRegFakeWaterTemp]));
   telemetry.pump_speed_percent = HydroDecodeSpeed(registers[kHydroRegPumpSpeed]);
 }

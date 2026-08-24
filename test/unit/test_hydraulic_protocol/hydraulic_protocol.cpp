@@ -130,7 +130,6 @@ void test_status_round_trip(void)
   sent.tank_too_cold     = false;
   sent.water_probe_fault = false;
   sent.tank_probe_fault  = true;
-  sent.fake_probe_fault  = false;
   sent.watchdog_tripped  = false;
   sent.setpoint_missed   = true;
 
@@ -142,7 +141,6 @@ void test_status_round_trip(void)
   TEST_ASSERT_FALSE(received.tank_too_cold);
   TEST_ASSERT_FALSE(received.water_probe_fault);
   TEST_ASSERT_TRUE(received.tank_probe_fault);
-  TEST_ASSERT_FALSE(received.fake_probe_fault);
   TEST_ASSERT_FALSE(received.watchdog_tripped);
   TEST_ASSERT_TRUE(received.setpoint_missed);
 }
@@ -199,7 +197,6 @@ void test_telemetry_block_round_trip(void)
   HydraulicTelemetry sent;
   sent.water_temperature      = 48.2f;
   sent.tank_temperature       = 62.4f;
-  sent.fake_water_temperature = 37.0f;
   sent.pump_speed_percent     = 75.0f;
   sent.circulating            = true;
   sent.permission             = true;
@@ -212,7 +209,6 @@ void test_telemetry_block_round_trip(void)
 
   TEST_ASSERT_FLOAT_WITHIN(0.05f, 48.2f, received.water_temperature);
   TEST_ASSERT_FLOAT_WITHIN(0.05f, 62.4f, received.tank_temperature);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 37.0f, received.fake_water_temperature);
   TEST_ASSERT_FLOAT_WITHIN(0.05f, 75.0f, received.pump_speed_percent);
   TEST_ASSERT_TRUE(received.circulating);
   TEST_ASSERT_TRUE(received.permission);
@@ -233,7 +229,6 @@ void test_telemetry_carries_absent_readings(void)
 
   TEST_ASSERT_TRUE(isnan(received.water_temperature));
   TEST_ASSERT_TRUE(isnan(received.tank_temperature));
-  TEST_ASSERT_TRUE(isnan(received.fake_water_temperature));
   TEST_ASSERT_TRUE(isnan(received.pump_speed_percent));
 }
 
@@ -243,7 +238,7 @@ void test_telemetry_carries_absent_readings(void)
 void test_block_sizes_match_the_register_map(void)
 {
   TEST_ASSERT_EQUAL_UINT8(3, HYDRO_COMMAND_COUNT);
-  TEST_ASSERT_EQUAL_UINT8(5, HYDRO_TELEMETRY_COUNT);
+  TEST_ASSERT_EQUAL_UINT8(4, HYDRO_TELEMETRY_COUNT);
 
   TEST_ASSERT_EQUAL_UINT8(HYDRO_COMMAND_COUNT - 1, kHydroCmdRegDryerAirTemp);
   TEST_ASSERT_EQUAL_UINT8(HYDRO_TELEMETRY_COUNT - 1, kHydroRegPumpSpeed);
@@ -251,6 +246,39 @@ void test_block_sizes_match_the_register_map(void)
   // And the telemetry block starts where the dryer reads it from.
   TEST_ASSERT_EQUAL_UINT16(0x0010, HYDRO_REG_WATER_TEMP);
   TEST_ASSERT_EQUAL_UINT16(0x0000, HYDRO_REG_STATE);
+
+  // The block is contiguous: every address between the base and the count is a
+  // register somebody encodes. A hole here would be read by the dryer's one
+  // FC03 and decoded as a reading.
+  TEST_ASSERT_EQUAL_UINT16(HYDRO_REG_WATER_TEMP + kHydroRegPumpSpeed,
+                           HYDRO_REG_PUMP_SPEED);
+}
+
+// Bit 5 was the fake-probe fault, from when the module synthesised a probe for
+// the three-way valve. It is retired, and the bits above it deliberately did
+// not move down to close the gap — the dryer's HARDWARE.md tabulates them, and
+// somebody reads that table off a bench with a status word in front of them.
+//
+// This is the test that keeps the paper and the firmware agreeing: renumbering
+// would pass every other test in this file.
+void test_retired_bit_five_stays_vacant(void)
+{
+  HydraulicTelemetry telemetry;
+  telemetry.circulating       = true;
+  telemetry.permission        = true;
+  telemetry.tank_too_cold     = true;
+  telemetry.water_probe_fault = true;
+  telemetry.tank_probe_fault  = true;
+  telemetry.watchdog_tripped  = true;
+  telemetry.setpoint_missed   = true;
+
+  // Every flag there is, and bit 5 still reads back as zero.
+  const uint16_t bits = HydroEncodeStatus(telemetry);
+  TEST_ASSERT_EQUAL_UINT16(0x00DF, bits);
+  TEST_ASSERT_EQUAL_UINT16(0, bits & (1 << 5));
+
+  TEST_ASSERT_EQUAL_UINT16(0x0040, kHydroFlagWatchdogTripped);
+  TEST_ASSERT_EQUAL_UINT16(0x0080, kHydroFlagSetpointMissed);
 }
 
 int main(int, char **)
@@ -268,6 +296,7 @@ int main(int, char **)
 
   RUN_TEST(test_status_bit_positions);
   RUN_TEST(test_status_round_trip);
+  RUN_TEST(test_retired_bit_five_stays_vacant);
 
   RUN_TEST(test_command_block_round_trip);
   RUN_TEST(test_command_carries_an_absent_air_temperature);

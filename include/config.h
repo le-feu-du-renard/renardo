@@ -383,12 +383,11 @@
 #define HYDRO_REG_DRYER_AIR_TEMP 0x0002 // write: inlet air temperature x10, signed
 #define HYDRO_COMMAND_COUNT 3
 
-#define HYDRO_REG_WATER_TEMP 0x0010      // read: circulating water temperature x10
-#define HYDRO_REG_TANK_TEMP 0x0011       // read: storage tank temperature x10
-#define HYDRO_REG_STATUS 0x0012          // read: status bits
-#define HYDRO_REG_FAKE_WATER_TEMP 0x0013 // read: what the valve is being told, x10
-#define HYDRO_REG_PUMP_SPEED 0x0014      // read: commanded circulator speed, percent
-#define HYDRO_TELEMETRY_COUNT 5
+#define HYDRO_REG_WATER_TEMP 0x0010 // read: circulating water temperature x10
+#define HYDRO_REG_TANK_TEMP 0x0011  // read: storage tank temperature x10
+#define HYDRO_REG_STATUS 0x0012     // read: status bits
+#define HYDRO_REG_PUMP_SPEED 0x0013 // read: commanded circulator speed, percent
+#define HYDRO_TELEMETRY_COUNT 4
 
 // Extension port register map.
 //

@@ -615,18 +615,58 @@ that the wrong register is being read.
 
 ### Hydraulic module (to be built)
 
-Deported over RS485. It owns the three-way valve, the circulator, **and its own
-regulation** — the module decides when to fire and holds the water at whatever
-setpoint it is handed. The valve is far too slow to be modulated from here, and
-cycling it from here on air temperature would put two controllers on one valve.
+Deported over RS485. It owns the circulator **and its own interlock** — the
+module decides when circulating is worth doing and does not wait to be told.
+The three-way valve is not on this bus at all: it keeps its own probe and its
+own dial and regulates itself, which is what keeps two controllers off one
+valve.
+
+Two blocks, both driven from here because a slave never speaks unprompted: the
+dryer writes the command block with one FC16 and reads the telemetry block with
+one FC03, every poll cycle.
 
 | Register | Direction | Contents |
 |---|---|---|
 | `0x0000` | write | run permission, 0 = stand down, 1 = cleared to run |
 | `0x0001` | write | water setpoint ×10 (°C) |
+| `0x0002` | write | dryer inlet air temperature ×10, signed |
 | `0x0010` | read | circulating water temperature ×10, signed |
 | `0x0011` | read | storage tank temperature ×10, signed |
 | `0x0012` | read | status bits |
+| `0x0013` | read | commanded circulator speed, whole percent |
+
+Readings are **signed tenths in an unsigned register**: cast to `int16_t` before
+dividing, because the water loop legitimately reads below zero. A value the
+module does not have is `INT16_MIN`, never a zero — and the speed, whose 0 and
+100 are both legal, uses `0xFFFF` for the same purpose.
+
+`0x0002` is what lets the module tell whether circulating would move heat *into*
+the dryer rather than out of it. While it reads as the sentinel the module falls
+back to the water setpoint alone, which is correct but more cautious.
+
+Status bits:
+
+| Bit | Meaning |
+|---|---|
+| 0 | circulating |
+| 1 | permission, as received and echoed back |
+| 2 | tank too cold — the local interlock is holding the pump off |
+| 3 | water probe fault |
+| 4 | tank probe fault |
+| 5 | *reserved, unused* |
+| 6 | watchdog tripped — bus silent, everything shut down |
+| 7 | setpoint missed — regulating, but not reaching the target |
+
+Bit 2 is the one worth understanding from this end: the module has accepted the
+permission and is deliberately not circulating, because the tank is not warm
+enough for circulating to move heat in the useful direction. That is normal
+operation, not a fault.
+
+Bit 5 was a fake-probe fault, from when the module synthesised a probe for the
+valve. It is retired, and the bits above it were **not** renumbered to close the
+gap — this table is read off a bench with a status word in front of it, and
+shifting them would have gained one bit out of eight spare and made the paper
+wrong.
 
 `0x0000` is a **permission, not a command**, and this is the part the module
 firmware has to be written against: the dryer raises it once when a session

@@ -38,11 +38,10 @@ enum HydraulicCommandRegister : uint8_t
 // Registers of the telemetry block, offsets from HYDRO_REG_WATER_TEMP.
 enum HydraulicTelemetryRegister : uint8_t
 {
-  kHydroRegWaterTemp     = 0,
-  kHydroRegTankTemp      = 1,
-  kHydroRegStatus        = 2,
-  kHydroRegFakeWaterTemp = 3,
-  kHydroRegPumpSpeed     = 4,
+  kHydroRegWaterTemp = 0,
+  kHydroRegTankTemp  = 1,
+  kHydroRegStatus    = 2,
+  kHydroRegPumpSpeed = 3,
 };
 
 // Status bits, reported in HYDRO_REG_STATUS.
@@ -58,7 +57,12 @@ enum HydraulicStatusFlag : uint16_t
   kHydroFlagTankTooCold     = 1 << 2, // local interlock holding the pump off
   kHydroFlagWaterProbeFault = 1 << 3,
   kHydroFlagTankProbeFault  = 1 << 4,
-  kHydroFlagFakeProbeFault  = 1 << 5, // wiper position unknown or uncalibrated
+  // Bit 5 is **reserved and unused**. It was kHydroFlagFakeProbeFault, from
+  // when the module synthesised a probe for the three-way valve. The bits above
+  // it are deliberately not renumbered to close the gap: they are tabulated in
+  // the dryer's HARDWARE.md, and somebody reads that table off a bench while
+  // looking at a status word. Shifting them would gain one bit out of eight
+  // spare and make the paper wrong.
   kHydroFlagWatchdogTripped = 1 << 6, // bus silent, everything shut down
   kHydroFlagSetpointMissed  = 1 << 7, // regulating, but not reaching the target
 };
@@ -103,27 +107,24 @@ struct HydraulicCommand
 // What the module reports back, in engineering units. NAN means "no reading".
 struct HydraulicTelemetry
 {
-  float water_temperature;      // measured, circulating loop
-  float tank_temperature;       // measured, storage tank
-  float fake_water_temperature; // what the valve controller is being told
-  float pump_speed_percent;     // commanded speed, NAN when unknown
+  float water_temperature;  // measured, circulating loop
+  float tank_temperature;   // measured, storage tank
+  float pump_speed_percent; // commanded speed, NAN when unknown
 
   bool circulating;
   bool permission;
   bool tank_too_cold;
   bool water_probe_fault;
   bool tank_probe_fault;
-  bool fake_probe_fault;
   bool watchdog_tripped;
   bool setpoint_missed;
 
   HydraulicTelemetry()
       : water_temperature(NAN), tank_temperature(NAN),
-        fake_water_temperature(NAN), pump_speed_percent(NAN),
+        pump_speed_percent(NAN),
         circulating(false), permission(false), tank_too_cold(false),
         water_probe_fault(false), tank_probe_fault(false),
-        fake_probe_fault(false), watchdog_tripped(false),
-        setpoint_missed(false) {}
+        watchdog_tripped(false), setpoint_missed(false) {}
 };
 
 // Tenths, with NAN mapped to the sentinel.
