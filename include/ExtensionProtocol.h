@@ -2,6 +2,7 @@
 #define EXTENSION_PROTOCOL_H
 
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "config.h"
@@ -10,35 +11,41 @@
 // so both sides of it can be built and tested on the host. The module author
 // compiles this same header.
 //
-// The dryer is the Modbus master, so both directions are driven from here: it
-// writes the telemetry block with one FC16 and reads the command mailbox with
-// one FC03, every poll cycle.
+// **This is the one file both repositories must keep byte-identical.**
+// scripts/check_shared_headers.sh diffs the two copies; a producer and a
+// collector built from copies that have drifted will either desync silently
+// or, more likely, disagree on EXT_PROTOCOL_VERSION and refuse each other
+// loudly (see Rs485Slave/FrameReader's version checks) — loud is the
+// intended failure, this header is what keeps it that way.
 //
-// The layout descends from the v3 radio frame — that frame had already settled
-// what is worth sending, and a decoder written for it still reads bits 0..7 of
-// the flags unchanged. What the radio needed and Modbus does not is the framing:
-// no magic byte, no checksum, no packing. Modbus supplies all three.
+// The master is whichever module owns the RS485 segment, so both directions
+// are driven from here: it writes the telemetry block with one FC16 and
+// reads the command mailbox with one FC03, every poll cycle.
+//
+// **Telemetry is a generic {metric_id, value} table, not a fixed set of
+// named registers.** A producer owns its own catalog of metric ids (the
+// dryer firmware's DryerMetricIds.h is one example) and this header never
+// names a single one of them — it only defines the envelope a catalog rides
+// in. What a given id *means* is a deployment concern, resolved on the
+// collector side by a small id-to-name table (data-orchestra's
+// include/deployment/metric_catalog.h) that is the one place a specific
+// producer's vocabulary is allowed to live.
+//
+// The command mailbox stays a fixed, named layout. Commands are a two-way
+// control surface: whoever posts one already has to know the producer's
+// vocabulary (there is no such thing as a generic "set the thing to five"),
+// so there is nothing to gain by making this half generic too. It is a
+// deliberate scope boundary, not an oversight.
 
-// Registers of the telemetry block, offsets from EXT_REG_TELEMETRY.
+// ===== Telemetry: header registers, offsets from EXT_REG_TELEMETRY =====
 enum ExtensionTelemetryRegister : uint8_t
 {
-  kExtRegVersion       = 0,
-  kExtRegFlags         = 1,
-  kExtRegPhase         = 2,
-  kExtRegInletTemp     = 3,
-  kExtRegInletHumidity = 4,
-  kExtRegWaterTemp     = 5,
-  kExtRegTankTemp      = 6,
-  kExtRegTargetTemp    = 7,
-  kExtRegTargetHumidity = 8,
-  kExtRegExtractionPos = 9,
-  kExtRegRecyclingPos  = 10,
-  kExtRegElapsedHigh   = 11,
-  kExtRegElapsedLow    = 12,
-  kExtRegUptimeHigh    = 13,
-  kExtRegUptimeLow     = 14,
-  kExtRegAckSequence   = 15,
-  kExtRegAckResult     = 16,
+  kExtRegVersion     = 0,
+  kExtRegCount       = 1, // number of {id, value} tuples that follow
+  kExtRegUptimeHigh  = 2,
+  kExtRegUptimeLow   = 3,
+  kExtRegAckSequence = 4,
+  kExtRegAckResult   = 5,
 };
 
 // Registers of the command mailbox, offsets from EXT_REG_COMMAND.
@@ -48,21 +55,6 @@ enum ExtensionCommandRegister : uint8_t
   kExtCmdRegOpcode   = 1,
   kExtCmdRegArgument = 2,
   kExtCmdRegVersion  = 3,
-};
-
-// Bits 0..7 keep the assignments the v3 radio used, so a decoder written for it
-// still reads them. Bit 8 is new: the 16-bit register has room the byte did not.
-enum ExtensionFlag : uint16_t
-{
-  kExtFlagRunning       = 1 << 0,
-  kExtFlagFan           = 1 << 1,
-  kExtFlagElectric      = 1 << 2,
-  kExtFlagHydraulic     = 1 << 3,
-  kExtFlagDamperOpen    = 1 << 4,
-  kExtFlagSensorFault   = 1 << 5,
-  kExtFlagHydraulicOff  = 1 << 6, // module unreachable
-  kExtFlagAirflowFault  = 1 << 7, // every register shut: the air path is closed
-  kExtFlagFeedbackFault = 1 << 8, // a register's position readback is unusable
 };
 
 enum ExtensionOpcode : uint16_t
@@ -88,54 +80,84 @@ enum ExtensionResult : uint16_t
   kExtResultBadVersion   = 4,
 };
 
-// A reading the dryer has no value for. Distinct from a real zero, and negative
-// because the water loop can legitimately read below freezing.
+// A reading the producer has no value for. Distinct from a real zero, and
+// negative because a reading can legitimately go below zero (e.g. a water
+// loop below freezing).
 constexpr int16_t kExtInvalidValue = INT16_MIN;
 
-// Same idea for a register opening, which is whole percents. 0 % is a shut
-// register and 100 % a legal reading, so the sentinel has to sit outside the
-// range rather than at either end of it.
-constexpr uint16_t kExtNoPosition = 0xFFFF;
+// Bit 15 of a metric_id on the wire selects how its paired value register is
+// encoded; the low 15 bits are the catalog id. Two kinds cover everything a
+// producer has needed so far:
+//
+//   kExtMetricKindTenths  a signed tenths-of-a-unit reading, kExtInvalidValue
+//                         sentinel meaning "no reading" — the shape every
+//                         float, percent and boolean (0.0/1.0) metric uses.
+//   kExtMetricKindCounter a raw whole-unit uint16_t, no sentinel, wraps at
+//                         65535 — for a value too large for tenths' ~3277
+//                         unit range (e.g. a session length in seconds) where
+//                         wrapping is an acceptable, documented limitation
+//                         rather than a reason to widen the envelope.
+//
+// One bit costs nothing and keeps every tuple the same shape; a future kind
+// can claim more of the id space if one is ever needed.
+constexpr uint16_t kExtMetricKindMask = 0x8000;
+constexpr uint16_t kExtMetricIdMask   = 0x7FFF;
 
-// What the dryer reports, in engineering units. NAN means "no reading".
-struct ExtensionTelemetry
+enum ExtensionMetricKind : uint16_t
 {
-  float inlet_temperature;
-  float inlet_humidity;
-  float water_temperature;
-  float tank_temperature;
-  float target_temperature;
-  float target_humidity;
-  float extraction_position; // %, NAN when unknown
-  float recycling_position;  // %, NAN when unknown
+  kExtMetricKindTenths  = 0,
+  kExtMetricKindCounter = kExtMetricKindMask,
+};
 
-  uint32_t session_elapsed_s;
+// Room for growth above what any producer seen so far has needed (the
+// dryer's catalog uses under 20). Sizes every fixed array both sides of the
+// link allocate, so raising it costs registers on the wire as well as RAM.
+constexpr size_t kExtMaxMetrics = 24;
+
+constexpr uint8_t kExtTelemetryHeaderCount = 6; // version, count, uptime x2, ack x2
+
+// The metric_id that CollectMetricSamples (MetricSamples.cpp) uses when it
+// turns ExtensionTelemetryRecord::uptime_s into its own sample. Uptime is a
+// fact about every producer, not something a producer's own catalog names,
+// so it gets one id reserved out of the generic engine rather than out of any
+// producer's numbering — pinned at the top of the id space (bit 15 already
+// means something else, see kExtMetricKindMask) so a producer that starts
+// numbering from 0 can never collide with it by accident.
+constexpr uint16_t kExtMetricUptimeS = kExtMetricIdMask;
+
+// The longest a telemetry block can ever be: header plus every metric slot
+// filled. What Rs485Slave and OrchestraFrame size their buffers to, and the
+// upper bound HandleWriteRegisters/FrameReader check an incoming count
+// against — a block is otherwise free to carry anywhere from zero metrics up
+// to this.
+constexpr uint8_t kExtTelemetryMaxCount =
+    kExtTelemetryHeaderCount + static_cast<uint8_t>(kExtMaxMetrics) * 2;
+
+// One {id, value} reading, exactly as it rides on the wire.
+struct ExtensionMetricTuple
+{
+  uint16_t metric_id; // low 15 bits: catalog id. bit 15: ExtensionMetricKind
+  uint16_t value;
+
+  ExtensionMetricTuple() : metric_id(0), value(0) {}
+};
+
+// What a producer reports, as a generic table plus the handful of fields
+// every producer has regardless of what it measures: how long it has been up
+// (also what the LoRa duplicate filter keys on — see OrchestraFrame.h) and
+// the echo of the last command it accepted.
+struct ExtensionTelemetryRecord
+{
   uint32_t uptime_s;
-  uint8_t  phase;
-
-  bool running;
-  bool fan_on;
-  bool electric_on;
-  bool hydraulic_demand;
-  bool hydraulic_online;
-  bool damper_open;
-  bool sensor_fault;
-  bool airflow_fault;
-  bool feedback_fault;
+  uint8_t  metric_count;
+  ExtensionMetricTuple metrics[kExtMaxMetrics];
 
   // Echoed back so the module can stop repeating a command.
   uint16_t ack_sequence;
   uint16_t ack_result;
 
-  ExtensionTelemetry()
-      : inlet_temperature(NAN), inlet_humidity(NAN),
-        water_temperature(NAN), tank_temperature(NAN),
-        target_temperature(NAN), target_humidity(NAN),
-        extraction_position(NAN), recycling_position(NAN),
-        session_elapsed_s(0), uptime_s(0), phase(0),
-        running(false), fan_on(false), electric_on(false),
-        hydraulic_demand(false), hydraulic_online(false), damper_open(false),
-        sensor_fault(false), airflow_fault(false), feedback_fault(false),
+  ExtensionTelemetryRecord()
+      : uptime_s(0), metric_count(0), metrics{},
         ack_sequence(0), ack_result(kExtResultOk) {}
 };
 
@@ -149,21 +171,26 @@ struct ExtensionCommand
   ExtensionCommand() : sequence(0), opcode(kExtCmdNone), argument(NAN) {}
 };
 
-// Tenths, with NAN mapped to the sentinel.
+// Tenths, with NAN mapped to the sentinel. The one numeric encoding every
+// kExtMetricKindTenths value and every command argument uses.
 int16_t ExtEncodeValue(float value);
 float   ExtDecodeValue(int16_t raw);
 
-// Whole percents, NAN mapped to the sentinel and everything else clamped into
-// 0..100 so a drifting feedback can never land on the sentinel and read as
-// "no feedback at all".
-uint16_t ExtEncodePosition(float percent);
-float    ExtDecodePosition(uint16_t raw);
+// Appends one tenths-encoded metric to `record`. Returns false when the
+// record already holds kExtMaxMetrics entries. `metric_id` must not have bit
+// 15 set — that bit is this function's to set.
+bool ExtPutMetricValue(ExtensionTelemetryRecord &record, uint16_t metric_id, float value);
 
-// Packs the flag bits out of the telemetry booleans.
-uint16_t ExtEncodeFlags(const ExtensionTelemetry &telemetry);
+// Appends one raw whole-unit counter metric. See kExtMetricKindCounter.
+bool ExtPutMetricCounter(ExtensionTelemetryRecord &record, uint16_t metric_id, uint32_t value);
 
-// Fills the whole telemetry block. `out` holds EXT_TELEMETRY_COUNT registers.
-void ExtEncodeTelemetry(const ExtensionTelemetry &telemetry, uint16_t *out);
+// Fills the whole telemetry block: header registers, then two registers per
+// metric in `record`. `out` must hold at least
+// kExtTelemetryHeaderCount + record.metric_count * 2 registers (safe to size
+// it for EXT_TELEMETRY_MAX_COUNT always). Returns the number of registers
+// actually written, which is what the caller writes onto the wire — never a
+// fixed count, since the table is variable-length.
+size_t ExtEncodeTelemetry(const ExtensionTelemetryRecord &record, uint16_t *out);
 
 // Reads and validates the mailbox. `in` holds EXT_COMMAND_COUNT registers.
 //
@@ -179,7 +206,7 @@ ExtensionResult ExtDecodeCommand(const uint16_t *in, ExtensionCommand &command);
 // Remembers which mailbox sequence has already been executed.
 //
 // The radio needed a replay filter because a frame could arrive twice over the
-// air. Modbus cannot duplicate a read — but the dryer re-reads the *same*
+// air. Modbus cannot duplicate a read — but the producer re-reads the *same*
 // mailbox every cycle, and would otherwise replay a resident command forever.
 // So the filter is still needed, for the opposite reason, and with the bus
 // offering neither loss nor reordering it collapses to an inequality: the signed

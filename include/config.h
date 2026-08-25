@@ -397,10 +397,13 @@
 //
 // The acknowledgement rides inside the telemetry block, so no separate write is
 // needed to answer a command.
-#define EXT_PROTOCOL_VERSION 1
+//
+// Bumped from 1 to 2 for the generic {metric_id, value} envelope — see
+// ExtensionProtocol.h. A module built against the other version refuses the
+// block rather than misreading it.
+#define EXT_PROTOCOL_VERSION 2
 
 #define EXT_REG_TELEMETRY 0x0000 // write: block base
-#define EXT_TELEMETRY_COUNT 17   // registers in the block
 
 #define EXT_REG_COMMAND 0x0040 // read: mailbox base
 #define EXT_COMMAND_COUNT 4    // registers in the mailbox

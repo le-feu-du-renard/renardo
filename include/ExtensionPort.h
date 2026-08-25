@@ -37,7 +37,7 @@ public:
   void Begin();
 
   // What the next Update() will report. Set from the core that owns the bus.
-  void SetTelemetry(const ExtensionTelemetry &telemetry) { telemetry_ = telemetry; }
+  void SetTelemetry(const ExtensionTelemetryRecord &telemetry) { telemetry_ = telemetry; }
 
   // One exchange: push the telemetry, then read the command mailbox.
   bool Update();
@@ -51,9 +51,9 @@ public:
   ExtensionResult         GetPendingResult()  const { return pending_result_; }
 
 private:
-  ExtensionTelemetry telemetry_;
-  ExtensionCommand   pending_;
-  ExtensionResult    pending_result_;
+  ExtensionTelemetryRecord telemetry_;
+  ExtensionCommand         pending_;
+  ExtensionResult          pending_result_;
 };
 
 #endif // EXTENSION_PORT_H

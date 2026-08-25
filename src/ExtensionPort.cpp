@@ -15,12 +15,12 @@ void ExtensionPort::Begin()
 
 bool ExtensionPort::Update()
 {
-  uint16_t block[EXT_TELEMETRY_COUNT];
-  ExtEncodeTelemetry(telemetry_, block);
+  uint16_t block[kExtTelemetryMaxCount];
+  const size_t count = ExtEncodeTelemetry(telemetry_, block);
 
   uint16_t mailbox[EXT_COMMAND_COUNT] = {0, 0, 0, 0};
 
-  if (!Exchange(EXT_REG_TELEMETRY, block, EXT_TELEMETRY_COUNT,
+  if (!Exchange(EXT_REG_TELEMETRY, block, static_cast<uint8_t>(count),
                 EXT_REG_COMMAND, mailbox, EXT_COMMAND_COUNT))
   {
     // Leave the last known command alone. It has either been executed already —

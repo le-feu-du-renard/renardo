@@ -31,84 +31,55 @@ float ExtDecodeValue(int16_t raw)
   return raw / 10.0f;
 }
 
-uint16_t ExtEncodePosition(float percent)
+bool ExtPutMetricValue(ExtensionTelemetryRecord &record, uint16_t metric_id, float value)
 {
-  if (isnan(percent))
+  if (record.metric_count >= kExtMaxMetrics)
   {
-    return kExtNoPosition;
+    return false;
   }
 
-  long whole = lroundf(percent);
-  if (whole < 0)
-  {
-    whole = 0;
-  }
-  if (whole > 100)
-  {
-    whole = 100;
-  }
-  return static_cast<uint16_t>(whole);
+  ExtensionMetricTuple &tuple = record.metrics[record.metric_count++];
+  tuple.metric_id = (metric_id & kExtMetricIdMask) | kExtMetricKindTenths;
+  tuple.value     = static_cast<uint16_t>(ExtEncodeValue(value));
+  return true;
 }
 
-float ExtDecodePosition(uint16_t raw)
+bool ExtPutMetricCounter(ExtensionTelemetryRecord &record, uint16_t metric_id, uint32_t value)
 {
-  if (raw == kExtNoPosition)
+  if (record.metric_count >= kExtMaxMetrics)
   {
-    return NAN;
+    return false;
   }
-  return static_cast<float>(raw);
+
+  ExtensionMetricTuple &tuple = record.metrics[record.metric_count++];
+  tuple.metric_id = (metric_id & kExtMetricIdMask) | kExtMetricKindCounter;
+  // Whole units, wrapping. See kExtMetricKindCounter's comment in the header.
+  tuple.value = static_cast<uint16_t>(value & 0xFFFFu);
+  return true;
 }
 
-uint16_t ExtEncodeFlags(const ExtensionTelemetry &telemetry)
-{
-  uint16_t flags = 0;
-
-  if (telemetry.running)        flags |= kExtFlagRunning;
-  if (telemetry.fan_on)         flags |= kExtFlagFan;
-  if (telemetry.electric_on)    flags |= kExtFlagElectric;
-  if (telemetry.hydraulic_demand)   flags |= kExtFlagHydraulic;
-  if (telemetry.damper_open)    flags |= kExtFlagDamperOpen;
-  if (telemetry.sensor_fault)   flags |= kExtFlagSensorFault;
-  if (telemetry.airflow_fault)  flags |= kExtFlagAirflowFault;
-  if (telemetry.feedback_fault) flags |= kExtFlagFeedbackFault;
-
-  // Reported as "the module is off the bus", so the bit is the negation of the
-  // one the rest of the firmware carries.
-  if (!telemetry.hydraulic_online) flags |= kExtFlagHydraulicOff;
-
-  return flags;
-}
-
-void ExtEncodeTelemetry(const ExtensionTelemetry &telemetry, uint16_t *out)
+size_t ExtEncodeTelemetry(const ExtensionTelemetryRecord &record, uint16_t *out)
 {
   if (out == nullptr)
   {
-    return;
+    return 0;
   }
 
-  out[kExtRegVersion] = EXT_PROTOCOL_VERSION;
-  out[kExtRegFlags]   = ExtEncodeFlags(telemetry);
-  out[kExtRegPhase]   = telemetry.phase;
+  out[kExtRegVersion]    = EXT_PROTOCOL_VERSION;
+  out[kExtRegCount]      = record.metric_count;
+  out[kExtRegUptimeHigh] = static_cast<uint16_t>(record.uptime_s >> 16);
+  out[kExtRegUptimeLow]  = static_cast<uint16_t>(record.uptime_s & 0xFFFF);
+  out[kExtRegAckSequence] = record.ack_sequence;
+  out[kExtRegAckResult]   = record.ack_result;
 
-  // Signed tenths ride in the register as their two's-complement bit pattern;
-  // the module casts them back to int16_t.
-  out[kExtRegInletTemp]      = static_cast<uint16_t>(ExtEncodeValue(telemetry.inlet_temperature));
-  out[kExtRegInletHumidity]  = static_cast<uint16_t>(ExtEncodeValue(telemetry.inlet_humidity));
-  out[kExtRegWaterTemp]      = static_cast<uint16_t>(ExtEncodeValue(telemetry.water_temperature));
-  out[kExtRegTankTemp]       = static_cast<uint16_t>(ExtEncodeValue(telemetry.tank_temperature));
-  out[kExtRegTargetTemp]     = static_cast<uint16_t>(ExtEncodeValue(telemetry.target_temperature));
-  out[kExtRegTargetHumidity] = static_cast<uint16_t>(ExtEncodeValue(telemetry.target_humidity));
+  for (uint8_t i = 0; i < record.metric_count; i++)
+  {
+    const size_t offset = kExtTelemetryHeaderCount + (static_cast<size_t>(i) * 2);
+    out[offset]     = record.metrics[i].metric_id;
+    out[offset + 1] = record.metrics[i].value;
+  }
 
-  out[kExtRegExtractionPos] = ExtEncodePosition(telemetry.extraction_position);
-  out[kExtRegRecyclingPos]  = ExtEncodePosition(telemetry.recycling_position);
-
-  out[kExtRegElapsedHigh] = static_cast<uint16_t>(telemetry.session_elapsed_s >> 16);
-  out[kExtRegElapsedLow]  = static_cast<uint16_t>(telemetry.session_elapsed_s & 0xFFFF);
-  out[kExtRegUptimeHigh]  = static_cast<uint16_t>(telemetry.uptime_s >> 16);
-  out[kExtRegUptimeLow]   = static_cast<uint16_t>(telemetry.uptime_s & 0xFFFF);
-
-  out[kExtRegAckSequence] = telemetry.ack_sequence;
-  out[kExtRegAckResult]   = telemetry.ack_result;
+  return kExtTelemetryHeaderCount + (static_cast<size_t>(record.metric_count) * 2);
 }
 
 ExtensionResult ExtDecodeCommand(const uint16_t *in, ExtensionCommand &command)

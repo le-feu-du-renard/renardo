@@ -1,10 +1,10 @@
 // Unit tests for the extension port wire format.
 //
-// ExtensionPort itself needs the bus, so what is tested here is everything that
-// decides what the module sees and what the dryer will act on: the sentinels
-// that keep a missing reading distinct from a real zero, the flag bits a v3
-// decoder still expects to find where they were, the validation that refuses a
-// command, and the filter that stops a resident mailbox being replayed forever.
+// ExtensionPort itself needs the bus, so what is tested here is everything
+// that decides what the module sees and what the dryer will act on: the
+// sentinels that keep a missing reading distinct from a real zero, the
+// generic {id, value} envelope, the validation that refuses a command, and
+// the filter that stops a resident mailbox being replayed forever.
 
 #include <unity.h>
 
@@ -54,148 +54,113 @@ void test_a_wild_reading_cannot_impersonate_the_sentinel(void)
   TEST_ASSERT_FALSE(isnan(ExtDecodeValue(raw)));
 }
 
-// --- Positions --------------------------------------------------------------
+// --- The generic {id, value} table ------------------------------------------
 
-void test_an_unknown_opening_encodes_to_its_own_sentinel(void)
+constexpr uint16_t kMetricA = 3;
+constexpr uint16_t kMetricB = 5;
+
+void test_a_metric_id_carries_its_kind_in_the_top_bit(void)
 {
-  TEST_ASSERT_EQUAL_UINT16(kExtNoPosition, ExtEncodePosition(NAN));
-  TEST_ASSERT_TRUE(isnan(ExtDecodePosition(kExtNoPosition)));
+  ExtensionTelemetryRecord record;
+  ExtPutMetricValue(record, kMetricA, 12.3f);
+
+  TEST_ASSERT_EQUAL_UINT8(1, record.metric_count);
+  TEST_ASSERT_EQUAL_UINT16(kMetricA, record.metrics[0].metric_id & kExtMetricIdMask);
+  TEST_ASSERT_EQUAL_UINT16(kExtMetricKindTenths, record.metrics[0].metric_id & kExtMetricKindMask);
 }
 
-void test_both_ends_of_the_opening_range_stay_legal(void)
+void test_a_counter_metric_is_marked_as_such(void)
 {
-  // 0 % is a shut register and 100 % a wide open one; neither may be mistaken
-  // for an absent feedback.
-  TEST_ASSERT_EQUAL_UINT16(0, ExtEncodePosition(0.0f));
-  TEST_ASSERT_EQUAL_UINT16(100, ExtEncodePosition(100.0f));
-  TEST_ASSERT_EQUAL_FLOAT(0.0f, ExtDecodePosition(0));
-  TEST_ASSERT_EQUAL_FLOAT(100.0f, ExtDecodePosition(100));
+  ExtensionTelemetryRecord record;
+  ExtPutMetricCounter(record, kMetricB, 90061);
+
+  TEST_ASSERT_EQUAL_UINT16(kMetricB, record.metrics[0].metric_id & kExtMetricIdMask);
+  TEST_ASSERT_EQUAL_UINT16(kExtMetricKindCounter, record.metrics[0].metric_id & kExtMetricKindMask);
+  // Whole units, wraps at 65536 — 90061 truncates.
+  TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(90061 & 0xFFFF), record.metrics[0].value);
 }
 
-void test_a_drifting_feedback_is_clamped_not_wrapped(void)
+void test_putting_past_the_limit_is_refused(void)
 {
-  TEST_ASSERT_EQUAL_UINT16(0, ExtEncodePosition(-8.0f));
-  TEST_ASSERT_EQUAL_UINT16(100, ExtEncodePosition(137.0f));
-}
-
-// --- Flags ------------------------------------------------------------------
-
-void test_each_flag_sits_on_its_own_bit(void)
-{
-  ExtensionTelemetry telemetry;
-  telemetry.hydraulic_online = true; // so the "off" bit stays clear
-
-  TEST_ASSERT_EQUAL_UINT16(0, ExtEncodeFlags(telemetry));
-
-  telemetry.running = true;
-  TEST_ASSERT_EQUAL_UINT16(kExtFlagRunning, ExtEncodeFlags(telemetry));
-
-  telemetry.fan_on = true;
-  telemetry.electric_on = true;
-  telemetry.hydraulic_demand = true;
-  telemetry.damper_open = true;
-  telemetry.sensor_fault = true;
-  telemetry.airflow_fault = true;
-  telemetry.feedback_fault = true;
-
-  uint16_t expected = kExtFlagRunning | kExtFlagFan | kExtFlagElectric |
-                      kExtFlagHydraulic | kExtFlagDamperOpen |
-                      kExtFlagSensorFault | kExtFlagAirflowFault |
-                      kExtFlagFeedbackFault;
-  TEST_ASSERT_EQUAL_UINT16(expected, ExtEncodeFlags(telemetry));
-}
-
-void test_the_hydraulic_bit_reports_absence_not_presence(void)
-{
-  ExtensionTelemetry telemetry;
-
-  telemetry.hydraulic_online = false;
-  TEST_ASSERT_TRUE(ExtEncodeFlags(telemetry) & kExtFlagHydraulicOff);
-
-  telemetry.hydraulic_online = true;
-  TEST_ASSERT_FALSE(ExtEncodeFlags(telemetry) & kExtFlagHydraulicOff);
-}
-
-void test_the_v3_flag_bits_kept_their_places(void)
-{
-  // A decoder written for the radio frame reads bits 0..7 unchanged; only bit 8
-  // is new. Pinning the values down stops a reordering going unnoticed.
-  TEST_ASSERT_EQUAL_UINT16(1 << 0, kExtFlagRunning);
-  TEST_ASSERT_EQUAL_UINT16(1 << 1, kExtFlagFan);
-  TEST_ASSERT_EQUAL_UINT16(1 << 2, kExtFlagElectric);
-  TEST_ASSERT_EQUAL_UINT16(1 << 3, kExtFlagHydraulic);
-  TEST_ASSERT_EQUAL_UINT16(1 << 4, kExtFlagDamperOpen);
-  TEST_ASSERT_EQUAL_UINT16(1 << 5, kExtFlagSensorFault);
-  TEST_ASSERT_EQUAL_UINT16(1 << 6, kExtFlagHydraulicOff);
-  TEST_ASSERT_EQUAL_UINT16(1 << 7, kExtFlagAirflowFault);
-  TEST_ASSERT_EQUAL_UINT16(1 << 8, kExtFlagFeedbackFault);
+  ExtensionTelemetryRecord record;
+  for (uint16_t i = 0; i < kExtMaxMetrics; i++)
+  {
+    TEST_ASSERT_TRUE(ExtPutMetricValue(record, i, 1.0f));
+  }
+  TEST_ASSERT_FALSE(ExtPutMetricValue(record, 999, 1.0f));
+  TEST_ASSERT_EQUAL_UINT8(kExtMaxMetrics, record.metric_count);
 }
 
 // --- Telemetry block --------------------------------------------------------
 
 void test_the_block_carries_its_protocol_version(void)
 {
-  ExtensionTelemetry telemetry;
-  uint16_t block[EXT_TELEMETRY_COUNT];
+  ExtensionTelemetryRecord telemetry;
+  uint16_t block[kExtTelemetryMaxCount];
 
   ExtEncodeTelemetry(telemetry, block);
 
   TEST_ASSERT_EQUAL_UINT16(EXT_PROTOCOL_VERSION, block[kExtRegVersion]);
 }
 
-void test_elapsed_seconds_split_across_two_registers(void)
+void test_uptime_is_split_across_two_header_registers(void)
 {
-  ExtensionTelemetry telemetry;
-  telemetry.session_elapsed_s = 0x0001E240; // 123456 s, well past 16 bits
+  ExtensionTelemetryRecord telemetry;
   telemetry.uptime_s = 0xDEADBEEF;
 
-  uint16_t block[EXT_TELEMETRY_COUNT];
+  uint16_t block[kExtTelemetryMaxCount];
   ExtEncodeTelemetry(telemetry, block);
 
-  uint32_t elapsed = (static_cast<uint32_t>(block[kExtRegElapsedHigh]) << 16) |
-                     block[kExtRegElapsedLow];
   uint32_t uptime = (static_cast<uint32_t>(block[kExtRegUptimeHigh]) << 16) |
                     block[kExtRegUptimeLow];
-
-  TEST_ASSERT_EQUAL_UINT32(123456u, elapsed);
   TEST_ASSERT_EQUAL_UINT32(0xDEADBEEFu, uptime);
+}
+
+void test_the_block_length_grows_with_the_metric_count(void)
+{
+  ExtensionTelemetryRecord telemetry;
+  ExtPutMetricValue(telemetry, 0, 1.0f);
+  ExtPutMetricValue(telemetry, 1, 2.0f);
+
+  uint16_t block[kExtTelemetryMaxCount];
+  const size_t count = ExtEncodeTelemetry(telemetry, block);
+
+  TEST_ASSERT_EQUAL_UINT32(kExtTelemetryHeaderCount + 4, count);
+  TEST_ASSERT_EQUAL_UINT16(2, block[kExtRegCount]);
 }
 
 void test_a_signed_temperature_survives_the_unsigned_register(void)
 {
-  ExtensionTelemetry telemetry;
-  telemetry.water_temperature = -3.2f;
+  ExtensionTelemetryRecord telemetry;
+  ExtPutMetricValue(telemetry, kMetricA, -3.2f);
 
-  uint16_t block[EXT_TELEMETRY_COUNT];
+  uint16_t block[kExtTelemetryMaxCount];
   ExtEncodeTelemetry(telemetry, block);
 
-  float decoded = ExtDecodeValue(static_cast<int16_t>(block[kExtRegWaterTemp]));
+  float decoded = ExtDecodeValue(static_cast<int16_t>(block[kExtTelemetryHeaderCount + 1]));
   TEST_ASSERT_EQUAL_FLOAT(-3.2f, decoded);
 }
 
-void test_an_untouched_telemetry_reports_every_reading_as_missing(void)
+void test_an_untouched_telemetry_carries_no_metrics(void)
 {
-  // Default-constructed means "the dryer has nothing to say yet", not "zero
-  // everywhere".
-  ExtensionTelemetry telemetry;
-  uint16_t block[EXT_TELEMETRY_COUNT];
+  // Default-constructed means "nothing put yet", not "zero everywhere".
+  ExtensionTelemetryRecord telemetry;
+  uint16_t block[kExtTelemetryMaxCount];
 
-  ExtEncodeTelemetry(telemetry, block);
+  const size_t count = ExtEncodeTelemetry(telemetry, block);
 
-  TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(kExtInvalidValue), block[kExtRegInletTemp]);
-  TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(kExtInvalidValue), block[kExtRegTankTemp]);
-  TEST_ASSERT_EQUAL_UINT16(kExtNoPosition, block[kExtRegExtractionPos]);
-  TEST_ASSERT_EQUAL_UINT16(kExtNoPosition, block[kExtRegRecyclingPos]);
+  TEST_ASSERT_EQUAL_UINT32(kExtTelemetryHeaderCount, count);
+  TEST_ASSERT_EQUAL_UINT16(0, block[kExtRegCount]);
 }
 
 void test_the_acknowledgement_rides_in_the_telemetry_block(void)
 {
   // No separate write answers a command; this is how the module learns.
-  ExtensionTelemetry telemetry;
+  ExtensionTelemetryRecord telemetry;
   telemetry.ack_sequence = 77;
   telemetry.ack_result = kExtResultRefused;
 
-  uint16_t block[EXT_TELEMETRY_COUNT];
+  uint16_t block[kExtTelemetryMaxCount];
   ExtEncodeTelemetry(telemetry, block);
 
   TEST_ASSERT_EQUAL_UINT16(77, block[kExtRegAckSequence]);
@@ -387,18 +352,15 @@ int main(int argc, char **argv)
   RUN_TEST(test_negative_values_survive);
   RUN_TEST(test_a_wild_reading_cannot_impersonate_the_sentinel);
 
-  RUN_TEST(test_an_unknown_opening_encodes_to_its_own_sentinel);
-  RUN_TEST(test_both_ends_of_the_opening_range_stay_legal);
-  RUN_TEST(test_a_drifting_feedback_is_clamped_not_wrapped);
-
-  RUN_TEST(test_each_flag_sits_on_its_own_bit);
-  RUN_TEST(test_the_hydraulic_bit_reports_absence_not_presence);
-  RUN_TEST(test_the_v3_flag_bits_kept_their_places);
+  RUN_TEST(test_a_metric_id_carries_its_kind_in_the_top_bit);
+  RUN_TEST(test_a_counter_metric_is_marked_as_such);
+  RUN_TEST(test_putting_past_the_limit_is_refused);
 
   RUN_TEST(test_the_block_carries_its_protocol_version);
-  RUN_TEST(test_elapsed_seconds_split_across_two_registers);
+  RUN_TEST(test_uptime_is_split_across_two_header_registers);
+  RUN_TEST(test_the_block_length_grows_with_the_metric_count);
   RUN_TEST(test_a_signed_temperature_survives_the_unsigned_register);
-  RUN_TEST(test_an_untouched_telemetry_reports_every_reading_as_missing);
+  RUN_TEST(test_an_untouched_telemetry_carries_no_metrics);
   RUN_TEST(test_the_acknowledgement_rides_in_the_telemetry_block);
 
   RUN_TEST(test_an_empty_mailbox_yields_nothing_to_do);

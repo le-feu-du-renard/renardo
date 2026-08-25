@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "Dryer.h"
+#include "DryerMetricIds.h"
 #include "Rs485Bus.h"
 #include "ModbusSensors.h"
 #include "HydraulicRemote.h"
@@ -69,7 +70,7 @@ static volatile bool  g_hydraulic_demand = false;
 static volatile float g_water_target = WATER_TARGET_DEFAULT;
 
 // Extension port, Core 0 -> Core 1: what to report on the next exchange.
-static Seqlock<ExtensionTelemetry> g_extension_telemetry;
+static Seqlock<ExtensionTelemetryRecord> g_extension_telemetry;
 
 // Extension port, Core 1 -> Core 0: the command found in the mailbox, with the
 // verdict Core 1 reached on it. Validation happens on the bus side, execution on
@@ -132,7 +133,7 @@ void loop1()
   hydraulic_remote.SetDryerAirTemperature(inlet.valid ? inlet.temperature : NAN);
   hydraulic_remote.Update();
 
-  ExtensionTelemetry telemetry;
+  ExtensionTelemetryRecord telemetry;
   g_extension_telemetry.Read(telemetry);
   telemetry.ack_sequence = g_extension_ack_sequence;
   telemetry.ack_result   = g_extension_ack_result;
@@ -746,34 +747,37 @@ static void UpdateExtensionTelemetry()
 
   const AirDamper *damper = dryer.GetAirDamper();
 
-  ExtensionTelemetry telemetry;
+  ExtensionTelemetryRecord telemetry;
+  telemetry.uptime_s = now / 1000;
 
-  telemetry.inlet_temperature  = g_sensors.inlet_temperature;
-  telemetry.inlet_humidity     = g_sensors.inlet_humidity;
-  telemetry.water_temperature  = g_sensors.water_temperature;
-  telemetry.tank_temperature   = g_sensors.tank_temperature;
-  telemetry.target_temperature = dryer.GetTargetTemperature();
-  telemetry.target_humidity    = dryer.GetHumidityManager()->GetTargetHumidity();
+  ExtPutMetricValue(telemetry, kMetricInletTemperature, g_sensors.inlet_temperature);
+  ExtPutMetricValue(telemetry, kMetricInletHumidity, g_sensors.inlet_humidity);
+  ExtPutMetricValue(telemetry, kMetricWaterTemperature, g_sensors.water_temperature);
+  ExtPutMetricValue(telemetry, kMetricTankTemperature, g_sensors.tank_temperature);
+  ExtPutMetricValue(telemetry, kMetricTargetTemperature, dryer.GetTargetTemperature());
+  ExtPutMetricValue(telemetry, kMetricTargetHumidity,
+                     dryer.GetHumidityManager()->GetTargetHumidity());
 
   // NAN already when a register has no usable feedback, which encodes to the
   // sentinel — a dryer with one register reports no recycling position rather
   // than a believable zero.
-  telemetry.extraction_position = damper->Extraction().GetPositionPercent();
-  telemetry.recycling_position  = damper->Recycling().GetPositionPercent();
+  ExtPutMetricValue(telemetry, kMetricExtractionPosition,
+                     damper->Extraction().GetPositionPercent());
+  ExtPutMetricValue(telemetry, kMetricRecyclingPosition,
+                     damper->Recycling().GetPositionPercent());
 
-  telemetry.session_elapsed_s = dryer.GetTotalElapsedTime();
-  telemetry.uptime_s          = now / 1000;
-  telemetry.phase             = static_cast<uint8_t>(dryer.GetCurrentPhase());
+  ExtPutMetricCounter(telemetry, kMetricSessionElapsedS, dryer.GetTotalElapsedTime());
+  ExtPutMetricValue(telemetry, kMetricPhase, static_cast<float>(dryer.GetCurrentPhase()));
 
-  telemetry.running          = dryer.IsRunning();
-  telemetry.fan_on           = dryer.GetFanOutput() > 0.5f;
-  telemetry.electric_on      = dryer.GetHeaterOutput() > 0.5f;
-  telemetry.hydraulic_demand = dryer.GetHydraulicDemand();
-  telemetry.hydraulic_online = g_sensors.hydraulic_available;
-  telemetry.damper_open      = dryer.GetDamperOutput();
-  telemetry.sensor_fault     = !g_inlet_fresh;
-  telemetry.airflow_fault    = dryer.GetAirflowBlocked();
-  telemetry.feedback_fault   = dryer.GetDamperFeedbackFault();
+  ExtPutMetricValue(telemetry, kMetricRunning, dryer.IsRunning() ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricFanOn, dryer.GetFanOutput() > 0.5f ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricElectricOn, dryer.GetHeaterOutput() > 0.5f ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricHydraulicDemand, dryer.GetHydraulicDemand() ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricHydraulicOnline, g_sensors.hydraulic_available ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricDamperOpen, dryer.GetDamperOutput() ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricSensorFault, !g_inlet_fresh ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricAirflowFault, dryer.GetAirflowBlocked() ? 1.0f : 0.0f);
+  ExtPutMetricValue(telemetry, kMetricFeedbackFault, dryer.GetDamperFeedbackFault() ? 1.0f : 0.0f);
 
   // ack_sequence and ack_result are filled in on Core 1, which owns the answer.
 
