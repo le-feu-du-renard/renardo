@@ -129,6 +129,7 @@ void loop1()
 
   hydraulic_remote.SetEnabled(g_hydraulic_demand);
   hydraulic_remote.SetWaterTarget(g_water_target);
+  hydraulic_remote.SetDryerAirTemperature(inlet.valid ? inlet.temperature : NAN);
   hydraulic_remote.Update();
 
   ExtensionTelemetry telemetry;

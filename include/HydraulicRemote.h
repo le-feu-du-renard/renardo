@@ -43,20 +43,28 @@ public:
   void  SetWaterTarget(float celsius);
   float GetWaterTarget() const { return water_target_; }
 
-  // One exchange with the module: write the permission block, then read
+  // Dryer inlet air temperature, so the module can tell whether circulating
+  // would move heat into the dryer or out of it. NAN when the dryer has no
+  // fresh reading.
+  void SetDryerAirTemperature(float celsius) { dryer_air_temperature_ = celsius; }
+
+  // One exchange with the module: write the command block, then read
   // telemetry. Returns true when both transactions succeed.
   bool Update();
 
   float    GetWaterTemperature() const { return water_temperature_; }
   float    GetTankTemperature()  const { return tank_temperature_; }
+  float    GetPumpSpeed()        const { return pump_speed_percent_; }
   uint16_t GetStatusBits()       const { return status_bits_; }
 
 private:
   bool  enabled_;
   float water_target_;
+  float dryer_air_temperature_;
 
   float    water_temperature_;
   float    tank_temperature_;
+  float    pump_speed_percent_;
   uint16_t status_bits_;
 };
 
