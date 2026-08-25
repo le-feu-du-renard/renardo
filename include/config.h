@@ -373,7 +373,7 @@
 // one FC16 out with the permission and the setpoint, one FC03 back with the
 // measurements. The wire format is in HydraulicProtocol.h, which the module
 // firmware compiles too — that header and these addresses are mirrored in the
-// dryer-extension repository and the two copies must stay identical.
+// dryer-hydraulic repository and the two copies must stay identical.
 //
 // Readings are **signed tenths** in an unsigned register: cast to int16_t
 // before dividing, because the water loop legitimately reads below zero. A
