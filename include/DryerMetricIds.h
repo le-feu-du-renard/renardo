@@ -14,17 +14,15 @@
 // what it has to say, gives each reading a number, and — via
 // kDryerMetricCatalog below — what to call it.
 //
-// **The collector never compiles any of these names in.** Each telemetry
-// block also carries a {id, name} announcement (kExtRegCatalogId /
-// kExtRegCatalogName), one entry per cycle, cycling through the whole table
-// below; the collector's RuntimeMetricCatalog is the RAM table those
-// announcements accumulate into. Renaming or adding a metric here is
-// therefore a one-sided edit — the collector picks it up over the wire
-// within one lap, no matching file to update on its end.
+// **This file exists identically in the dryer-extension repository**, the
+// same way ExtensionProtocol.h and HydraulicProtocol.h do, and
+// scripts/check_shared_headers.sh (dryer-extension) checks the two copies
+// stay byte-identical. Renaming or adding a metric here therefore needs a
+// matching edit on that side too — the wire carries only ids, never a name.
 //
-// Names are capped at kExtCatalogNameChars (16) by the wire format, which is
-// why these are short forms ("inlet_temp", not "inlet_temperature") rather
-// than the fuller names an earlier, per-field wire format used.
+// Names are kept short ("inlet_temp", not "inlet_temperature") as a metric
+// naming convention, not because the wire enforces a length — the wire never
+// carries a name at all, only the id.
 //
 // Ids below 0x8000 only — ExtPutMetricValue and ExtPutMetricCounter both take
 // care of setting bit 15 themselves (see ExtensionMetricKind in
@@ -61,7 +59,7 @@ enum DryerMetricId : uint16_t
 struct DryerMetricCatalogEntry
 {
   uint16_t    id;
-  const char *name; // kExtCatalogNameChars (16) ASCII characters or fewer
+  const char *name; // short form, e.g. "inlet_temp"
 };
 
 // One entry per DryerMetricId above, plus kExtMetricUptimeS — the generic

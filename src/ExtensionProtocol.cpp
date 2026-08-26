@@ -1,7 +1,5 @@
 #include "ExtensionProtocol.h"
 
-#include <string.h>
-
 int16_t ExtEncodeValue(float value)
 {
   if (isnan(value))
@@ -60,71 +58,6 @@ bool ExtPutMetricCounter(ExtensionTelemetryRecord &record, uint16_t metric_id, u
   return true;
 }
 
-void ExtEncodeCatalogName(const char *name, uint16_t *out)
-{
-  if (out == nullptr)
-  {
-    return;
-  }
-
-  // Empty registers, then overlay as much of `name` as fits — a short name
-  // is zero-padded, a long one is truncated at kExtCatalogNameChars, and
-  // neither case reads past `name`'s own terminator first.
-  for (uint8_t i = 0; i < kExtCatalogNameRegisters; i++)
-  {
-    out[i] = 0;
-  }
-
-  if (name == nullptr)
-  {
-    return;
-  }
-
-  const size_t length = strnlen(name, kExtCatalogNameChars);
-  for (size_t i = 0; i < length; i++)
-  {
-    const uint8_t byte = static_cast<uint8_t>(name[i]);
-    if ((i % 2) == 0)
-    {
-      out[i / 2] = static_cast<uint16_t>(byte) << 8;
-    }
-    else
-    {
-      out[i / 2] |= byte;
-    }
-  }
-}
-
-void ExtDecodeCatalogName(const uint16_t *in, char *out)
-{
-  if (out == nullptr)
-  {
-    return;
-  }
-
-  if (in == nullptr)
-  {
-    out[0] = '\0';
-    return;
-  }
-
-  for (uint8_t i = 0; i < kExtCatalogNameChars; i++)
-  {
-    const uint16_t reg = in[i / 2];
-    const uint8_t  byte = ((i % 2) == 0) ? static_cast<uint8_t>(reg >> 8)
-                                          : static_cast<uint8_t>(reg & 0xFF);
-    // A padding zero ends the name early, same as a normal C string would —
-    // whichever comes first, a real null byte or running out of registers.
-    if (byte == 0)
-    {
-      out[i] = '\0';
-      return;
-    }
-    out[i] = static_cast<char>(byte);
-  }
-  out[kExtCatalogNameChars] = '\0';
-}
-
 size_t ExtEncodeTelemetry(const ExtensionTelemetryRecord &record, uint16_t *out)
 {
   if (out == nullptr)
@@ -138,9 +71,6 @@ size_t ExtEncodeTelemetry(const ExtensionTelemetryRecord &record, uint16_t *out)
   out[kExtRegUptimeLow]  = static_cast<uint16_t>(record.uptime_s & 0xFFFF);
   out[kExtRegAckSequence] = record.ack_sequence;
   out[kExtRegAckResult]   = record.ack_result;
-
-  out[kExtRegCatalogId] = record.catalog_metric_id;
-  ExtEncodeCatalogName(record.catalog_metric_name, &out[kExtRegCatalogName]);
 
   for (uint8_t i = 0; i < record.metric_count; i++)
   {

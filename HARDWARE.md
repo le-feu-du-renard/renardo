@@ -752,49 +752,68 @@ command mailbox with one FC03. **A command therefore waits at most one cycle,
 which the module firmware compiles too, and the addresses in `config.h`
 (`EXT_REG_*`).
 
-### Telemetry — the dryer writes, one FC16 of 17 registers from `0x0000`
+### Telemetry — the dryer writes, one FC16 per poll cycle from `0x0000`
+
+The block is a **generic `{metric_id, value}` table**, not a fixed set of
+named registers — the register layout below never changes as metrics are
+added or removed. Six header registers, then two registers per metric, as
+many metrics as the dryer has to report (up to 24):
 
 | Register | Contents |
 |---|---|
-| `0x0000` | protocol version, currently 1 |
-| `0x0001` | flags, see below |
-| `0x0002` | phase — 0 stop, 1 init, 2 brassage, 3 extraction |
-| `0x0003` | inlet temperature ×10, signed |
-| `0x0004` | inlet humidity ×10 |
-| `0x0005` | circulating water temperature ×10 |
-| `0x0006` | storage tank temperature ×10 |
-| `0x0007` | temperature setpoint ×10 |
-| `0x0008` | humidity setpoint ×10 |
-| `0x0009` | extraction register opening, whole percent |
-| `0x000A` | recycling register opening, whole percent |
-| `0x000B`–`0x000C` | session seconds elapsed, high word then low |
-| `0x000D`–`0x000E` | uptime in seconds, high word then low |
-| `0x000F` | acknowledged sequence — echo of the last command acted on |
-| `0x0010` | result — 0 ok, 1 unknown opcode, 2 refused, 3 out of range, 4 version |
+| `0x0000` | protocol version, currently 4 |
+| `0x0001` | metric count — how many `{id, value}` pairs follow |
+| `0x0002`–`0x0003` | uptime in seconds, high word then low |
+| `0x0004` | acknowledged sequence — echo of the last command acted on |
+| `0x0005` | result — 0 ok, 1 unknown opcode, 2 refused, 3 out of range, 4 version |
+| `0x0006`, `0x0007` | first metric: id, then value |
+| `0x0008`, `0x0009` | second metric: id, then value |
+| … | one `{id, value}` pair per remaining metric |
 
-Readings are **signed tenths** in an unsigned register: cast to `int16_t` before
-dividing, because the water loop legitimately reads below zero. A reading the
-dryer does not have is `INT16_MIN` (`0x8000`), never a zero — a probe reading
-0.0 °C must not look like an absent probe. Openings are whole percent with
-`0xFFFF` for no usable feedback; 0 % is a shut register and 100 % a legal
-reading, so the sentinel sits outside the range rather than at either end.
+Each metric id's **bit 15 selects its value's encoding** (`ExtensionProtocol.h`,
+`kExtMetricKindMask`); the low 15 bits are the id itself. Bit 15 clear means
+**signed tenths** (cast the value to `int16_t` before dividing by 10 — the
+water loop legitimately reads below zero); a reading the dryer does not have
+is `INT16_MIN` (`0x8000`), never a zero. Bit 15 set means a **raw whole-unit
+counter**, no sentinel, wrapping at 65536 — used only for the session-elapsed
+metric, whose seconds can exceed the tenths encoding's range.
 
-Flag bits, `0x0001`:
+What each id means is never spelled out on the wire. Both the dryer and the
+module firmware compile the same
+[`include/DryerMetricIds.h`](include/DryerMetricIds.h) — mirrored
+byte-identically the same way `ExtensionProtocol.h` and `HydraulicProtocol.h`
+are, checked by `scripts/check_shared_headers.sh` in the module repository —
+so an id like `0` always means `inlet_temp` on both ends without ever
+crossing the bus. The current catalog:
 
-| Bit | Meaning |
+| id | name |
 |---|---|
-| 0 | session running |
-| 1 | fan on |
-| 2 | electric heater on |
-| 3 | hydraulic cleared to run — the permission, not a measured circulator |
-| 4 | air register open (extracting) |
-| 5 | sensor fault — the inlet probe is stale and heating is inhibited |
-| 6 | hydraulic module **unreachable** (note the polarity) |
-| 7 | airflow blocked — every register reads shut |
-| 8 | a register's position readback is unusable |
+| 0 | `inlet_temp` |
+| 1 | `inlet_humidity` |
+| 2 | `water_temp` |
+| 3 | `tank_temperature` |
+| 4 | `target_temp` |
+| 5 | `target_humidity` |
+| 6 | `extraction_pos` |
+| 7 | `recycling_pos` |
+| 8 | `phase` — 0 stop, 1 init, 2 brassage, 3 extraction |
+| 9 | `session_elapsed` — whole seconds, counter-encoded |
+| 10 | `running` |
+| 11 | `fan_on` |
+| 12 | `electric_on` |
+| 13 | `hydraulic_demand` — cleared to run, the permission, not a measured circulator |
+| 14 | `hydraulic_online` |
+| 15 | `damper_open` |
+| 16 | `sensor_fault` — the inlet probe is stale and heating is inhibited |
+| 17 | `airflow_fault` — every register reads shut |
+| 18 | `feedback_fault` — a register's position readback is unusable |
+| `0x7FFF` (reserved, not in `DryerMetricIds.h`) | `uptime_s` — the generic engine's own id, not a dryer metric |
 
-Bits 0-7 keep the assignments the v3 radio frame used, so a decoder written for
-it still reads them; bit 8 is new.
+Booleans and the phase number ride the tenths encoding as `0.0`/`1.0`/etc.
+Openings (`extraction_pos`, `recycling_pos`) are whole percent, `NAN` (the
+tenths sentinel) for no usable feedback — 0 % is a shut register and 100 % a
+legal reading, so absence has to be a distinct value rather than either end
+of the range.
 
 ### Commands — the dryer reads, one FC03 of 4 registers from `0x0040`
 

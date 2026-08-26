@@ -430,11 +430,13 @@
 // The acknowledgement rides inside the telemetry block, so no separate write is
 // needed to answer a command.
 //
-// Bumped from 1 to 2 for the generic {metric_id, value} envelope, and from 2
-// to 3 for the catalog announcement inside the header (kExtRegCatalogId /
-// kExtRegCatalogName) — see ExtensionProtocol.h. A module built against a
-// different version refuses the block rather than misreading it.
-#define EXT_PROTOCOL_VERSION 3
+// Bumped from 1 to 2 for the generic {metric_id, value} envelope, from 2 to 3
+// for the (since-removed) catalog announcement inside the header, and from 3
+// to 4 for removing that announcement again — metric names are compiled in
+// on both ends now (DryerMetricIds.h), not sent over the wire. See
+// ExtensionProtocol.h. A module built against a different version refuses
+// the block rather than misreading it.
+#define EXT_PROTOCOL_VERSION 4
 
 #define EXT_REG_TELEMETRY 0x0000 // write: block base
 
