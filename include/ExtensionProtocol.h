@@ -23,19 +23,38 @@
 // reads the command mailbox with one FC03, every poll cycle.
 //
 // **Telemetry is a generic {metric_id, value} table, not a fixed set of
-// named registers.** A producer owns its own catalog of metric ids (the
+// named registers, and the collector is never told what an id means by its
+// own code.** A producer owns its own catalog of metric ids and names (the
 // dryer firmware's DryerMetricIds.h is one example) and this header never
 // names a single one of them — it only defines the envelope a catalog rides
-// in. What a given id *means* is a deployment concern, resolved on the
-// collector side by a small id-to-name table (data-orchestra's
-// include/deployment/metric_catalog.h) that is the one place a specific
-// producer's vocabulary is allowed to live.
+// in, plus the one mechanism by which a producer tells the collector what its
+// ids mean: one {id, name} announcement riding inside every telemetry block,
+// cycling through the producer's whole catalog over time. The collector
+// learns this into a RAM table (data-orchestra's RuntimeMetricCatalog) that
+// starts out knowing nothing and is entirely populated over the wire — there
+// is no compiled-in name anywhere on the collector's side.
+//
+// The announcement is one entry per block rather than the whole catalog at
+// once because the master (the producer) is the only one that may speak
+// unprompted here — the collector can never ask for a specific id, so the
+// producer just keeps cycling and the collector's table converges within one
+// lap and re-converges after either side reboots.
 //
 // The command mailbox stays a fixed, named layout. Commands are a two-way
 // control surface: whoever posts one already has to know the producer's
 // vocabulary (there is no such thing as a generic "set the thing to five"),
 // so there is nothing to gain by making this half generic too. It is a
 // deliberate scope boundary, not an oversight.
+
+// How many ASCII characters a catalog announcement's name carries, and how
+// many registers that packs into at two characters per register (big-endian,
+// the same byte order every other multi-byte field on this wire uses).
+// Chosen to keep the announcement's fixed cost (kExtCatalogNameRegisters + 1)
+// small against a telemetry block's per-cycle budget: every producer's
+// metric names have to fit this, which is why the dryer's own catalog uses
+// short forms ("inlet_temp", not "inlet_temperature").
+constexpr uint8_t kExtCatalogNameChars     = 16;
+constexpr uint8_t kExtCatalogNameRegisters = kExtCatalogNameChars / 2;
 
 // ===== Telemetry: header registers, offsets from EXT_REG_TELEMETRY =====
 enum ExtensionTelemetryRegister : uint8_t
@@ -46,6 +65,8 @@ enum ExtensionTelemetryRegister : uint8_t
   kExtRegUptimeLow   = 3,
   kExtRegAckSequence = 4,
   kExtRegAckResult   = 5,
+  kExtRegCatalogId   = 6, // the metric_id this cycle's announcement names
+  kExtRegCatalogName = 7, // kExtCatalogNameRegisters registers follow
 };
 
 // Registers of the command mailbox, offsets from EXT_REG_COMMAND.
@@ -114,7 +135,9 @@ enum ExtensionMetricKind : uint16_t
 // link allocate, so raising it costs registers on the wire as well as RAM.
 constexpr size_t kExtMaxMetrics = 24;
 
-constexpr uint8_t kExtTelemetryHeaderCount = 6; // version, count, uptime x2, ack x2
+// version, count, uptime x2, ack x2, catalog announcement (id + name).
+constexpr uint8_t kExtTelemetryHeaderCount =
+    7 + kExtCatalogNameRegisters;
 
 // The metric_id that CollectMetricSamples (MetricSamples.cpp) uses when it
 // turns ExtensionTelemetryRecord::uptime_s into its own sample. Uptime is a
@@ -144,8 +167,9 @@ struct ExtensionMetricTuple
 
 // What a producer reports, as a generic table plus the handful of fields
 // every producer has regardless of what it measures: how long it has been up
-// (also what the LoRa duplicate filter keys on — see OrchestraFrame.h) and
-// the echo of the last command it accepted.
+// (also what the LoRa duplicate filter keys on — see OrchestraFrame.h), the
+// echo of the last command it accepted, and this cycle's catalog
+// announcement — which id, and what the producer calls it.
 struct ExtensionTelemetryRecord
 {
   uint32_t uptime_s;
@@ -156,9 +180,17 @@ struct ExtensionTelemetryRecord
   uint16_t ack_sequence;
   uint16_t ack_result;
 
+  // This cycle's {id, name} announcement. The producer cycles through its
+  // whole catalog over successive telemetry blocks; catalog_metric_name is
+  // always null-terminated here even though the wire packs it without a
+  // terminator (see ExtEncodeTelemetry/ExtDecodeTelemetry).
+  uint16_t catalog_metric_id;
+  char     catalog_metric_name[kExtCatalogNameChars + 1];
+
   ExtensionTelemetryRecord()
       : uptime_s(0), metric_count(0), metrics{},
-        ack_sequence(0), ack_result(kExtResultOk) {}
+        ack_sequence(0), ack_result(kExtResultOk),
+        catalog_metric_id(0), catalog_metric_name{} {}
 };
 
 // One command as read out of the mailbox and validated.
@@ -183,6 +215,18 @@ bool ExtPutMetricValue(ExtensionTelemetryRecord &record, uint16_t metric_id, flo
 
 // Appends one raw whole-unit counter metric. See kExtMetricKindCounter.
 bool ExtPutMetricCounter(ExtensionTelemetryRecord &record, uint16_t metric_id, uint32_t value);
+
+// Packs `name` into kExtCatalogNameRegisters registers, two ASCII bytes per
+// register, big-endian — the same byte order every other multi-byte field on
+// this wire uses. Longer than kExtCatalogNameChars is truncated; shorter is
+// zero-padded. No terminator is stored: the fixed register count is the only
+// bound, which is what ExtDecodeCatalogName relies on.
+void ExtEncodeCatalogName(const char *name, uint16_t *out);
+
+// Inverse of ExtEncodeCatalogName. `out` must hold at least
+// kExtCatalogNameChars + 1 bytes; always null-terminated on return, even
+// when the name fills every character slot.
+void ExtDecodeCatalogName(const uint16_t *in, char *out);
 
 // Fills the whole telemetry block: header registers, then two registers per
 // metric in `record`. `out` must hold at least

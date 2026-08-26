@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <hardware/watchdog.h>
+#include <string.h>
 
 #include "config.h"
 #include "Dryer.h"
@@ -778,6 +779,18 @@ static void UpdateExtensionTelemetry()
   ExtPutMetricValue(telemetry, kMetricSensorFault, !g_inlet_fresh ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricAirflowFault, dryer.GetAirflowBlocked() ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricFeedbackFault, dryer.GetDamperFeedbackFault() ? 1.0f : 0.0f);
+
+  // One catalog entry announced per cycle, cycling through the whole table.
+  // The collector has no compiled name for any id — see DryerMetricIds.h —
+  // so this is the only way it ever learns what one means, and it keeps
+  // relearning forever rather than stopping once "done" so a collector that
+  // reboots mid-session catches up within one lap on its own.
+  static uint8_t catalog_cursor = 0;
+  const DryerMetricCatalogEntry &announced = kDryerMetricCatalog[catalog_cursor];
+  telemetry.catalog_metric_id = announced.id;
+  strncpy(telemetry.catalog_metric_name, announced.name, kExtCatalogNameChars);
+  telemetry.catalog_metric_name[kExtCatalogNameChars] = '\0';
+  catalog_cursor = static_cast<uint8_t>((catalog_cursor + 1) % kDryerMetricCatalogCount);
 
   // ack_sequence and ack_result are filled in on Core 1, which owns the answer.
 
