@@ -12,8 +12,10 @@
 // trampoline slots at construction, which keeps the pin an instance member and
 // leaves room for a second bus should one ever be added.
 //
-// The dryer runs a single bus carrying the inlet probe (@1), the extension port
-// (@2) and the remote hydraulic module (@10).
+// The dryer runs two buses: "ext" carries the extension port (@2) and the
+// remote hydraulic module (@10), on UART1; "probe" carries the inlet probe
+// (@1) alone, on UART0 — see RS485_EXT_TX_PIN and RS485_PROBE_TX_PIN in
+// config.h.
 //
 // All calls are blocking. A bus instance must only be used from the core that
 // owns it; there is no internal locking.

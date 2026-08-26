@@ -28,12 +28,16 @@
 // feedbacks took GP26/GP27, the only ADC-capable pins the Pico brings out.
 TwoWire rtc_i2c(i2c0, RTC_I2C_SDA_PIN, RTC_I2C_SCL_PIN);
 
-// RS485 — single Modbus bus (inlet probe @1 + extension port @2 + hydraulic
-// module @10), owned exclusively by Core 1
-Rs485Bus rs485(Serial2, RS485_TX_PIN, RS485_RX_PIN, RS485_DE_PIN, "rs485");
-ModbusSensors modbus_sensors(&rs485);
-HydraulicRemote hydraulic_remote(&rs485);
-ExtensionPort extension(&rs485);
+// RS485 — two Modbus buses, both owned exclusively by Core 1.
+//
+// "ext" (UART1) carries the extension port @2 and the hydraulic module @10 —
+// one physical board answers both. "probe" (UART0) carries the inlet probe @1
+// alone, on its own segment, so neither bus can delay or corrupt the other.
+Rs485Bus rs485_ext(Serial2, RS485_EXT_TX_PIN, RS485_EXT_RX_PIN, RS485_EXT_DE_PIN, "rs485-ext");
+Rs485Bus rs485_probe(Serial1, RS485_PROBE_TX_PIN, RS485_PROBE_RX_PIN, RS485_PROBE_DE_PIN, "rs485-probe");
+ModbusSensors modbus_sensors(&rs485_probe);
+HydraulicRemote hydraulic_remote(&rs485_ext);
+ExtensionPort extension(&rs485_ext);
 
 // Physical I/O
 OutputDriver fan_output(OUT_FAN_PIN, OUT_FAN_ACTIVE_LOW, "fan");
@@ -57,7 +61,7 @@ Dryer dryer;
 
 // ========== CORE 1 ==========
 
-// Core 1 owns the RS485 bus exclusively: the probe, the hydraulic module and
+// Core 1 owns both RS485 buses exclusively: the probe, the hydraulic module and
 // the extension port. It publishes a coherent snapshot that Core 0 reads
 // without blocking.
 
@@ -99,7 +103,8 @@ void setup1()
   {
   } // Wait for Core 0 to finish setup
 
-  rs485.Begin(MODBUS_BAUDRATE);
+  rs485_ext.Begin(MODBUS_BAUDRATE);
+  rs485_probe.Begin(MODBUS_BAUDRATE);
   modbus_sensors.Begin();
   hydraulic_remote.Begin();
   extension.Begin();

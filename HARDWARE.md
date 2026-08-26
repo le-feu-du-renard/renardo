@@ -1,8 +1,9 @@
 # Hardware — v4
 
 Controller for the renard'o dryer, built on a **Raspberry Pi Pico H** (RP2040, no
-WiFi). Everything that leaves the board leaves it over the **RS485 bus**, which
-carries the probe, the hydraulic module, and the extension port to come.
+WiFi). Everything that leaves the board leaves it over RS485, split across
+**two buses**: one carries the inlet probe alone, the other carries the
+hydraulic module and the extension port.
 
 > The v3 board is gone: no more panel voltmeters, MCP23017 expander,
 > potentiometers, mode selector, TM1637 display or SD card. Everything the
@@ -12,7 +13,7 @@ carries the probe, the hydraulic module, and the extension port to come.
 
 ## GPIO map
 
-22 of the 26 available GPIOs are used. **GP7, GP18, GP19 and GP28 are free.**
+25 of the 26 available GPIOs are used. **GP7 is the only one still free.**
 
 The map is laid out **by side of the header**, because that is what the PCB
 routes to. Each module's signals sit on consecutive header pins with the ground
@@ -28,10 +29,10 @@ with nothing to enjamb.
 | 3 | GND | panel common | button commons **and** LED cathodes |
 | 4 | 2 | Green status LED | active HIGH, 330 Ω to ground |
 | 5 | 3 | Red status LED | active HIGH, 330 Ω to ground |
-| 6 | 4 | RS485 TX | UART1 → MAX3485 DI |
-| 7 | 5 | RS485 RX | UART1 ← MAX3485 RO |
+| 6 | 4 | RS485 "ext" TX | UART1 → MAX3485 DI |
+| 7 | 5 | RS485 "ext" RX | UART1 ← MAX3485 RO |
 | 8 | GND | MAX3485 ground | |
-| 9 | 6 | RS485 DE/RE | HIGH = transmit |
+| 9 | 6 | RS485 "ext" DE/RE | HIGH = transmit |
 | 10 | 7 | — | **free** |
 | 11 | 8 | TFT CS | SPI1 RX pin, reused as an output |
 | 12 | 9 | TFT DC | |
@@ -48,11 +49,11 @@ with nothing to enjamb.
 
 | Header | GPIO | Function | Notes |
 |---|---|---|---|
-| 21 | 16 | Fan command | BC337, contactor coil on the collector, **active HIGH** |
-| 22 | 17 | Electric heating command | BC337, contactor coil on the collector, **active HIGH** |
-| 23 | GND | BC337 emitters | |
-| 24 | 18 | — | **free** (SPI0 SCK / I2C1 SDA) |
-| 25 | 19 | — | **free** (SPI0 MOSI / I2C1 SCL) |
+| 21 | 16 | RS485 "probe" TX | UART0 → MAX3485 DI, second transceiver |
+| 22 | 17 | RS485 "probe" RX | UART0 ← MAX3485 RO |
+| 23 | GND | MAX3485 ground | shared with the two commands below |
+| 24 | 18 | Fan command | BC337, contactor coil on the collector, **active HIGH** |
+| 25 | 19 | Electric heating command | BC337, contactor coil on the collector, **active HIGH** |
 | 26 | 20 | I2C0 SDA | optional RTC |
 | 27 | 21 | I2C0 SCL | optional RTC |
 | 28 | GND | RTC ground | |
@@ -60,8 +61,8 @@ with nothing to enjamb.
 | 31 | 26 | Extraction register feedback | ADC0 |
 | 32 | 27 | Recycling register feedback | ADC1 |
 | 33 | AGND | register feedback return | |
-| 34 | 28 | — | **free** (ADC2) |
-| 36 | 3V3 | supply | RTC, display and MAX3485 |
+| 34 | 28 | RS485 "probe" DE/RE | HIGH = transmit; not adjacent to TX/RX, see below |
+| 36 | 3V3 | supply | RTC, display and both MAX3485 |
 | 40 | VBUS | 5 V | bench supply for the probes only |
 
 Pin assignments live in [include/config.h](include/config.h). The TFT pins are
@@ -69,17 +70,35 @@ Pin assignments live in [include/config.h](include/config.h). The TFT pins are
 [platformio.ini](platformio.ini) — change both together or the display will not
 initialise.
 
-### What the free pins are worth
+### Why the probe bus's DE pin sits apart from its TX/RX
 
-GP18 and GP19 are the useful pair: together they are a whole I2C1 bus, or — with
-GP16/GP17 borrowed back from the two contactor commands — a whole SPI0. GP28 is
-ADC2, the third and last analog channel, free again since the RTC moved onto
-GP20/GP21. GP7 is a bare GPIO on the panel side.
+Every other peripheral on this header keeps its signals on consecutive pins,
+ground included, so it takes one flat connector. The probe's RS485 bus is the
+one exception: TX and RX land on GP16/GP17 (header 21–22, right next to a
+ground at 23) because those are the only UART0 pins that cost nothing else —
+freeing them only meant moving the fan and electric-heat commands one pin
+over, to GP18/GP19, which have no constraint of their own to lose. But DE
+needed a fourth free GPIO, and the only one left once GP18/GP19 were spoken
+for is GP28 (header 34), well down the right side of the header, past the
+RTC, the damper command and both register feedbacks.
 
-The extension port needed none of them: it is a slave address on the existing
-RS485 segment, so it costs no transceiver, no UART and no GPIO. Should a future
-extension ever want a segment of its own, `Rs485Bus::kMaxBuses` is already 2 and
-the pins are there.
+The alternative was GP7 (header 10, the panel side, next to the "ext" bus's
+own DE) — which would have kept a spare ADC channel but split the probe bus
+itself across both sides of the header instead. Spending GP28 keeps the
+probe's three signals within reach of one side of the board even though the
+run to DE is a separate one from the run to TX/RX; the cost is ADC2, the last
+previously-spare analog channel.
+
+### What the one free pin is worth
+
+GP7 is what is left: a bare GPIO on the panel side, no SPI, no I2C, no UART,
+no ADC.
+
+The extension port and the hydraulic module still cost nothing of their own:
+each is a slave address on the "ext" segment, sharing the same transceiver, so
+neither needs a pin the other does not already use. `Rs485Bus::kMaxBuses` is
+2, and both slots are now spent — a third bus is not free without giving up
+one of these two.
 
 ## The display owns SPI1 alone
 
@@ -102,15 +121,15 @@ that moved. `TFT_SPI_PORT=1` in [platformio.ini](platformio.ini) is what selects
 ### Never call `SPI.begin()`
 
 That is arduino-pico's default SPI0 object, and its default pins are GP16, GP17,
-GP18 and GP19 — **the fan and the electric heating commands are the first two**.
-A call to it would silently take both away from `OutputDriver` and reconfigure
-them as a bus.
+GP18 and GP19 — **the probe RS485 bus and the fan and electric heating
+commands, all four of them**. A call to it would silently take every one away
+and reconfigure them as a bus.
 
 Nothing does today, and the display will not do it by accident: `TFT_eSPI`
 instantiates its own `SPIClassRP2040` on `spi1` and never touches the default
 instance. This is a trap the pre-PCB pin map did not have, and it is worth
 knowing before adding any SPI peripheral — use SPI0 by all means, but set its
-pins explicitly to GP18/GP19 and leave GP16/GP17 alone.
+pins explicitly elsewhere and leave GP16–GP19 alone.
 
 ## Command outputs
 
@@ -251,13 +270,13 @@ a time** through the production `OutputDriver`, so the polarity applied is the
 firmware's own, and prints the GPIO level behind each logical state.
 
 It starts with the measurement that matters most here: the resting level of
-GP16, GP17 and GP22 read as plain inputs, **before `pinMode()` runs**, each
+GP18, GP19 and GP22 read as plain inputs, **before `pinMode()` runs**, each
 translated through its `OUT_*_ACTIVE_LOW` into on or off. All three must read
 off. One that does not is a stage wired the other way round, and no amount of
 firmware shortens the two seconds it spends energised on every reset.
 
 The three commands moved off GP0–GP2 when the board was laid out, and the
-argument above survives the move intact: GP16, GP17 and GP22 wake up exactly as
+argument above survives the move intact: GP18, GP19 and GP22 wake up exactly as
 GP0–GP2 did, as inputs with the pull-down enabled. The RP2040 pins that behave
 otherwise — GP23, GP24, GP25, GP29 — carry board functions on a Pico and never
 reach the header, so a command cannot land on one by accident.
@@ -479,16 +498,24 @@ presents a very high impedance and never settles — can bias the reading of a
 perfectly good neighbour sampled straight after it. The test probes both
 channels at start-up and names any that sits on a rail.
 
-## RS485 bus
+## RS485 buses
 
-A single MAX3485 carries every Modbus RTU slave, 9600 8N1. Core 1 owns the bus
-exclusively.
+**Two** MAX3485 transceivers, two independent Modbus RTU segments, 9600 8N1
+each, each owned exclusively by Core 1. They do not share a wire and a fault
+on one — a noisy cable, a slave stuck answering — cannot delay or corrupt a
+transaction on the other.
 
-| Address | Device | Registers |
-|---|---|---|
-| 1 | SHT30 probe, injection | FC03 `0x0000` %RH ×10, `0x0001` °C ×10 |
-| 2 | Extension module, optional | see below |
-| 10 | Hydraulic module | see below |
+| Bus | UART | Address | Device | Registers |
+|---|---|---|---|---|
+| "probe" | UART0 / `Serial1` | 1 | SHT30 probe, injection | FC03 `0x0000` %RH ×10, `0x0001` °C ×10 |
+| "ext" | UART1 / `Serial2` | 2 | Extension module, optional | see below |
+| "ext" | UART1 / `Serial2` | 10 | Hydraulic module | see below |
+
+The extension module and the hydraulic module are addresses on the *same*
+physical board (`dryer-extension`) today, which is why they share a segment:
+splitting them would buy nothing since a fault in one is a fault in the other
+anyway. The probe is a genuinely separate device, on the far side of the
+plant, which is why it is not.
 
 v4 carries **one probe**. The outlet one of v3 was polled and put on the air
 every minute, and nothing downstream read it: the damper follows inlet humidity,
@@ -496,13 +523,15 @@ the heaters follow inlet temperature, and the screen has never shown it. It was
 dropped rather than kept warm, and the address it left is what the extension port
 now uses.
 
-120 Ω termination at both ends of the segment.
+120 Ω termination at both ends of each segment.
 
 ### Wiring
 
 The transceiver is a **MAX3485** — the 3.3 V part. The MAX485 of the same
-outline is a 5 V part, and its `RO` would present 5 V to GP5, which is not 5 V
-tolerant.
+outline is a 5 V part, and its `RO` would present 5 V to a GPIO that is not
+5 V tolerant.
+
+**Bus "ext" (UART1):**
 
 | MAX3485 | Also marked | Pico GP | Header pin | Notes |
 |---|---|---|---|---|
@@ -511,13 +540,29 @@ tolerant.
 | GND | | GND | 8 | |
 | DE + RE | `EN` | GP6 | 9 | tied together, HIGH = transmit |
 | VCC | | 3V3(OUT) | 36 | 3.3 V only |
-| A / B | `D+` / `D−` | — | — | to the probes' A / B, never crossed |
+| A / B | `D+` / `D−` | — | — | to the extension module's A / B, never crossed |
 
 Header pins 6 to 9 are contiguous with the ground inside the block, so the
 transceiver takes one flat connector. TX and RX could not move even if the
 layout wanted them to: UART1 exists on GP4/GP8/GP12/GP20 for TX and
 GP5/GP9/GP13/GP21 for RX, and of those only GP4/GP5 are still free once the
 display has GP8–GP12 and the encoder GP13–GP15.
+
+**Bus "probe" (UART0):**
+
+| MAX3485 | Also marked | Pico GP | Header pin | Notes |
+|---|---|---|---|---|
+| DI (driver in) | `RXD` | GP16 | 21 | UART0 TX |
+| RO (receiver out) | `TXD` | GP17 | 22 | UART0 RX |
+| GND | | GND | 23 | shared with the fan/electric commands |
+| DE + RE | `EN` | GP28 | 34 | tied together, HIGH = transmit — **not** adjacent to TX/RX, see "Why the probe bus's DE pin sits apart from its TX/RX" above |
+| VCC | | 3V3(OUT) | 36 | 3.3 V only |
+| A / B | `D+` / `D−` | — | — | to the probe's A / B, never crossed |
+
+TX and RX land on GP16/GP17 because UART0 exists on GP0/GP12/GP16/GP28 for TX
+and GP1/GP13/GP17/GP29 for RX, and GP16/GP17 is the only pair that cost
+nothing else to take — see "What the one free pin is worth" above for why DE
+had to go further down the header than TX/RX this time.
 
 Two silkscreen conventions exist and they are opposites. A board marked
 `DI`/`RO` names its pins from the transceiver's point of view; one marked
@@ -558,7 +603,7 @@ so a reading it prints is a reading the firmware would get. It adds what the
 bus hides: the receiver's resting level, the raw bytes, and sweeps for a probe
 whose address or baud rate is unknown.
 
-It starts by sampling GP5 as a plain input, before the UART claims it. On an
+It starts by sampling GP17 as a plain input, before the UART claims it. On an
 idle pair with A above B the receiver output sits HIGH, which is the UART's
 mark state; a **reversed pair holds it LOW**, a permanent break condition. That
 one measurement separates a swapped pair from a dead probe — the two faults are
@@ -1043,10 +1088,12 @@ takes header pins 17 to 20:
 | 4 | GP2 | green LED anode, 330 Ω to ground |
 | 5 | GP3 | red LED anode, 330 Ω to ground |
 
-GP0 and GP1 are UART0's default pins, which nothing here uses: the logs go out
-over USB CDC and the RS485 bus has UART1. Putting the buttons there does spend
-the one place a rescue serial console could have been landed — the price of
-having the panel connector at the end of the header the panel loom arrives at.
+GP0 and GP1 are UART0's *default* pins, but nothing claims them there: the logs
+go out over USB CDC, the "ext" RS485 bus is on UART1, and the "probe" bus,
+though it is on UART0, has its TX/RX set explicitly to GP16/GP17 rather than
+left at the default. Putting the buttons on GP0/GP1 does spend the one place a
+rescue serial console could have been landed — the price of having the panel
+connector at the end of the header the panel loom arrives at.
 
 A connector fitted one row out therefore puts all four signals on the wrong pin
 at once, which is loud rather than subtle: `panel_test` prints the resting level

@@ -1,4 +1,7 @@
-// RS485 bring-up — built by `pio run -e rs485_test -t upload -t monitor`.
+// RS485 bring-up for the "probe" bus (UART0) — built by
+// `pio run -e rs485_test -t upload -t monitor`. This is the inlet probe's own
+// segment, separate from the "ext" bus the hydraulic module and the extension
+// port share; extension_test covers that one.
 //
 // Answers, in the order the faults actually happen:
 //   RX stuck LOW at rest        -> A and B are swapped, or the pair is unbiased
@@ -33,7 +36,7 @@
 namespace
 {
 
-Rs485Bus g_bus(Serial2, RS485_TX_PIN, RS485_RX_PIN, RS485_DE_PIN, "rs485");
+Rs485Bus g_bus(Serial1, RS485_PROBE_TX_PIN, RS485_PROBE_RX_PIN, RS485_PROBE_DE_PIN, "rs485");
 
 // Baud rates worth trying on a probe of unknown configuration. 9600 first:
 // it is both the factory default of these probes and what config.h expects.
@@ -111,23 +114,23 @@ uint8_t RawRead(uint8_t address, uint16_t start_register, uint8_t count,
   frame[7] = static_cast<uint8_t>(crc >> 8);
   memcpy(g_last_request, frame, sizeof(frame));
 
-  while (Serial2.available() > 0)
+  while (Serial1.available() > 0)
   {
-    Serial2.read();  // anything still pending belongs to the previous frame
+    Serial1.read();  // anything still pending belongs to the previous frame
   }
 
-  digitalWrite(RS485_DE_PIN, HIGH);
-  Serial2.write(frame, sizeof(frame));
-  Serial2.flush();               // the last bit must leave before DE drops
-  digitalWrite(RS485_DE_PIN, LOW);
+  digitalWrite(RS485_PROBE_DE_PIN, HIGH);
+  Serial1.write(frame, sizeof(frame));
+  Serial1.flush();               // the last bit must leave before DE drops
+  digitalWrite(RS485_PROBE_DE_PIN, LOW);
 
   uint8_t  received = 0;
   uint32_t deadline = millis() + kRawTimeoutMs;
   while (millis() < deadline && received < response_size)
   {
-    if (Serial2.available() > 0)
+    if (Serial1.available() > 0)
     {
-      response[received++] = static_cast<uint8_t>(Serial2.read());
+      response[received++] = static_cast<uint8_t>(Serial1.read());
       deadline = millis() + kRawInterByteMs;  // frame ends on silence, not length
     }
   }
@@ -190,11 +193,11 @@ void PrintBytes(const uint8_t *bytes, uint8_t length)
 
 void ReopenPort(uint32_t baudrate, uint16_t config)
 {
-  Serial2.end();
+  Serial1.end();
   delay(20);
-  Serial2.setTX(RS485_TX_PIN);
-  Serial2.setRX(RS485_RX_PIN);
-  Serial2.begin(baudrate, config);
+  Serial1.setTX(RS485_PROBE_TX_PIN);
+  Serial1.setRX(RS485_PROBE_RX_PIN);
+  Serial1.begin(baudrate, config);
   delay(20);
 }
 
@@ -269,19 +272,19 @@ void PrintDiagnosis(uint8_t error)
 void CheckIdleLevel()
 {
   // The UART owns RX once the bus is open; take the pin back for the sample.
-  Serial2.end();
+  Serial1.end();
   delay(5);
 
-  pinMode(RS485_DE_PIN, OUTPUT);
-  digitalWrite(RS485_DE_PIN, LOW);  // receive, so RO reflects the pair
-  pinMode(RS485_RX_PIN, INPUT);
+  pinMode(RS485_PROBE_DE_PIN, OUTPUT);
+  digitalWrite(RS485_PROBE_DE_PIN, LOW);  // receive, so RO reflects the pair
+  pinMode(RS485_PROBE_RX_PIN, INPUT);
   delay(5);
 
   uint32_t high = 0;
   uint32_t total = 0;
   for (uint32_t i = 0; i < 5000; i++)
   {
-    if (digitalRead(RS485_RX_PIN) == HIGH)
+    if (digitalRead(RS485_PROBE_RX_PIN) == HIGH)
     {
       high++;
     }
@@ -646,18 +649,18 @@ void Listen(uint32_t duration_ms)
 {
   Serial.printf("\nListening on the pair for %lu s (no frame is sent)...\n",
                 (unsigned long)(duration_ms / 1000));
-  while (Serial2.available() > 0)
+  while (Serial1.available() > 0)
   {
-    Serial2.read();
+    Serial1.read();
   }
 
   uint32_t deadline = millis() + duration_ms;
   uint32_t count = 0;
   while (millis() < deadline)
   {
-    if (Serial2.available() > 0)
+    if (Serial1.available() > 0)
     {
-      Serial.printf("%02X ", Serial2.read());
+      Serial.printf("%02X ", Serial1.read());
       if (++count % 16 == 0)
       {
         Serial.println();
@@ -680,13 +683,15 @@ void Listen(uint32_t duration_ms)
 
 void PrintWiring()
 {
-  Serial.println("Expected wiring — MAX3485, Pico header pins in brackets.");
+  Serial.println("Expected wiring — MAX3485, Pico header pins in brackets. This is the");
+  Serial.println("'probe' bus (UART0), not the 'ext' bus the hydraulic module and the");
+  Serial.println("extension port share.");
   Serial.println("Silkscreens vary; the second column is what the pin really is:");
-  Serial.printf("  RO  / TXD  receiver out -> GP%-2d [7]   UART1 RX\n", RS485_RX_PIN);
-  Serial.printf("  DI  / RXD  driver in    <- GP%-2d [6]   UART1 TX\n", RS485_TX_PIN);
-  Serial.printf("  DE+RE / EN direction    <- GP%-2d [5]   HIGH = transmit\n", RS485_DE_PIN);
+  Serial.printf("  RO  / TXD  receiver out -> GP%-2d [22]  UART0 RX\n", RS485_PROBE_RX_PIN);
+  Serial.printf("  DI  / RXD  driver in    <- GP%-2d [21]  UART0 TX\n", RS485_PROBE_TX_PIN);
+  Serial.printf("  DE+RE / EN direction    <- GP%-2d [34]  HIGH = transmit\n", RS485_PROBE_DE_PIN);
   Serial.println("  VCC                     -> 3V3(OUT) [36]   3.3 V only");
-  Serial.println("  GND                     -> GND      [3]");
+  Serial.println("  GND                     -> GND      [23]  shared with the fan/electric commands");
   Serial.println("  A / B                   -> the probe's A / B, no crossover");
   Serial.println();
   Serial.println("RXD and TXD are named from the microcontroller's point of view: the pin");

@@ -175,11 +175,11 @@ void SendFrame(uint8_t address, uint8_t *frame, uint16_t payload_length)
   frame[payload_length]     = static_cast<uint8_t>(crc & 0xFF); // low byte first
   frame[payload_length + 1] = static_cast<uint8_t>(crc >> 8);
 
-  digitalWrite(RS485_DE_PIN, HIGH);
+  digitalWrite(RS485_EXT_DE_PIN, HIGH);
   Serial2.write(frame, payload_length + 2);
   Serial2.flush();
   delayMicroseconds(kDriveHoldUs);
-  digitalWrite(RS485_DE_PIN, LOW);
+  digitalWrite(RS485_EXT_DE_PIN, LOW);
   (void)address;
 }
 
@@ -702,9 +702,9 @@ void PrintCounters()
 void PrintWiring()
 {
   Serial.println("This is the *module* side. Expected wiring, identical to the dryer's:");
-  Serial.printf("  RO  / TXD  receiver out -> GP%-2d   UART1 RX\n", RS485_RX_PIN);
-  Serial.printf("  DI  / RXD  driver in    <- GP%-2d   UART1 TX\n", RS485_TX_PIN);
-  Serial.printf("  DE+RE / EN direction    <- GP%-2d   HIGH = transmit\n", RS485_DE_PIN);
+  Serial.printf("  RO  / TXD  receiver out -> GP%-2d   UART1 RX\n", RS485_EXT_RX_PIN);
+  Serial.printf("  DI  / RXD  driver in    <- GP%-2d   UART1 TX\n", RS485_EXT_TX_PIN);
+  Serial.printf("  DE+RE / EN direction    <- GP%-2d   HIGH = transmit\n", RS485_EXT_DE_PIN);
   Serial.println("  VCC                     -> 3V3(OUT)   3.3 V only");
   Serial.println("  GND                     -> GND        and to the dryer's GND");
   Serial.println();
@@ -844,12 +844,12 @@ void setup()
   }
   ClearMailbox();
 
-  Serial2.setTX(RS485_TX_PIN);
-  Serial2.setRX(RS485_RX_PIN);
+  Serial2.setTX(RS485_EXT_TX_PIN);
+  Serial2.setRX(RS485_EXT_RX_PIN);
   Serial2.begin(MODBUS_BAUDRATE, SERIAL_8N1);
 
-  pinMode(RS485_DE_PIN, OUTPUT);
-  digitalWrite(RS485_DE_PIN, LOW); // receive until we have something to say
+  pinMode(RS485_EXT_DE_PIN, OUTPUT);
+  digitalWrite(RS485_EXT_DE_PIN, LOW); // receive until we have something to say
 
   Serial.printf("Answering for two slaves at %d baud 8N1.\n", MODBUS_BAUDRATE);
   Serial.printf("  @%-3d extension   0x%04X x%-2d telemetry in, 0x%04X x%d mailbox out\n",

@@ -108,17 +108,39 @@
 #define LED_RUN_PIN 2
 #define LED_FAULT_PIN 3
 
-// RS485 — single Modbus bus carrying both probes and the hydraulic module
-// (UART1 / Serial2 → MAX3485)
+// RS485 — two Modbus buses, split by who is on them.
+//
+// Bus "ext" carries the extension port (@2) and the hydraulic module (@10):
+// one physical board (dryer-extension) answers both addresses, so putting
+// them on one segment costs nothing and splitting them further would buy
+// nothing. Bus "probe" carries the inlet probe (@1) alone, on its own
+// segment, so neither can delay or corrupt the other's transactions.
+//
+// ----- Bus "ext" (UART1 / Serial2 → MAX3485) -----
 //
 // TX and RX have not moved and cannot: UART1 exists on GP4/GP8/GP12/GP20 for TX
 // and GP5/GP9/GP13/GP21 for RX, and of those only GP4/GP5 are still free once
 // the display has GP8-GP12 and the encoder GP13-GP15. DE moved from GP3 to GP6
 // to let the panel have GP0-GP3, which puts the transceiver on header pins 6 to
 // 9 — TX, RX, GND, DE — one contiguous block again, ground included.
-#define RS485_TX_PIN 4 // UART1 TX → MAX3485 DI
-#define RS485_RX_PIN 5 // UART1 RX ← MAX3485 RO
-#define RS485_DE_PIN 6 // DE/RE direction enable (HIGH = transmit, LOW = receive)
+#define RS485_EXT_TX_PIN 4 // UART1 TX → MAX3485 DI
+#define RS485_EXT_RX_PIN 5 // UART1 RX ← MAX3485 RO
+#define RS485_EXT_DE_PIN 6 // DE/RE direction enable (HIGH = transmit, LOW = receive)
+
+// ----- Bus "probe" (UART0 / Serial1 → MAX3485) -----
+//
+// UART0 exists on GP0/GP12/GP16/GP28 for TX and GP1/GP13/GP17/GP29 for RX.
+// GP16/GP17 is the pair that costs nothing else to take: freeing it only means
+// moving the fan and electric-heat commands to GP18/GP19 (see OUT_FAN_PIN and
+// OUT_ELECTRIC_PIN below), which have no timing or peripheral constraint of
+// their own to give up. DE lands on GP28 — not physically adjacent to TX/RX,
+// so this bus needs two short runs rather than one flat connector, the trade
+// made here over spending GP7 instead and splitting the *other* bus's tidy
+// block on the panel side. The cost is ADC2, the last previously-spare analog
+// channel; see "Free for expansion" below.
+#define RS485_PROBE_TX_PIN 16 // UART0 TX → MAX3485 DI
+#define RS485_PROBE_RX_PIN 17 // UART0 RX ← MAX3485 RO
+#define RS485_PROBE_DE_PIN 28 // DE/RE direction enable (HIGH = transmit, LOW = receive)
 
 // Command outputs — one BC337 per output, NPN in common emitter, low side.
 //
@@ -137,17 +159,23 @@
 // resting level of all three pins back before anything drives them.
 //
 // The three moved from GP0-GP2 to the far side of the header for the PCB, and
-// that argument survives the move intact: GP16, GP17 and GP22 wake up exactly as
+// that argument survives the move intact: GP18, GP19 and GP22 wake up exactly as
 // GP0-GP2 did, as inputs with the pull-down enabled. The RP2040 pins that do
 // *not* — GP23, GP24, GP25, GP29 — carry board functions on a Pico and never
 // reach the header, so there is no way to land a command on one by accident.
 //
-// One new trap comes with the move, and it is silent: **nothing may ever call
+// Fan and electric heat moved a second time, from GP16/GP17 to GP18/GP19, to
+// free GP16/GP17 for the probe's own RS485 bus — see RS485_PROBE_TX_PIN above.
+// Neither had any constraint of its own to give up; a plain digital output has
+// no preference between one idle GPIO and another.
+//
+// One trap survives the move, and it is silent: **nothing may ever call
 // SPI.begin()**. That is arduino-pico's default SPI0 object, whose default pins
-// are GP16, GP17, GP18 and GP19 — it would take the fan and the electric heater
-// away from us and hand them to a shift register. Nothing does today; the
-// display owns its own SPIClassRP2040 on spi1 and never touches the default one.
-#define OUT_FAN_PIN 16
+// are GP16, GP17, GP18 and GP19 — all four spent now, between the probe bus and
+// these two outputs, and SPI.begin() would take every one of them from under
+// us and hand them to a shift register. Nothing does today; the display owns
+// its own SPIClassRP2040 on spi1 and never touches the default one.
+#define OUT_FAN_PIN 18
 #define OUT_FAN_ACTIVE_LOW false
 // The damper module drives its relay through a BC337, an NPN in common
 // emitter: the stage inverts, so GPIO HIGH now commands extraction and a
@@ -162,7 +190,7 @@
 // spend on a plain digital output.
 #define OUT_DAMPER_PIN 22
 #define OUT_DAMPER_ACTIVE_LOW false
-#define OUT_ELECTRIC_PIN 17
+#define OUT_ELECTRIC_PIN 19
 #define OUT_ELECTRIC_ACTIVE_LOW false
 
 // Air damper position feedback — one ADC channel per register.
@@ -333,17 +361,18 @@
 #define RTC_I2C_SDA_PIN 20
 #define RTC_I2C_SCL_PIN 21
 
-// Free for expansion: GP7, GP18, GP19 and GP28.
+// Free for expansion: GP7 alone now.
 //
-// GP18 and GP19 are the useful pair — together they are a whole I2C1 bus, or,
-// with GP16/GP17 borrowed back, a whole SPI0. GP28 is ADC2, the third and last
-// analog channel, free again since the RTC moved to GP20/GP21. GP7 is a bare
-// GPIO on the panel side of the header.
+// GP18, GP19, GP16, GP17 and GP28 — everything this note used to list — are
+// spent: the first two on the fan and electric-heat commands, the last three
+// on the probe's own RS485 segment. That segment is what Rs485Bus::kMaxBuses
+// being 2 was banked for; it is not free for a third bus without giving up an
+// existing one. GP7 is what is left, a bare GPIO on the panel side of the
+// header, no SPI, no I2C, no UART, no ADC.
 //
-// The extension port needed none of them: it is a slave address on the existing
-// RS485 segment, so it costs no transceiver, no UART and no GPIO. They stay free
-// for whatever comes next — and should a future extension ever want a segment of
-// its own, Rs485Bus::kMaxBuses is already 2 and the pins are there.
+// The extension port needed none of this: it shares the "ext" segment with the
+// hydraulic module — same physical board, same address it always used — so it
+// still costs no transceiver, no UART and no GPIO of its own.
 
 // ========== I2C ADDRESSES ==========
 #define RTC_DS1307_ADDR 0x68 // DS1307 (on i2c0, see RTC_I2C_*_PIN above)
@@ -351,13 +380,16 @@
 // ========== RS485 / MODBUS ==========
 #define MODBUS_BAUDRATE 9600
 
-// Slave addresses on the single RS485 bus.
+// Slave addresses. The inlet probe is alone on the "probe" bus; the extension
+// port and the hydraulic module share the "ext" bus — see RS485_EXT_TX_PIN and
+// RS485_PROBE_TX_PIN above for which pins carry which segment.
 // v4 carries one probe: the outlet one was polled and transmitted but never
 // fed a control decision, so it was dropped rather than kept warm. Address 2
 // fell vacant with it and now carries the extension port.
 //
-// Modbus RTU allows one master per segment and the dryer is it — both the probe
-// and the hydraulic module depend on that. Everything else here is a slave.
+// Modbus RTU allows one master per segment and the dryer is it, on both
+// segments — the probe and the hydraulic module each depend on that.
+// Everything here is a slave.
 #define MODBUS_INLET_ADDRESS 1
 #define MODBUS_EXTENSION_ADDRESS 2
 #define MODBUS_HYDRAULIC_ADDRESS 10

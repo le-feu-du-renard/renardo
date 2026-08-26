@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "Seqlock.h"
 
-// Everything Core 1 collects on RS485 bus A and Core 0 consumes.
+// Everything Core 1 collects across both RS485 buses and Core 0 consumes.
 struct SensorSnapshot
 {
   float inlet_temperature;

@@ -5,7 +5,7 @@
 #include "RemoteModule.h"
 #include "Rs485Bus.h"
 
-// Client for the remote hydraulic module on RS485 bus A.
+// Client for the remote hydraulic module on RS485 bus "ext".
 //
 // The module owns the three-way valve, the circulator, and its own regulation:
 // it decides when to fire and holds the water at the setpoint it is given. What
