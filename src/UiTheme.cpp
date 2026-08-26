@@ -62,7 +62,7 @@ void FormatPercent(float percent, char *out, size_t length)
   snprintf(out, length, "%d%%", static_cast<int>(lroundf(percent)));
 }
 
-void FormatDamperState(float position, char *out, size_t length)
+void FormatDamperState(float position, bool target_open, char *out, size_t length)
 {
   if (isnan(position))
   {
@@ -84,7 +84,7 @@ void FormatDamperState(float position, char *out, size_t length)
   }
   else
   {
-    snprintf(out, length, "OUV. %d%%", opening);
+    snprintf(out, length, target_open ? "OUV. %d%%" : "FER. %d%%", opening);
   }
 }
 

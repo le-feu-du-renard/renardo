@@ -93,13 +93,18 @@ void FormatRounded(float value, char *out, size_t length);
 // The same with a percent sign, e.g. "38%" or "--%".
 void FormatPercent(float percent, char *out, size_t length);
 
-// A register's opening as words: "FERME" at 0, "OUVERT" at 100, "OUV. nn%" in
-// between, "--" with no usable feedback.
+// A register's opening as words: "FERME" at 0, "OUVERT" at 100, "OUV. nn%" or
+// "FER. nn%" in between, "--" with no usable feedback.
 //
 // The percentage is deliberately absent at the end stops. It is only useful
 // while a register is part way, and a permanent "OUVERT 100%" is two readings
 // of the same fact competing for a cell 74 px wide.
-void FormatDamperState(float position, char *out, size_t length);
+//
+// `target_open` picks the verb for that in-between reading: a register caught
+// mid-travel is equally "40% open" and "60% closed", and printing "OUV." while
+// it heads for FERME reads as if it were opening. The verb follows where it is
+// bound, not the number, which stays the measured opening throughout.
+void FormatDamperState(float position, bool target_open, char *out, size_t length);
 
 } // namespace UiTheme
 

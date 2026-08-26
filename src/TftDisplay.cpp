@@ -654,8 +654,8 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   // to learn which is which, every time.
   //
   // What the vane's angle used to say, the words below say instead.
-  // FormatDamperState writes FERME, OUVERT, OUV. nn% or -- from the measured
-  // position, so the opening is still on screen; and an unusable feedback,
+  // FormatDamperState writes FERME, OUVERT, OUV./FER. nn% or -- from the
+  // measured position, so the opening is still on screen; and an unusable feedback,
   // which the vaneless duct used to signal, raises RECOPIE REGISTRE HS in the
   // hint bar, where it gets a full line rather than an absence to be noticed.
   //
@@ -666,7 +666,7 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   // green that marks everything else in use.
   char text[16];
 
-  UiTheme::FormatDamperState(model.extraction_position, text, sizeof(text));
+  UiTheme::FormatDamperState(model.extraction_position, model.damper_open, text, sizeof(text));
   DrawDeviceCell(canvas, x3, "EXTR.", text,
                  model.extraction_moving ? UiTheme::kWarn
                  : (model.damper_open ? UiTheme::kOk : UiTheme::kNeutral));
@@ -680,7 +680,7 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   // mean "should be reading and is not"; a register the dryer does not have is
   // not a fault and must not look like one.
   bool recycling_fitted = model.damper_count >= 2;
-  UiTheme::FormatDamperState(model.recycling_position, text, sizeof(text));
+  UiTheme::FormatDamperState(model.recycling_position, !model.damper_open, text, sizeof(text));
   DrawDeviceCell(canvas, x4, "RECIRC.", recycling_fitted ? text : "ABSENT",
                  !recycling_fitted     ? UiTheme::kMuted
                  : model.recycling_moving ? UiTheme::kWarn
