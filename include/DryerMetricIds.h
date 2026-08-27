@@ -1,5 +1,5 @@
-#ifndef TELEMETRY_METRIC_IDS_H
-#define TELEMETRY_METRIC_IDS_H
+#ifndef DRYER_METRIC_IDS_H
+#define DRYER_METRIC_IDS_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -12,13 +12,7 @@
 // {metric_id, value} table and has no idea what any of these ids mean — that
 // is the whole point of it being generic. This is where the dryer decides
 // what it has to say, gives each reading a number, and — via
-// kTelemetryMetricCatalog below — what to call it.
-//
-// Named for what the file is (a producer's compiled id-to-name catalog for
-// the extension port), not for the fact that this particular one happens to
-// be the dryer's — the same shape lives in ../test-lora's SemaloMetricIds.h
-// for that producer, and "DryerMetricIds" stopped being an accurate name
-// once a second producer existed with a file of its own.
+// kDryerMetricCatalog below — what to call it.
 //
 // **This file exists identically in the dryer-extension repository**, the
 // same way ExtensionProtocol.h and HydraulicProtocol.h do, and
@@ -26,11 +20,12 @@
 // stay byte-identical. Renaming or adding a metric here therefore needs a
 // matching edit on that side too — the wire carries only ids, never a name.
 //
-// **Only the dryer's own metrics belong here.** A different producer (LoRa
-// or otherwise) gets its own catalog file, compiled alongside this one on
-// the collector — never folded into this one, which would make an id
-// collision between two producers' numbering a silent naming bug instead of
-// a compile-time impossibility.
+// **Only the dryer's own metrics belong here.** A different producer (the
+// semalo LoRa node, or any future one) gets its own catalog file, compiled
+// alongside this one on the collector — never folded into this one, which
+// would make an id collision between two producers' numbering a silent
+// naming bug instead of a compile-time impossibility. See
+// ../test-lora's SemaloMetricIds.h for the LoRa side's equivalent.
 //
 // Names are kept short ("inlet_temp", not "inlet_temperature") as a metric
 // naming convention, not because the wire enforces a length — the wire never
@@ -39,7 +34,7 @@
 // Ids below 0x8000 only — ExtPutMetricValue and ExtPutMetricCounter both take
 // care of setting bit 15 themselves (see ExtensionMetricKind in
 // ExtensionProtocol.h); an id defined here should never set it.
-enum TelemetryMetricId : uint16_t
+enum DryerMetricId : uint16_t
 {
   kMetricInletTemperature  = 0,
   kMetricInletHumidity     = 1,
@@ -68,18 +63,19 @@ enum TelemetryMetricId : uint16_t
   kMetricFeedbackFault   = 18,
 };
 
-struct TelemetryMetricCatalogEntry
+struct DryerMetricCatalogEntry
 {
   uint16_t    id;
   const char *name; // short form, e.g. "inlet_temp"
 };
 
-// One entry per TelemetryMetricId above, plus kExtMetricUptimeS — the
-// generic engine's own reserved id for ExtensionTelemetryRecord::uptime_s
-// (see ExtensionProtocol.h). Uptime is not one of this dryer's own metrics,
-// but the collector still needs a name for it, and every producer's catalog
-// carries this same entry for that reason.
-constexpr TelemetryMetricCatalogEntry kTelemetryMetricCatalog[] = {
+// One entry per DryerMetricId above, plus kExtMetricUptimeS — the generic
+// engine's own reserved id for ExtensionTelemetryRecord::uptime_s (see
+// ExtensionProtocol.h). Uptime is not one of this dryer's own metrics, but
+// the collector still needs a name for it, and this catalog is the only
+// mechanism that ever reaches it for the RS485 side, so it rides along
+// here too.
+constexpr DryerMetricCatalogEntry kDryerMetricCatalog[] = {
     {kMetricInletTemperature, "inlet_temp"},
     {kMetricInletHumidity, "inlet_humidity"},
     {kMetricWaterTemperature, "water_temp"},
@@ -102,7 +98,7 @@ constexpr TelemetryMetricCatalogEntry kTelemetryMetricCatalog[] = {
     {kExtMetricUptimeS, "uptime_s"},
 };
 
-constexpr size_t kTelemetryMetricCatalogCount =
-    sizeof(kTelemetryMetricCatalog) / sizeof(kTelemetryMetricCatalog[0]);
+constexpr size_t kDryerMetricCatalogCount =
+    sizeof(kDryerMetricCatalog) / sizeof(kDryerMetricCatalog[0]);
 
-#endif // TELEMETRY_METRIC_IDS_H
+#endif // DRYER_METRIC_IDS_H
