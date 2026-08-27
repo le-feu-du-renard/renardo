@@ -25,7 +25,7 @@
 // **Telemetry is a generic {metric_id, value} table, not a fixed set of
 // named registers, and this header never names a single id.** A producer
 // owns its own catalog of metric ids and names (the dryer firmware's
-// DryerMetricIds.h is one example); the collector compiles its own copy of
+// TelemetryMetricIds.h is one example); the collector compiles its own copy of
 // that same catalog rather than learning it over the wire, exactly the way
 // it already compiles HydraulicProtocol.h's register names. The wire carries
 // only the ids — nothing here or on the wire ever spells out what one means.

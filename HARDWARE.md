@@ -780,7 +780,7 @@ metric, whose seconds can exceed the tenths encoding's range.
 
 What each id means is never spelled out on the wire. Both the dryer and the
 module firmware compile the same
-[`include/DryerMetricIds.h`](include/DryerMetricIds.h) — mirrored
+[`include/TelemetryMetricIds.h`](include/TelemetryMetricIds.h) — mirrored
 byte-identically the same way `ExtensionProtocol.h` and `HydraulicProtocol.h`
 are, checked by `scripts/check_shared_headers.sh` in the module repository —
 so an id like `0` always means `inlet_temp` on both ends without ever
@@ -807,7 +807,7 @@ crossing the bus. The current catalog:
 | 16 | `sensor_fault` — the inlet probe is stale and heating is inhibited |
 | 17 | `airflow_fault` — every register reads shut |
 | 18 | `feedback_fault` — a register's position readback is unusable |
-| `0x7FFF` (reserved, not in `DryerMetricIds.h`) | `uptime_s` — the generic engine's own id, not a dryer metric |
+| `0x7FFF` (reserved, not in `TelemetryMetricIds.h`) | `uptime_s` — the generic engine's own id, not a dryer metric |
 
 Booleans and the phase number ride the tenths encoding as `0.0`/`1.0`/etc.
 Openings (`extraction_pos`, `recycling_pos`) are whole percent, `NAN` (the

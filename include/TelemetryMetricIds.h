@@ -1,5 +1,5 @@
-#ifndef DRYER_METRIC_IDS_H
-#define DRYER_METRIC_IDS_H
+#ifndef TELEMETRY_METRIC_IDS_H
+#define TELEMETRY_METRIC_IDS_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -12,13 +12,25 @@
 // {metric_id, value} table and has no idea what any of these ids mean — that
 // is the whole point of it being generic. This is where the dryer decides
 // what it has to say, gives each reading a number, and — via
-// kDryerMetricCatalog below — what to call it.
+// kTelemetryMetricCatalog below — what to call it.
+//
+// Named for what the file is (a producer's compiled id-to-name catalog for
+// the extension port), not for the fact that this particular one happens to
+// be the dryer's — the same shape lives in ../test-lora's SemaloMetricIds.h
+// for that producer, and "DryerMetricIds" stopped being an accurate name
+// once a second producer existed with a file of its own.
 //
 // **This file exists identically in the dryer-extension repository**, the
 // same way ExtensionProtocol.h and HydraulicProtocol.h do, and
 // scripts/check_shared_headers.sh (dryer-extension) checks the two copies
 // stay byte-identical. Renaming or adding a metric here therefore needs a
 // matching edit on that side too — the wire carries only ids, never a name.
+//
+// **Only the dryer's own metrics belong here.** A different producer (LoRa
+// or otherwise) gets its own catalog file, compiled alongside this one on
+// the collector — never folded into this one, which would make an id
+// collision between two producers' numbering a silent naming bug instead of
+// a compile-time impossibility.
 //
 // Names are kept short ("inlet_temp", not "inlet_temperature") as a metric
 // naming convention, not because the wire enforces a length — the wire never
@@ -27,7 +39,7 @@
 // Ids below 0x8000 only — ExtPutMetricValue and ExtPutMetricCounter both take
 // care of setting bit 15 themselves (see ExtensionMetricKind in
 // ExtensionProtocol.h); an id defined here should never set it.
-enum DryerMetricId : uint16_t
+enum TelemetryMetricId : uint16_t
 {
   kMetricInletTemperature  = 0,
   kMetricInletHumidity     = 1,
@@ -54,29 +66,20 @@ enum DryerMetricId : uint16_t
   kMetricSensorFault     = 16,
   kMetricAirflowFault    = 17,
   kMetricFeedbackFault   = 18,
-
-  // Not readings of the dryer itself — the semalo solar loop (../test-lora),
-  // a separate LoRa producer that shares this catalog because it is the only
-  // id-to-name mechanism the collector (../dryer-extension) compiles. See the
-  // note on kExtMetricUptimeS below for the precedent.
-  kMetricBalloonTemperature = 19,
-  kMetricGroundTemperature  = 20,
-  kMetricReactorTemperature = 21,
-  kMetricCirculatorState    = 22,
 };
 
-struct DryerMetricCatalogEntry
+struct TelemetryMetricCatalogEntry
 {
   uint16_t    id;
   const char *name; // short form, e.g. "inlet_temp"
 };
 
-// One entry per DryerMetricId above, plus kExtMetricUptimeS — the generic
-// engine's own reserved id for ExtensionTelemetryRecord::uptime_s (see
-// ExtensionProtocol.h). Uptime is not one of this dryer's own metrics, but
-// the collector still needs a name for it, and this catalog is the only
-// mechanism that ever reaches the collector, so it rides along here too.
-constexpr DryerMetricCatalogEntry kDryerMetricCatalog[] = {
+// One entry per TelemetryMetricId above, plus kExtMetricUptimeS — the
+// generic engine's own reserved id for ExtensionTelemetryRecord::uptime_s
+// (see ExtensionProtocol.h). Uptime is not one of this dryer's own metrics,
+// but the collector still needs a name for it, and every producer's catalog
+// carries this same entry for that reason.
+constexpr TelemetryMetricCatalogEntry kTelemetryMetricCatalog[] = {
     {kMetricInletTemperature, "inlet_temp"},
     {kMetricInletHumidity, "inlet_humidity"},
     {kMetricWaterTemperature, "water_temp"},
@@ -96,14 +99,10 @@ constexpr DryerMetricCatalogEntry kDryerMetricCatalog[] = {
     {kMetricSensorFault, "sensor_fault"},
     {kMetricAirflowFault, "airflow_fault"},
     {kMetricFeedbackFault, "feedback_fault"},
-    {kMetricBalloonTemperature, "balloon_temp"},
-    {kMetricGroundTemperature, "ground_temp"},
-    {kMetricReactorTemperature, "reactor_temp"},
-    {kMetricCirculatorState, "circulator_state"},
     {kExtMetricUptimeS, "uptime_s"},
 };
 
-constexpr size_t kDryerMetricCatalogCount =
-    sizeof(kDryerMetricCatalog) / sizeof(kDryerMetricCatalog[0]);
+constexpr size_t kTelemetryMetricCatalogCount =
+    sizeof(kTelemetryMetricCatalog) / sizeof(kTelemetryMetricCatalog[0]);
 
-#endif // DRYER_METRIC_IDS_H
+#endif // TELEMETRY_METRIC_IDS_H
