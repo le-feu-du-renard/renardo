@@ -54,6 +54,15 @@ enum DryerMetricId : uint16_t
   kMetricSensorFault     = 16,
   kMetricAirflowFault    = 17,
   kMetricFeedbackFault   = 18,
+
+  // Not readings of the dryer itself — the semalo solar loop (../test-lora),
+  // a separate LoRa producer that shares this catalog because it is the only
+  // id-to-name mechanism the collector (../dryer-extension) compiles. See the
+  // note on kExtMetricUptimeS below for the precedent.
+  kMetricBalloonTemperature = 19,
+  kMetricGroundTemperature  = 20,
+  kMetricReactorTemperature = 21,
+  kMetricCirculatorState    = 22,
 };
 
 struct DryerMetricCatalogEntry
@@ -87,6 +96,10 @@ constexpr DryerMetricCatalogEntry kDryerMetricCatalog[] = {
     {kMetricSensorFault, "sensor_fault"},
     {kMetricAirflowFault, "airflow_fault"},
     {kMetricFeedbackFault, "feedback_fault"},
+    {kMetricBalloonTemperature, "balloon_temp"},
+    {kMetricGroundTemperature, "ground_temp"},
+    {kMetricReactorTemperature, "reactor_temp"},
+    {kMetricCirculatorState, "circulator_state"},
     {kExtMetricUptimeS, "uptime_s"},
 };
 
