@@ -13,6 +13,11 @@ void DryerSettings::Reset()
   hydraulic_enabled = HYDRAULIC_ENABLED_DEFAULT;
   electric_enabled  = ELECTRIC_ENABLED_DEFAULT;
 
+  heat_source                = HEAT_SOURCE_DEFAULT;
+  dehum_extraction_threshold = DEHUM_EXTRACTION_THRESHOLD_DEFAULT;
+
+  program = DRYER_PROGRAM_DEFAULT;
+
   eco_enabled           = false;
   eco_start_hour        = ECO_START_HOUR;
   eco_end_hour          = ECO_END_HOUR;
@@ -44,6 +49,11 @@ void DryerSettings::Reset()
   extraction_raw_max = DAMPER_RAW_MAX_DEFAULT;
   recycling_raw_min  = DAMPER_RAW_MIN_DEFAULT;
   recycling_raw_max  = DAMPER_RAW_MAX_DEFAULT;
+
+  // The extension port is the dryer's own connector and costs nothing when
+  // nothing is plugged into it; the radio is off until someone asks for it.
+  telemetry_rs485 = true;
+  telemetry_wifi  = false;
 
   SealRecord(*this);
 }

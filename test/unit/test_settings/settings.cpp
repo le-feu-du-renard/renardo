@@ -23,6 +23,23 @@ void test_defaults_are_sealed_and_valid(void)
   TEST_ASSERT_EQUAL_FLOAT(WATER_TARGET_DEFAULT, settings.water_target);
 }
 
+void test_v6_defaults(void)
+{
+  // The four v6 fields, each factory value chosen to leave a dryer that has
+  // never been configured behaving exactly as it did before they existed.
+  DryerSettings settings;
+  settings.Reset();
+
+  TEST_ASSERT_EQUAL_UINT8(HEAT_SOURCE_ELECTRIC, settings.heat_source);
+  TEST_ASSERT_EQUAL_UINT8(DRYER_PROGRAM_DRYING, settings.program);
+  TEST_ASSERT_EQUAL_FLOAT(DEHUM_EXTRACTION_THRESHOLD_DEFAULT,
+                          settings.dehum_extraction_threshold);
+
+  // The connector costs nothing unused; the radio is a deliberate act.
+  TEST_ASSERT_TRUE(settings.telemetry_rs485);
+  TEST_ASSERT_FALSE(settings.telemetry_wifi);
+}
+
 void test_checksum_is_reproducible_across_instances(void)
 {
   // Reset() zeroes the whole record before assigning, so padding bytes are
@@ -109,6 +126,7 @@ int main(int argc, char **argv)
 {
   UNITY_BEGIN();
   RUN_TEST(test_defaults_are_sealed_and_valid);
+  RUN_TEST(test_v6_defaults);
   RUN_TEST(test_checksum_is_reproducible_across_instances);
   RUN_TEST(test_any_field_change_invalidates_the_record);
   RUN_TEST(test_record_from_an_older_version_is_rejected);

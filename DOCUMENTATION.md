@@ -619,12 +619,15 @@ cut costs the new values rather than the previous ones. A record whose version
 or checksum does not match is discarded in favour of the factory defaults —
 there is no migration, by design.
 
-`SETTINGS_VERSION` is at **4**. v4 dropped the LoRa telemetry interval along
-with the radio; the field sat immediately before the checksum, so the record is
-shorter and no v3 file can be read as a v4 one. v3 before it replaced each
-register's named calibration ends (closed, open) with ordered marks (min, max)
-plus an explicit signal direction, and added the register count and the two
-actuator direction flags.
+`SETTINGS_VERSION` is at **6**. v6 added the programme, the heat source type,
+the dehumidifier's extraction threshold and the two telemetry switches. v5
+before it dropped the four hydraulic regulation knobs, which stopped meaning
+anything once the module took its own loop back, and put the air-renewal window
+in their place. v4 dropped the LoRa telemetry interval along with the radio; the
+field sat immediately before the checksum, so the record is shorter and no v3
+file can be read as a v4 one. v3 replaced each register's named calibration ends
+(closed, open) with ordered marks (min, max) plus an explicit signal direction,
+and added the register count and the two actuator direction flags.
 
 Either way the effect on a board being upgraded is the same and it is worth
 stating plainly: **the stored calibration is discarded and has to be captured

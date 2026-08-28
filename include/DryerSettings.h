@@ -34,7 +34,12 @@
 // once the remote module took back its own start and regulation, and added the
 // air-renewal window in their place. Same consequence as v4: every stored record
 // is discarded and the register calibration has to be captured again.
-#define SETTINGS_VERSION 5
+// v6 added the programme, the heat source type, the dehumidifier's extraction
+// threshold and the two telemetry switches. Fields appended before the checksum
+// rather than inserted, but the length still changes, so the consequence is the
+// same one a third time: **every stored record is discarded and the register
+// calibration has to be captured again from the menu after this upgrade.**
+#define SETTINGS_VERSION 6
 #define SESSION_VERSION 1
 
 // Everything the menu can change.
@@ -52,6 +57,23 @@ struct DryerSettings
   // nothing here to tune it with.
   bool hydraulic_enabled;
   bool electric_enabled;
+
+  // What is wired to the electric command output — HEAT_SOURCE_ELECTRIC or
+  // HEAT_SOURCE_DEHUMIDIFIER. One relay drives either, so the difference is
+  // entirely in the control law and in what the register is for; see config.h.
+  //
+  // Held as uint8_t rather than the enum so this header stays free of
+  // TemperatureManager, the same trade DisplayModel makes for the phase.
+  uint8_t heat_source;
+
+  // How far above the setpoint a dehumidifier is allowed to carry the chamber
+  // before the register opens to cool it. Unused with an electric source.
+  float dehum_extraction_threshold;
+
+  // Which programme the session runs — DRYER_PROGRAM_DRYING or
+  // DRYER_PROGRAM_CLIMATE. The four phase durations below are the drying
+  // programme's alone; climate has no clock.
+  uint8_t program;
 
   // ECO mode — only reachable when an RTC is present
   bool    eco_enabled;
@@ -92,6 +114,18 @@ struct DryerSettings
   uint16_t extraction_raw_max;
   uint16_t recycling_raw_min;
   uint16_t recycling_raw_max;
+
+  // Where telemetry goes. Two switches rather than one mode, because they are
+  // not alternatives: the extension port and the WiFi uplink read the same
+  // record and neither knows about the other.
+  //
+  // `telemetry_wifi` only means anything on a Pico W build (DRYER_WIFI); it is
+  // stored on both so a record written by one board is still readable by the
+  // other, and the menu entry is greyed out where the radio does not exist.
+  // Off by default even there: the dryer is complete without a network, and
+  // gaining one is a deliberate act.
+  bool telemetry_rs485;
+  bool telemetry_wifi;
 
   uint16_t checksum;
 

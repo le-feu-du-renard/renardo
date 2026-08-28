@@ -506,6 +506,31 @@
 #define HYDRAULIC_ENABLED_DEFAULT true
 #define ELECTRIC_ENABLED_DEFAULT true
 
+// What is wired to the command output on OUT_ELECTRIC_PIN — a resistance or a
+// dehumidifier. One relay either way, so this is a setting rather than a pin:
+// the two are alternatives on a given machine, never both, and the last free
+// GPIO is worth more than the ability to fit both at once.
+//
+// It is not a preference. The two dry by opposite means and the whole air path
+// follows from which one is fitted, so getting it wrong does not degrade the
+// regulation, it inverts it. See HEAT_SOURCE_* and DEHUM_* below.
+#define HEAT_SOURCE_ELECTRIC 0
+#define HEAT_SOURCE_DEHUMIDIFIER 1
+#define HEAT_SOURCE_DEFAULT HEAT_SOURCE_ELECTRIC
+
+// Which programme the session runs.
+//
+//   Drying  — Init -> [Brassage -> Extraction] x inf, the timed cycle.
+//   Climate — one phase, no clock, temperature and humidity simply held.
+//
+// A dryer and a climate chamber are the same machine asked two different
+// questions, and the difference between them is entirely in the phase machine:
+// everything below it — the interlocks, the safety cutoff, the air-renewal
+// window — is common and does not know which programme is running.
+#define DRYER_PROGRAM_DRYING 0
+#define DRYER_PROGRAM_CLIMATE 1
+#define DRYER_PROGRAM_DEFAULT DRYER_PROGRAM_DRYING
+
 // ===== Heating Control Parameters =====
 //
 // The dryer regulates one source. The two are not symmetrical, and the reason
@@ -575,6 +600,41 @@
 // forced OFF and the hydraulic run permission is withdrawn immediately.
 // Set this to ~5–10°C above the maximum expected operating setpoint.
 #define TEMPERATURE_SAFETY_MAX 50.0f // °C
+
+// ===== Dehumidifier Parameters =====
+//
+// A dehumidifier condenses the water out of the air instead of throwing the air
+// away, so the circuit stays in recirculation and the register is not the tool
+// that removes moisture. It opens for two reasons, and both of them are air
+// renewals rather than extractions:
+//
+//   too hot   — the machine's own waste heat has carried the chamber past the
+//               setpoint, and outside air is the only way down. This is the
+//               one case where the register is a cooling device.
+//   too dry   — the air is below the humidity target, so there is no water left
+//               in it to condense and the machine has nothing to work on.
+//               Renewing brings damp air back in and the drying continues.
+//
+// The second is the drying loop itself, and it runs the other way round from the
+// electric's: the electric throws out air that has become *humid*, the
+// dehumidifier renews air that has become *dry*.
+
+// How far above the setpoint the chamber must climb before the register opens
+// to cool it. It closes again on the setpoint itself, so the band is the
+// hysteresis — a threshold and a return would be two settings saying one thing.
+#define DEHUM_EXTRACTION_THRESHOLD_DEFAULT 3.0f // °C above setpoint
+#define DEHUM_EXTRACTION_THRESHOLD_MIN 0.5f
+#define DEHUM_EXTRACTION_THRESHOLD_MAX 10.0f
+
+// Hysteresis on the too-dry renewal, %RH. Opens below the target, closes again
+// once the incoming air has carried the reading this far back above it. Not a
+// menu setting until it has shown it needs to be one: the register takes 150 s
+// to travel, and any value that stops it hunting is the right value.
+#define DEHUM_RENEWAL_BAND 3.0f // %RH
+
+// Hysteresis on the dehumidifier's own humidity demand, %RH. It runs while the
+// reading is this far above the target and stops at the target.
+#define DEHUM_HUMIDITY_BAND 2.0f // %RH
 
 // ===== ECO Mode Parameters =====
 #define ECO_START_HOUR 18
