@@ -9,6 +9,7 @@
 - [Operator Interface](#operator-interface)
 - [ECO Mode](#eco-mode)
 - [Persistence](#persistence)
+- [Open questions](#open-questions)
 
 ---
 
@@ -631,3 +632,34 @@ again from the menu.**
 
 A reboot mid-cycle resumes the session at its phase and elapsed time. Elapsed
 time is `millis()`-based, so the wall-clock gap during the outage is lost.
+
+---
+
+## Open questions
+
+Decisions the firmware has not made, kept here rather than in the code so that
+reading a module does not mean reading someone's doubt about it. Each is a
+question about behaviour, not a bug.
+
+**Does a session ever end on its own?** `DRYING_SESSION_DURATION` has existed
+since the first version and has never been read. The drying cycle loops
+`Brassage -> Extraction` until someone presses STOP. Whether a dryer should be
+able to finish unattended is a question about the food in it, not about the
+firmware.
+
+**Should the water setpoint follow the clock?** The hydraulic module is given
+one fixed setpoint. With an RTC fitted, a day/night pair would cost two settings
+and one comparison — the same shape ECO already has for the air target.
+
+**Init exits on the raw setpoint, not the ECO-effective one.** Init ends when
+the temperature reaches `GetTargetTemperature()`, while the loop underneath is
+holding `GetEffectiveTargetTemperature()`. Under ECO the reduced setpoint is the
+one being regulated to, the exit test never sees the full one, and Init runs its
+whole hour. Either the test moves to the effective target, or warming up at the
+full target is what Init is *for* — and then it should say so.
+
+**Three things that would earn their place on the screen.** A diagnostics page
+with bus state and error counters; a version report over the extension port; and
+`HydraulicRemote::GetStatusBits()`, which is read every cycle and used nowhere.
+That last one is the only thing that would let the screen show whether the
+module is actually firing rather than merely whether it was cleared to.

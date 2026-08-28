@@ -18,9 +18,8 @@ optional module that regulation never waits for.
 | File | Contents |
 |------|----------|
 | [HARDWARE.md](HARDWARE.md) | GPIO map, wiring, output polarity, Modbus registers, bring-up |
-| [DOCUMENTATION.md](DOCUMENTATION.md) | Drying sequence, temperature control, interface, persistence |
+| [DOCUMENTATION.md](DOCUMENTATION.md) | Drying sequence, temperature control, interface, persistence, open questions |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Build, upload, debug, tests |
-| [ROADMAP.md](ROADMAP.md) | Planned work, completed features |
 
 ## Architecture at a glance
 
