@@ -9,6 +9,7 @@
 // built once and never change shape, only the values behind them do.
 static DryerSettings *g_settings = nullptr;
 static bool           g_rtc_available = false;
+static bool           g_session_running_state = false;
 
 // The wall clock lives in the RTC, not in the settings record, so the clock
 // page edits a staging copy and hands it back through these hooks. Function
@@ -21,6 +22,7 @@ static MenuClock g_clock_edit{2026, 1, 1, 0, 0};  // bound to the page entries
 static MenuClock g_clock_shown{2026, 1, 1, 0, 0}; // last read, shown as-is
 
 void MenuSetRtcAvailable(bool available) { g_rtc_available = available; }
+void MenuSetSessionRunning(bool running) { g_session_running_state = running; }
 
 void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &))
 {
@@ -59,6 +61,22 @@ bool DehumidifierFitted()
   return g_settings != nullptr && g_settings->heat_source == HEAT_SOURCE_DEHUMIDIFIER;
 }
 
+// The four durations belong to the drying cycle. A climate has no clock, so
+// under it they are shown and skipped rather than quietly still editable —
+// editing a number that governs nothing is worse than not reaching it.
+bool ProgramIsDrying()
+{
+  return g_settings != nullptr && g_settings->program == DRYER_PROGRAM_DRYING;
+}
+
+// The programme itself cannot change under a running session: the phase machine
+// is already inside one. SessionManager makes the same guarantee from its own
+// side; this is only what stops the knob offering.
+bool ProgramIsChangeable()
+{
+  return !g_session_running_state;
+}
+
 // The recycling entries are greyed out, not hidden, on a dryer declaring a
 // single register — same rule as the ECO page without an RTC.
 bool SecondDamperFitted()
@@ -74,7 +92,7 @@ bool SecondDamperFitted()
 MenuItem g_setpoint_items[4];
 MenuItem g_source_items[4];
 MenuItem g_eco_items[5];
-MenuItem g_phase_items[5];
+MenuItem g_phase_items[6];
 MenuItem g_control_items[8];
 MenuItem g_clock_items[8];
 MenuItem g_system_items[4];
@@ -84,7 +102,7 @@ MenuItem g_root_items[7];
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
 MenuPage g_source_page{"Sources", g_source_items, 4};
 MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
-MenuPage g_phase_page{"Phases", g_phase_items, 5};
+MenuPage g_phase_page{"Phases", g_phase_items, 6};
 MenuPage g_control_page{"Regulation", g_control_items, 8};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
 MenuPage g_damper_page{"Registres", g_damper_items, 13};
@@ -390,18 +408,23 @@ void MenuSystem::Begin(DryerSettings *settings)
                              50.0f, 100.0f, 5.0f, " %", RtcPresent);
   g_eco_items[4] = MakeBack();
 
-  g_phase_items[0] = MakeValue("Init", MenuValueType::kUint32, &s.init_phase_duration,
-                               300.0f, 21600.0f, 300.0f, " s");
-  g_phase_items[1] = MakeValue("Brassage", MenuValueType::kUint32,
+  // The programme comes first and the durations under it, because the durations
+  // are the drying cycle's and a climate has none. Reading them the other way
+  // round would be reading four answers before the question.
+  g_phase_items[0] = MakeChoice("Programme", &s.program, "Sechage", "Climat",
+                                ProgramIsChangeable);
+  g_phase_items[1] = MakeValue("Init", MenuValueType::kUint32, &s.init_phase_duration,
+                               300.0f, 21600.0f, 300.0f, " s", ProgramIsDrying);
+  g_phase_items[2] = MakeValue("Brassage", MenuValueType::kUint32,
                                &s.brassage_phase_duration,
-                               60.0f, 7200.0f, 60.0f, " s");
-  g_phase_items[2] = MakeValue("Extraction", MenuValueType::kUint32,
+                               60.0f, 7200.0f, 60.0f, " s", ProgramIsDrying);
+  g_phase_items[3] = MakeValue("Extraction", MenuValueType::kUint32,
                                &s.extraction_phase_duration,
-                               30.0f, 1800.0f, 30.0f, " s");
-  g_phase_items[3] = MakeValue("Ouv. registre", MenuValueType::kUint32,
+                               30.0f, 1800.0f, 30.0f, " s", ProgramIsDrying);
+  g_phase_items[4] = MakeValue("Ouv. registre", MenuValueType::kUint32,
                                &s.extraction_damper_open_duration,
-                               30.0f, 900.0f, 30.0f, " s");
-  g_phase_items[4] = MakeBack();
+                               30.0f, 900.0f, 30.0f, " s", ProgramIsDrying);
+  g_phase_items[5] = MakeBack();
 
   // The four hydraulic knobs are gone: the module regulates itself, and a page
   // offering to tune something the dryer does not control is a page that lies.

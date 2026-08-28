@@ -55,6 +55,7 @@ const PhaseStyle kPhases[] = {
     {"INITIALISATION", UiTheme::kNeutral},  // kInit, warming up
     {"BRASSAGE",       UiTheme::kAccent},   // kBrassage, the working phase
     {"EXTRACTION",     UiTheme::kWarn},     // kExtraction, damper open
+    {"CLIMAT",         UiTheme::kAccent},   // kClimat, held rather than cycled
 };
 
 const PhaseStyle &StyleFor(uint8_t phase)

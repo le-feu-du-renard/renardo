@@ -7,6 +7,7 @@ SessionManager::SessionManager(TemperatureManager *temperature_manager,
       humidity_manager_(humidity_manager),
       state_(SessionState::kStopped),
       current_phase_(DryerPhase::kStop),
+      program_(static_cast<DryerProgram>(DRYER_PROGRAM_DEFAULT)),
       user_target_humidity_(0.0f),
       init_extraction_end_ms_(0),
       phase_start_ms_(0),
@@ -35,8 +36,9 @@ void SessionManager::Start()
 {
   state_            = SessionState::kRunning;
   session_start_ms_ = millis();
-  EnterPhase(DryerPhase::kInit);
-  Logger::Info("SessionManager: session started");
+  EnterPhase(IsClimate() ? DryerPhase::kClimat : DryerPhase::kInit);
+  Logger::Info("SessionManager: session started (%s)",
+               IsClimate() ? "climate" : "drying");
 }
 
 void SessionManager::Stop()
@@ -71,6 +73,7 @@ const char *SessionManager::GetCurrentPhaseName() const
 {
   switch (current_phase_)
   {
+    case DryerPhase::kClimat:     return "Climat";
     case DryerPhase::kInit:       return "Init";
     case DryerPhase::kBrassage:   return "Brassage";
     case DryerPhase::kExtraction: return "Extraction";
@@ -116,6 +119,23 @@ void SessionManager::EnterPhase(DryerPhase phase)
   // what used to make every transition a step backwards.
   switch (phase)
   {
+    case DryerPhase::kClimat:
+      // The register on the humidity threshold, which is what holding a climate
+      // means: open while the air is too damp, shut once it is not. kThreshold
+      // has been implemented since v3 and this is the first thing to select it.
+      //
+      // Except with a dehumidifier fitted, which takes the water out without
+      // opening anything. Its register answers overheating and dry air instead,
+      // from Dryer::UpdateForcedOpen(), and a threshold underneath would be a
+      // second opinion on the same vane.
+      SetDamperMode(temperature_manager_->IsDehumidifier()
+                        ? HumidityManager::Mode::kDisabled
+                        : HumidityManager::Mode::kThreshold);
+      init_extraction_end_ms_ = 0;
+      temperature_manager_->ResetControl();
+      Logger::Info("SessionManager: entering Climat phase");
+      break;
+
     case DryerPhase::kInit:
       SetDamperMode(HumidityManager::Mode::kDisabled);
       init_extraction_end_ms_ = 0;
@@ -164,6 +184,11 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
 
   switch (current_phase_)
   {
+    case DryerPhase::kClimat:
+      // Nowhere to go, ever. A climate is held until someone stops it; there is
+      // no duration to serve and no next stage to reach.
+      break;
+
     case DryerPhase::kInit:
     {
       // Humidity check: if target reached, extract within init or transition to

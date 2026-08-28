@@ -50,6 +50,11 @@ struct MenuDamperReadback
 // Declared here rather than ad hoc in each .cpp: the menu stays unaware of
 // RTClib and of the ADC, which is what keeps it compiling in the host tests.
 void MenuSetRtcAvailable(bool available);
+
+// Whether a session is running. The programme entry is greyed out while one is:
+// the phase machine is already inside a programme, and there is no sensible
+// answer to being asked to change it halfway.
+void MenuSetSessionRunning(bool running);
 void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &));
 
 // `index` is 0 for the extraction register, 1 for the recycling one. The command

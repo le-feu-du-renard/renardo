@@ -346,6 +346,9 @@ static void UpdateInputs()
 
   input_handler.Update();
 
+  // The menu greys out anything a running session has taken out of reach.
+  MenuSetSessionRunning(dryer.IsRunning());
+
   // ECO mode needs the wall clock; without an RTC it stays in PERFORMANCE.
   if (g_rtc_available)
   {

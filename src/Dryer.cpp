@@ -342,6 +342,10 @@ void Dryer::ApplySettings(const DryerSettings &settings, bool rtc_available)
   temperature_manager_.SetOperatingMode(eco ? OperatingMode::ECO
                                             : OperatingMode::PERFORMANCE);
 
+  session_manager_.SetProgram(settings.program == DRYER_PROGRAM_CLIMATE
+                                  ? DryerProgram::kClimate
+                                  : DryerProgram::kDrying);
+
   PhaseDurations &durations = session_manager_.GetDurations();
   durations.init                   = settings.init_phase_duration;
   durations.brassage               = settings.brassage_phase_duration;
@@ -383,6 +387,8 @@ void Dryer::CaptureSettings(DryerSettings &settings) const
   settings.eco_start_hour        = params.eco_start_hour;
   settings.eco_end_hour          = params.eco_end_hour;
   settings.eco_target_percentage = params.eco_target_percentage;
+
+  settings.program = static_cast<uint8_t>(session_manager_.GetProgram());
 
   const PhaseDurations &durations = session_manager_.GetDurations();
   settings.init_phase_duration             = durations.init;

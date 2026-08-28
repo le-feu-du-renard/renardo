@@ -13,14 +13,33 @@ enum class SessionState : uint8_t
     kCooling = 2,  // heaters off, fan still running to cool electric heater
 };
 
-// Three-phase drying sequence:
-// Init (x1) -> [Brassage -> Extraction] x inf
+// Which question the session is answering.
+//
+//   kDrying  — Init (x1) -> [Brassage -> Extraction] x inf, the timed cycle.
+//              The phases move the air on a clock and on humidity thresholds,
+//              and the point is to take water out of a batch.
+//   kClimate — one phase, no clock. Temperature and humidity are simply held
+//              where they are asked to be, for as long as the session runs.
+//
+// A dryer and a climate chamber are the same machine asked two different
+// questions, and the whole of the difference is in this file: everything under
+// it — the interlocks, the safety cutoff, the air-renewal window, the source
+// law — is common and never learns which programme is running.
+enum class DryerProgram : uint8_t
+{
+    kDrying  = DRYER_PROGRAM_DRYING,
+    kClimate = DRYER_PROGRAM_CLIMATE,
+};
+
+// Drying sequence, plus the climate programme's single phase:
+// Init (x1) -> [Brassage -> Extraction] x inf, or Climat alone.
 enum class DryerPhase : uint8_t
 {
     kStop = 0,
     kInit = 1,
     kBrassage = 2,
     kExtraction = 3,
+    kClimat = 4,
 };
 
 // Phase durations, in seconds. Defaults come from config.h and are overridden
@@ -71,6 +90,15 @@ public:
     // Target humidity from user potentiometer — used for humidity-based transitions
     void SetTargetHumidity(float humidity) { user_target_humidity_ = humidity; }
 
+    // Which programme the next session runs. Changing it mid-session does
+    // nothing to the session in progress: the phase machine is already inside a
+    // programme, and switching the rails under a running train is not a
+    // behaviour anyone asked for. The menu greys the entry out while running,
+    // and this is the half of that guarantee the menu cannot make.
+    void         SetProgram(DryerProgram program) { program_ = program; }
+    DryerProgram GetProgram() const { return program_; }
+    bool IsClimate() const { return program_ == DryerProgram::kClimate; }
+
     // State restoration after reboot (restores running session)
     void RestoreState(DryerPhase phase, uint32_t phase_elapsed_s, uint32_t total_elapsed_s);
 
@@ -82,6 +110,7 @@ private:
 
     SessionState state_;
     DryerPhase current_phase_;
+    DryerProgram program_;
 
     float    user_target_humidity_;   // set from potentiometer each loop
     uint32_t init_extraction_end_ms_; // 0 = not extracting within init phase
