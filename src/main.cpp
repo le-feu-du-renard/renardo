@@ -985,10 +985,16 @@ void loop()
   UpdateSensors();
   UpdateInputs();
   UpdateExtensionCommands();
+  // Ahead of dryer.Update(): FaultReason() reads the damper feedback, and on the
+  // very first loop after a reboot that feedback has never been sampled. Left
+  // after Update(), a session restored from flash would see IsFeedbackUsable()
+  // still false — with a mains cut in between, the registers may genuinely have
+  // moved, so the fix is a real sample here, not a grace period that trusts the
+  // stale/absent reading.
+  UpdateDamperPosition();
   dryer.Update();
   UpdateOutputs();
   UpdateStatusLed();
-  UpdateDamperPosition();
   UpdateDisplay();
   UpdateExtensionTelemetry();
   UpdateSessionPersistence();
