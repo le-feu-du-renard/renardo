@@ -94,7 +94,7 @@ private:
   static constexpr int16_t kHeaderH = 20;
 
   static constexpr int16_t kCardY = 32;
-  static constexpr int16_t kCardH = 76;
+
   // The measurement card is the wider of the two: it carries four figures and
   // two gauges against the setpoint card's two figures.
   static constexpr int16_t kInletX  = kMargin;
@@ -102,31 +102,92 @@ private:
   static constexpr int16_t kTargetX = kInletX + kInletW + kGutter;
   static constexpr int16_t kTargetW = kWidth - kMargin - kTargetX;
 
-  // 34 rather than the mock-up's 30: the type is a step larger than the design
-  // called for, and a caption over a value needs the extra four pixels not to
-  // read as one crowded block.
-  static constexpr int16_t kStripY = 112;
-  static constexpr int16_t kStripH = 34;
   static constexpr int16_t kStripCells = 3;
   static constexpr int16_t kStripCellW =
       (kWidth - 2 * kMargin - (kStripCells - 1) * kGutter) / kStripCells;
 
-  static constexpr int16_t kDeviceY = 150;
-  static constexpr int16_t kDeviceH = 72;
   static constexpr int16_t kDeviceCells = 4;
   static constexpr int16_t kDeviceCellW =
       (kWidth - 2 * kMargin - (kDeviceCells - 1) * kGutter) / kDeviceCells;
 
+  // --- Vertical layout, in two variants -------------------------------------
+  //
+  // A dryer with no hydraulic module has no water loop to report, and the
+  // middle strip would be a third of the usable height spent on three cells
+  // saying nothing. So the strip is not blanked, it is *gone*, and the 38 px it
+  // occupied are given back to the two cards and the device row.
+  //
+  // Only the vertical figures vary. Every width — the cards, the cell pitch,
+  // the margins — is the same under both, which is what leaves every
+  // static_assert about text fitting its cell true as written, with nothing to
+  // duplicate per variant.
+  //
+  // The figures inside a card and a device cell are derived from its height
+  // rather than fixed, so growing one moves its contents with it. That is the
+  // difference between two layouts and two copies of a layout.
+  struct Layout
+  {
+    bool    has_strip;
+    int16_t card_h;
+    int16_t strip_y;
+    int16_t strip_h;
+    int16_t device_y;
+    int16_t device_h;
+
+    // Card contents, card-relative. The caption sits near the top under both
+    // variants; the figures centre in whatever is left below it, which is what
+    // makes a taller card read as a roomier one rather than a top-heavy one.
+    constexpr int16_t CardLabelY() const { return 20; }
+    constexpr int16_t FigureCenterY() const { return (26 + card_h) / 2; }
+
+    // Device cell contents, cell-relative. The extra height is shared out down
+    // the cell rather than pooled at the bottom, so the icon, the caption and
+    // the state word stay evenly spread instead of huddling at the top over a
+    // gap.
+    // Bands may not overlap and may not run into the hint bar, which the menu
+    // also draws into and which is therefore not ours to grow over. Takes its
+    // two bounds as arguments because the enclosing class is still incomplete
+    // where the assertions below are written.
+    constexpr bool Fits(int16_t card_y, int16_t hint_y) const
+    {
+      return card_y + card_h <= (has_strip ? strip_y : device_y) &&
+             (!has_strip || strip_y + strip_h <= device_y) &&
+             device_y + device_h <= hint_y;
+    }
+
+    constexpr int16_t Extra() const { return device_h - 72; }
+    constexpr int16_t IconCy() const { return 22 + Extra() / 4; }
+    constexpr int16_t DeviceLabelY() const { return 40 + Extra() / 2; }
+    constexpr int16_t DeviceStateY() const { return 61 + (Extra() * 3) / 4; }
+  };
+
+  //   progress   0..  3
+  //   header     4.. 23
+  //   cards     32..107 | 32..126
+  //   strip    112..145 | -
+  //   devices  150..221 | 131..220
+  //   hint     226..239
+  static constexpr Layout kLayoutHydraulic{true, 76, 112, 34, 150, 72};
+  static constexpr Layout kLayoutNoHydraulic{false, 95, 0, 0, 131, 90};
+
+  // Both are checked, in RenderMain: a nested type's constexpr members are not
+  // usable in a constant expression until the enclosing class is complete, and
+  // every other assertion in this file already lives in the function that
+  // depends on it.
+
+  static constexpr const Layout &LayoutFor(const DisplayModel &model)
+  {
+    return model.hydraulic_enabled ? kLayoutHydraulic : kLayoutNoHydraulic;
+  }
+
+  // The variant this frame is being drawn in. Held rather than threaded through
+  // every Draw* signature because DrawFanIcon is also reached from the
+  // animation path, which has no model of its own to ask.
+  const Layout *layout_ = &kLayoutHydraulic;
+
   // Inside a card: text starts here, and the same inset is the top of the
   // caption line.
   static constexpr int16_t kPad = 8;
-
-  // Card contents, card-relative. Both cards centre their label on one line and
-  // their figures on the other; the two cards set their figures at different
-  // sizes, so sharing an optical centre rather than a top edge is what makes
-  // the readings look level side by side.
-  static constexpr int16_t kCardLabelY  = 20;
-  static constexpr int16_t kFigureCenterY = 50;
 
   // Glyph cells each figure is allowed. A temperature is always "nn.n~" or
   // "--.-~"; a humidity is right-aligned inside the width of "100%".
@@ -162,11 +223,11 @@ private:
   // SPI bus far longer than the radio can tolerate.
   void DrawFanIcon(const DisplayModel &model);
 
-  // Fan disc position within the first device cell, and as its own canvas.
-  // Two pixels of margin around the icon: the sprite is filled with the card
-  // colour before the icon goes down, and the margin is what guarantees the
-  // previous frame's blades are painted out wherever the new ones are not.
-  static constexpr int16_t kIconCy  = 22; // cell-relative centre of every icon
+  // Fan disc size, as its own canvas. Two pixels of margin around the icon: the
+  // sprite is filled with the card colour before the icon goes down, and the
+  // margin is what guarantees the previous frame's blades are painted out
+  // wherever the new ones are not. Its cell-relative centre comes from the
+  // layout, since a taller cell puts it lower.
   static constexpr int16_t kFanBox  = UiIcons::kFanBox + 4;
 
   // Radii for the slash overlay, which is drawn rather than generated and so

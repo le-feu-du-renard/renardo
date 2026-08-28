@@ -220,6 +220,31 @@ void TftDisplay::RenderMain(const DisplayModel &model)
     }
   }
 
+  // Both variants checked by the compiler rather than by whoever last edited
+  // the numbers.
+  static_assert(kLayoutHydraulic.Fits(kCardY, kHintY),
+                "hydraulic layout overruns the screen");
+  static_assert(kLayoutNoHydraulic.Fits(kCardY, kHintY),
+                "no-hydraulic layout overruns the screen");
+
+  // The strip's whole height plus its gutter goes somewhere, or the point of
+  // removing it was missed — and nothing else may absorb it silently either.
+  // These two figures are what the reclaimed pixels were spent on.
+  static_assert(kLayoutNoHydraulic.card_h - kLayoutHydraulic.card_h == 19,
+                "the cards did not take their share of the reclaimed strip");
+  static_assert(kLayoutNoHydraulic.device_h - kLayoutHydraulic.device_h == 18,
+                "the device row did not take its share of the reclaimed strip");
+
+  // The whole lower half moves when the hydraulic is switched at the menu, and
+  // no amount of per-region diffing can chase that: the regions themselves are
+  // somewhere else. Repaint the ground and draw every band.
+  const Layout &layout = LayoutFor(model);
+  if (&layout != layout_)
+  {
+    layout_       = &layout;
+    force_redraw_ = true;
+  }
+
   if (force_redraw_)
   {
     tft_.fillScreen(UiTheme::kBackground);
@@ -241,7 +266,9 @@ void TftDisplay::RenderMain(const DisplayModel &model)
   {
     DrawTargetCard(model);
   }
-  if (force_redraw_ || StripChanged(model))
+  // Not blanked when there is no hydraulic — absent. The 38 px are already
+  // spent, above and below.
+  if (layout_->has_strip && (force_redraw_ || StripChanged(model)))
   {
     DrawStrip(model);
   }
@@ -438,7 +465,7 @@ void TftDisplay::DrawFigurePair(TFT_eSprite &canvas, int16_t card_width,
   const int16_t gap   = advance / 2;
   const int16_t width = (kFigureCells + kPercentCells) * advance + gap;
   const int16_t left  = (card_width - width) / 2;
-  const int16_t top   = UiLayout::CapTop(kFigureCenterY, baseline, cap_height);
+  const int16_t top   = UiLayout::CapTop(layout_->FigureCenterY(), baseline, cap_height);
 
   char text[16];
 
@@ -457,18 +484,18 @@ void TftDisplay::DrawInletCard(const DisplayModel &model)
                 "injection figures overflow their card");
 
   TFT_eSprite canvas(&tft_);
-  if (!CreateCanvas(canvas, kInletW, kCardH))
+  if (!CreateCanvas(canvas, kInletW, layout_->card_h))
   {
     return;
   }
   canvas.fillSprite(UiTheme::kBackground);
   // Outlined in the accent rather than the plain border: this is the card the
   // eye should land on first, and it is the only one whose figures are live.
-  DrawCard(canvas, 0, 0, kInletW, kCardH, UiTheme::kAccentDim);
+  DrawCard(canvas, 0, 0, kInletW, layout_->card_h, UiTheme::kAccentDim);
 
   DrawText(canvas, &Mono12B, UiTheme::kAccent, TC_DATUM, "INJECTION",
            kInletW / 2,
-           UiLayout::CapTop(kCardLabelY, kMono12BBaseline, kMono12BCapHeight));
+           UiLayout::CapTop(layout_->CardLabelY(), kMono12BBaseline, kMono12BCapHeight));
 
   DrawFigurePair(canvas, kInletW, &Mono26B, kMono26BAdvance, kMono26BBaseline,
                  kMono26BCapHeight, UiTheme::kAccent, model.inlet_temperature,
@@ -485,16 +512,16 @@ void TftDisplay::DrawTargetCard(const DisplayModel &model)
                 "setpoint figures overflow their card");
 
   TFT_eSprite canvas(&tft_);
-  if (!CreateCanvas(canvas, kTargetW, kCardH))
+  if (!CreateCanvas(canvas, kTargetW, layout_->card_h))
   {
     return;
   }
   canvas.fillSprite(UiTheme::kBackground);
-  DrawCard(canvas, 0, 0, kTargetW, kCardH, UiTheme::kBorder);
+  DrawCard(canvas, 0, 0, kTargetW, layout_->card_h, UiTheme::kBorder);
 
   DrawText(canvas, &Mono12B, UiTheme::kMuted, TC_DATUM, "CONSIGNE",
            kTargetW / 2,
-           UiLayout::CapTop(kCardLabelY, kMono12BBaseline, kMono12BCapHeight));
+           UiLayout::CapTop(layout_->CardLabelY(), kMono12BBaseline, kMono12BCapHeight));
 
   // Set in white rather than the accent: a setpoint is what was asked for, not
   // what is happening, and only the live card should pull the eye.
@@ -512,7 +539,7 @@ void TftDisplay::DrawStripCell(TFT_eSprite &canvas, int16_t x, const char *label
   static_assert(kLongestStripLabel * kMono12BAdvance <= kStripCellW - 2 * kPad,
                 "strip caption overflows its cell");
 
-  DrawCard(canvas, x, 0, kStripCellW, kStripH, UiTheme::kBorder);
+  DrawCard(canvas, x, 0, kStripCellW, layout_->strip_h, UiTheme::kBorder);
 
   const int16_t center = x + kStripCellW / 2;
   DrawText(canvas, &Mono12B, UiTheme::kMuted, TC_DATUM, label, center,
@@ -524,7 +551,7 @@ void TftDisplay::DrawStripCell(TFT_eSprite &canvas, int16_t x, const char *label
 void TftDisplay::DrawStrip(const DisplayModel &model)
 {
   TFT_eSprite canvas(&tft_);
-  if (!CreateCanvas(canvas, kWidth, kStripH))
+  if (!CreateCanvas(canvas, kWidth, layout_->strip_h))
   {
     return;
   }
@@ -573,14 +600,14 @@ void TftDisplay::DrawStrip(const DisplayModel &model)
   UiTheme::FormatTemperature(model.tank_temperature, text, sizeof(text));
   DrawStripCell(canvas, x3, "BALLON", text, water_color);
 
-  canvas.pushSprite(0, kStripY);
+  canvas.pushSprite(0, layout_->strip_y);
   canvas.deleteSprite();
 }
 
 void TftDisplay::DrawDeviceCell(TFT_eSprite &canvas, int16_t x, const char *label,
                                 const char *state, uint16_t pill_color)
 {
-  DrawCard(canvas, x, 0, kDeviceCellW, kDeviceH, UiTheme::kBorder);
+  DrawCard(canvas, x, 0, kDeviceCellW, layout_->device_h, UiTheme::kBorder);
 
   static_assert(kLongestDeviceLabel * kMono12BAdvance <= kDeviceCellW - 4,
                 "device caption overflows its cell");
@@ -588,15 +615,17 @@ void TftDisplay::DrawDeviceCell(TFT_eSprite &canvas, int16_t x, const char *labe
                 "device state word overflows its cell");
 
   const int16_t center = x + kDeviceCellW / 2;
-  DrawText(canvas, &Mono12B, UiTheme::kMuted, TC_DATUM, label, center, 40);
+  DrawText(canvas, &Mono12B, UiTheme::kMuted, TC_DATUM, label, center,
+           layout_->DeviceLabelY());
   DrawText(canvas, &Mono14B, pill_color, TC_DATUM, state, center,
-           UiLayout::CapTop(61, kMono14BBaseline, kMono14BCapHeight));
+           UiLayout::CapTop(layout_->DeviceStateY(), kMono14BBaseline,
+                            kMono14BCapHeight));
 }
 
 void TftDisplay::DrawDevices(const DisplayModel &model)
 {
   TFT_eSprite canvas(&tft_);
-  if (!CreateCanvas(canvas, kWidth, kDeviceH))
+  if (!CreateCanvas(canvas, kWidth, layout_->device_h))
   {
     return;
   }
@@ -621,7 +650,7 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
                  model.fan_cooling ? UiTheme::kWarn
                                    : (model.fan_on ? UiTheme::kOk : UiTheme::kNeutral));
   bool fan_visible = model.fan_on || (model.fan_cooling && blink_state_);
-  UiIcons::DrawFan(canvas, x1 + kDeviceCellW / 2, kIconCy,
+  UiIcons::DrawFan(canvas, x1 + kDeviceCellW / 2, layout_->IconCy(),
                    fan_visible ? UiTheme::kOk : UiTheme::kMuted,
                    UiTheme::kPanel, model.fan_on ? fan_angle_deg_ : 0.0f);
 
@@ -635,11 +664,11 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   uint16_t heat_color = model.electric_enabled && model.electric_on
                             ? UiTheme::kOk
                             : UiTheme::kMuted;
-  UiIcons::DrawHeat(canvas, x2 + kDeviceCellW / 2, kIconCy, heat_color,
+  UiIcons::DrawHeat(canvas, x2 + kDeviceCellW / 2, layout_->IconCy(), heat_color,
                     UiTheme::kPanel);
   if (!model.electric_enabled)
   {
-    UiIcons::DrawSlash(canvas, x2 + kDeviceCellW / 2, kIconCy, kHeatSlashR,
+    UiIcons::DrawSlash(canvas, x2 + kDeviceCellW / 2, layout_->IconCy(), kHeatSlashR,
                        UiTheme::kMuted);
   }
 
@@ -668,7 +697,7 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   DrawDeviceCell(canvas, x3, "EXTR.", text,
                  model.extraction_moving ? UiTheme::kWarn
                  : (model.damper_open ? UiTheme::kOk : UiTheme::kNeutral));
-  UiIcons::DrawExtraction(canvas, x3 + kDeviceCellW / 2, kIconCy,
+  UiIcons::DrawExtraction(canvas, x3 + kDeviceCellW / 2, layout_->IconCy(),
                           model.extraction_moving ? UiTheme::kWarn
                           : (model.damper_open ? UiTheme::kOk : UiTheme::kMuted),
                           UiTheme::kPanel);
@@ -683,18 +712,18 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
                  !recycling_fitted     ? UiTheme::kMuted
                  : model.recycling_moving ? UiTheme::kWarn
                  : (!model.damper_open ? UiTheme::kOk : UiTheme::kNeutral));
-  UiIcons::DrawRecycling(canvas, x4 + kDeviceCellW / 2, kIconCy,
+  UiIcons::DrawRecycling(canvas, x4 + kDeviceCellW / 2, layout_->IconCy(),
                          !recycling_fitted        ? UiTheme::kMuted
                          : model.recycling_moving ? UiTheme::kWarn
                          : (!model.damper_open ? UiTheme::kOk : UiTheme::kMuted),
                          UiTheme::kPanel);
   if (!recycling_fitted)
   {
-    UiIcons::DrawSlash(canvas, x4 + kDeviceCellW / 2, kIconCy, kRecycleSlashR,
+    UiIcons::DrawSlash(canvas, x4 + kDeviceCellW / 2, layout_->IconCy(), kRecycleSlashR,
                        UiTheme::kMuted);
   }
 
-  canvas.pushSprite(0, kDeviceY);
+  canvas.pushSprite(0, layout_->device_y);
   canvas.deleteSprite();
 }
 
@@ -773,6 +802,6 @@ void TftDisplay::DrawFanIcon(const DisplayModel &model)
                    model.fan_on ? fan_angle_deg_ : 0.0f);
 
   canvas.pushSprite(kMargin + kDeviceCellW / 2 - kFanBox / 2,
-                    kDeviceY + kIconCy - kFanBox / 2);
+                    layout_->device_y + layout_->IconCy() - kFanBox / 2);
   canvas.deleteSprite();
 }
