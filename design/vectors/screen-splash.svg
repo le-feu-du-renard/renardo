@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" font-family="'JetBrains Mono','SF Mono','Consolas',monospace">
+  <!--
+    Écran de démarrage, reconstruit depuis TftDisplay::ShowSplash() / ShowBootStage().
+    Simple fond + titre + sous-titre + ligne d'étape en bas, qui change pendant le boot.
+
+    Groupes utiles pour l'animation :
+      #boot-stage-text   texte à faire défiler (fondu) pour chaque étape de démarrage
+      #title-group       peut recevoir un léger fade/scale d'entrée
+  -->
+  <defs>
+    <style>
+      .bg      { fill:#0a1012; }
+      .c-accent{ fill:#3fe6d4; }
+      .c-muted { fill:#6f8a88; }
+      text { dominant-baseline:middle; text-anchor:middle; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="320" height="240"/>
+
+  <g id="title-group">
+    <text class="c-accent" x="160" y="108" font-size="17" font-weight="800" letter-spacing="1">SECHOIR PAYSAN</text>
+    <text class="c-muted" x="160" y="136" font-size="9" font-weight="600">par la Forge</text>
+  </g>
+
+  <g id="boot-stage">
+    <text id="boot-stage-text" class="c-muted" x="160" y="223" font-size="7.5" font-weight="600">Recherche du module hydraulique&#8230;</text>
+  </g>
+</svg>

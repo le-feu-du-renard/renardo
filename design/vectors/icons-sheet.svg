@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 60">
+  <!--
+    Planche des icônes d'état, isolées pour être animées / réutilisées seules
+    (repris depuis src/UiIcons.cpp : ventilateur, résistance, extraction,
+    recirculation, éco). Chaque icône est centrée dans une cellule de 40x40,
+    couleur = currentColor pour être réglée en CSS/JS au moment de l'usage.
+
+    Extraction et recirculation reprennent deux pictogrammes standards et
+    éprouvés plutôt que des formes dessinées à la main : une flèche sortante
+    (l'air quitte le circuit) et une double flèche en boucle façon
+    "actualiser" (l'air y reste). Lisibles côte à côte, sans ambiguïté avec
+    le logo recyclage.
+
+    #fan-blades tourne en continu (transform-origin au centre) quand la
+    ventilation est active ; les autres sont statiques mais peuvent recevoir
+    un fondu de couleur (vert/gris/ambre) selon l'état.
+  -->
+  <defs>
+    <style>
+      .cell-bg { fill:#121b1d; stroke:#1c2b2c; }
+      .icon    { fill:currentColor; }
+      .lbl { font-family:'JetBrains Mono','SF Mono','Consolas',monospace; font-size:5.4px; font-weight:700; fill:#6f8a88; text-anchor:middle; }
+    </style>
+
+    <symbol id="mi-extraction" viewBox="0 0 24 24">
+      <path d="M9,5v2h6.59L4,18.59L5.41,20L17,8.41V15h2V5H9z"/>
+    </symbol>
+    <symbol id="mi-recycle" viewBox="0 0 24 24">
+      <path d="M12,4V1L8,5l4,4V6c3.31,0,6,2.69,6,6c0,1.01-0.25,1.97-0.7,2.8l1.46,1.46C19.54,15.03,20,13.57,20,12C20,7.58,16.42,4,12,4z M6,12c0-1.01,0.25-1.97,0.7-2.8L5.24,7.74C4.46,8.97,4,10.43,4,12c0,4.42,3.58,8,8,8v3l4-4l-4-4v3c-3.31,0-6-2.69-6-6z"/>
+    </symbol>
+  </defs>
+
+  <rect x="0" y="0" width="260" height="60" fill="#0a1012"/>
+
+  <!-- ventilateur -->
+  <g transform="translate(20 18)">
+    <rect class="cell-bg" x="-20" y="-18" width="40" height="40" rx="5"/>
+    <g id="fan-blades" class="icon" style="color:#5bd97f">
+      <path d="M0,-1.2 C2.4,-3 4,-7.4 0,-10.6 C-4,-7.4 -2.4,-3 0,-1.2 Z"/>
+      <path d="M0,-1.2 C2.4,-3 4,-7.4 0,-10.6 C-4,-7.4 -2.4,-3 0,-1.2 Z" transform="rotate(90)"/>
+      <path d="M0,-1.2 C2.4,-3 4,-7.4 0,-10.6 C-4,-7.4 -2.4,-3 0,-1.2 Z" transform="rotate(180)"/>
+      <path d="M0,-1.2 C2.4,-3 4,-7.4 0,-10.6 C-4,-7.4 -2.4,-3 0,-1.2 Z" transform="rotate(270)"/>
+      <circle r="1.8"/>
+    </g>
+    <text class="lbl" x="0" y="16">VENTIL.</text>
+  </g>
+
+  <!-- résistance -->
+  <g transform="translate(72 18)">
+    <rect class="cell-bg" x="-20" y="-18" width="40" height="40" rx="5"/>
+    <path class="icon" style="color:#5bd97f" d="M2,-9 L-5.4,1.6 L-1,1.6 L-2.6,9 L5.6,-1.8 L1,-1.8 Z"/>
+    <text class="lbl" x="0" y="16">CHAUFF.</text>
+  </g>
+
+  <!-- extraction : flèche sortante -->
+  <g transform="translate(124 18)">
+    <rect class="cell-bg" x="-20" y="-18" width="40" height="40" rx="5"/>
+    <use href="#mi-extraction" class="icon" style="color:#ffb020" x="-10" y="-10" width="20" height="20"/>
+    <text class="lbl" x="0" y="16">EXTR.</text>
+  </g>
+
+  <!-- recirculation : double flèche en boucle -->
+  <g transform="translate(176 18)">
+    <rect class="cell-bg" x="-20" y="-18" width="40" height="40" rx="5"/>
+    <use href="#mi-recycle" class="icon" style="color:#5aa9e6" x="-10" y="-10" width="20" height="20"/>
+    <text class="lbl" x="0" y="16">RECIRC.</text>
+  </g>
+
+  <!-- éco : pas d'icône dans le firmware, seulement le mot "ECO" -->
+  <g transform="translate(228 18)">
+    <rect class="cell-bg" x="-20" y="-18" width="40" height="40" rx="5"/>
+    <text class="lbl" x="0" y="16" style="fill:#5bd97f;font-size:8px">ECO</text>
+  </g>
+</svg>

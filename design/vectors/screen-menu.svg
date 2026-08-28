@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" font-family="'JetBrains Mono','SF Mono','Consolas',monospace">
+  <!--
+    Écran de menu, reconstruit depuis src/MenuRenderer.cpp + src/MenuSystem.cpp.
+    En-tête (24px) + 7 lignes égales (28.857px) jusqu'au bandeau d'aide (226..240).
+    La ligne sélectionnée est une pastille pleine (accent-dim + contour accent),
+    même forme que les cartes du tableau de bord : les deux écrans doivent se
+    lire comme une seule interface.
+
+    Groupes utiles pour l'animation :
+      #cursor-pill      à faire glisser d'une ligne à l'autre (translate y)
+      #row-* / #value-* textes à faire défiler lors d'un changement de page
+      #edition-badge    à afficher seulement en mode édition
+  -->
+  <defs>
+    <style>
+      .bg        { fill:#0a1012; }
+      .panel-sunken { fill:#0e1618; }
+      .accent-dim{ fill:#1d4a45; }
+      .c-danger  { fill:#ff5a5a; }
+      .c-warn    { fill:#ffb020; }
+      .c-ok      { fill:#5bd97f; }
+      .c-accent  { fill:#3fe6d4; }
+      .c-muted   { fill:#6f8a88; }
+      .c-text    { fill:#e9f4f2; }
+      text { dominant-baseline:middle; }
+      .title { font-size:9.5px; font-weight:700; }
+      .row   { font-size:8.5px; font-weight:600; }
+      .rowb  { font-size:8.5px; font-weight:800; }
+      .hint  { font-size:6.6px; font-weight:700; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="320" height="240"/>
+
+  <!-- en-tête -->
+  <g id="menu-header">
+    <rect class="panel-sunken" x="0" y="0" width="320" height="24"/>
+    <line x1="0" y1="23.5" x2="320" y2="23.5" stroke="#1c2b2c" stroke-width="1"/>
+    <text id="menu-title" class="title c-accent" x="8" y="12">Menu</text>
+    <g id="edition-badge" opacity="0">
+      <text class="hint c-warn" x="312" y="12" text-anchor="end">EDITION</text>
+    </g>
+  </g>
+
+  <!-- lignes (7 x 28.857px, sous l'en-tête : de y=24 à y=226) -->
+  <g id="menu-rows">
+    <!-- ligne sélectionnée : pastille (ligne 2 = "Sources", top = 24 + 1*28.857) -->
+    <g id="cursor-pill" transform="translate(0 52.857)">
+      <rect x="4" y="1" width="312" height="26.857" rx="4" class="accent-dim"/>
+      <rect x="4" y="1" width="312" height="26.857" rx="4" fill="none" stroke="#3fe6d4" stroke-width="1"/>
+    </g>
+
+    <text class="row c-muted"  x="12" y="38.43">Consignes</text>
+
+    <text class="rowb c-text" x="12" y="67.29">Sources</text>
+
+    <text class="row c-muted"  x="12" y="96.14">Mode ECO</text>
+
+    <text class="row c-muted"  x="12" y="125.00">Phases</text>
+
+    <text class="row c-muted"  x="12" y="153.86">Regulation</text>
+
+    <text class="row c-muted"  x="12" y="182.71">Date / Heure</text>
+
+    <text class="row c-muted"  x="12" y="211.57">Systeme</text>
+
+    <!-- indicateur de défilement -->
+    <rect x="317" y="24" width="3" height="58" fill="#1c2b2c"/>
+  </g>
+
+  <!-- bandeau d'aide -->
+  <g id="menu-hint">
+    <rect class="panel-sunken" x="0" y="226" width="320" height="14"/>
+    <line x1="0" y1="226.5" x2="320" y2="226.5" stroke="#1c2b2c" stroke-width="1"/>
+    <text id="menu-hint-text" class="hint c-muted" x="160" y="233" text-anchor="middle">TOURNER naviguer - CLIC ouvrir</text>
+  </g>
+</svg>
