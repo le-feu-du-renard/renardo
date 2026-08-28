@@ -31,6 +31,7 @@ Environments defined in `platformio.ini`:
 | Environment | Target | Use |
 |-------------|--------|-----|
 | `pico` | Raspberry Pi Pico H | Main firmware |
+| `picow` | Raspberry Pi Pico **W** | Main firmware, plus the Grafana Cloud uplink |
 | `native` | Host machine (x86/x64) | Unit tests only |
 | `pin_test` | Raspberry Pi Pico H | Display wiring, one signal at a time |
 | `tft_test` | Raspberry Pi Pico H | Panel identification and test patterns |
@@ -48,6 +49,43 @@ uploaded by hand sits among the production sources. Each one has its own `main`
 and pulls in the handful of production files it exercises, named in its
 `build_src_filter`. What each proves, and how to read what it prints, is in
 [HARDWARE.md](HARDWARE.md) beside the part it tests.
+
+### The Pico W build
+
+`picow` is the same firmware with `DRYER_WIFI=1`. Everything under `src/` is
+compiled by both environments, and every file touching the radio guards its
+whole body with that flag, so the `pico` build is unaffected — there is no file
+list to keep in step by hand.
+
+It needs credentials, and it will not build without them:
+
+```bash
+cp include/secrets.h.example include/secrets.h
+$EDITOR include/secrets.h        # gitignored
+```
+
+There is deliberately no fallback. A secrets header that silently compiles
+empty is one that eventually ships.
+
+Even on that board the uplink is off until it is switched on, under
+**Systeme > Telemetrie**, where the same page carries the extension port's own
+switch and four read-only rows reporting the link. Nothing about the radio is
+load-bearing for regulation, and the whole pipeline runs on core 1: core 0 keeps
+the control loop, the screen and the watchdog, and never touches a socket.
+
+What it costs, measured:
+
+| | flash | RAM (static) |
+|---|---|---|
+| `pico` | 13.3 % | 6.7 % |
+| `picow` | 39.7 % | 51.7 % |
+
+The RAM figure is the one to watch. What is left has to carry both core stacks,
+the BearSSL handshake and the display's per-region sprites — the largest of
+which, the device row in the no-hydraulic layout, is 320x90x2 = 57 KB. A sprite
+that cannot be allocated is skipped with a warning rather than crashing, so a
+transient squeeze costs a frame, but the margin has not yet been measured on
+real hardware under a live TLS flush.
 
 ---
 

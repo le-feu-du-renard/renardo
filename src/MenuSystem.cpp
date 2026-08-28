@@ -10,6 +10,7 @@
 static DryerSettings *g_settings = nullptr;
 static bool           g_rtc_available = false;
 static bool           g_session_running_state = false;
+static bool (*g_telemetry_hook)(MenuTelemetryStatus &) = nullptr;
 
 // The wall clock lives in the RTC, not in the settings record, so the clock
 // page edits a staging copy and hands it back through these hooks. Function
@@ -23,6 +24,7 @@ static MenuClock g_clock_shown{2026, 1, 1, 0, 0}; // last read, shown as-is
 
 void MenuSetRtcAvailable(bool available) { g_rtc_available = available; }
 void MenuSetSessionRunning(bool running) { g_session_running_state = running; }
+void MenuSetTelemetryHook(bool (*read)(MenuTelemetryStatus &)) { g_telemetry_hook = read; }
 
 void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &))
 {
@@ -77,6 +79,66 @@ bool ProgramIsChangeable()
   return !g_session_running_state;
 }
 
+// The WiFi uplink only exists in a Pico W build. On a plain Pico the row is
+// greyed out like every other entry that cannot mean anything here — shown, so
+// it is clear the feature exists and this board does not have it, rather than
+// hidden, which would leave an operator wondering whether they had misremembered
+// the menu.
+bool WifiBuildAvailable()
+{
+  MenuTelemetryStatus status{};
+  return g_telemetry_hook != nullptr && g_telemetry_hook(status) && status.wifi_built;
+}
+
+// The four read-only rows. Each returns a dash rather than a zero when there is
+// nothing to report: a "0" for an unbuilt radio, an unassociated link or a queue
+// that has never been fed all look exactly like measurements.
+const char *WifiStateText()
+{
+  static char text[20];
+  MenuTelemetryStatus status{};
+  if (g_telemetry_hook == nullptr || !g_telemetry_hook(status) || !status.wifi_built)
+  {
+    snprintf(text, sizeof(text), "-");
+  }
+  else if (status.associated)
+  {
+    snprintf(text, sizeof(text), "%s", status.address);
+  }
+  else
+  {
+    snprintf(text, sizeof(text), "hors ligne");
+  }
+  return text;
+}
+
+const char *TelemetryQueueText()
+{
+  static char text[16];
+  MenuTelemetryStatus status{};
+  if (g_telemetry_hook == nullptr || !g_telemetry_hook(status) || !status.wifi_built)
+  {
+    snprintf(text, sizeof(text), "-");
+    return text;
+  }
+  snprintf(text, sizeof(text), "%u", (unsigned)status.queue_depth);
+  return text;
+}
+
+const char *TelemetrySentText()
+{
+  static char text[20];
+  MenuTelemetryStatus status{};
+  if (g_telemetry_hook == nullptr || !g_telemetry_hook(status) || !status.wifi_built)
+  {
+    snprintf(text, sizeof(text), "-");
+    return text;
+  }
+  snprintf(text, sizeof(text), "%lu / %lu", (unsigned long)status.written,
+           (unsigned long)status.failed);
+  return text;
+}
+
 // The recycling entries are greyed out, not hidden, on a dryer declaring a
 // single register — same rule as the ECO page without an RTC.
 bool SecondDamperFitted()
@@ -95,7 +157,8 @@ MenuItem g_eco_items[5];
 MenuItem g_phase_items[6];
 MenuItem g_control_items[8];
 MenuItem g_clock_items[8];
-MenuItem g_system_items[4];
+MenuItem g_system_items[5];
+MenuItem g_telemetry_items[6];
 MenuItem g_damper_items[13];
 MenuItem g_root_items[7];
 
@@ -106,7 +169,8 @@ MenuPage g_phase_page{"Phases", g_phase_items, 6};
 MenuPage g_control_page{"Regulation", g_control_items, 8};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
 MenuPage g_damper_page{"Registres", g_damper_items, 13};
-MenuPage g_system_page{"Systeme", g_system_items, 4};
+MenuPage g_system_page{"Systeme", g_system_items, 5};
+MenuPage g_telemetry_page{"Telemetrie", g_telemetry_items, 6};
 MenuPage g_root_page{"Menu", g_root_items, 7};
 
 MenuItem MakeValue(const char *label, MenuValueType type, void *binding,
@@ -509,11 +573,23 @@ void MenuSystem::Begin(DryerSettings *settings)
                                   DamperCommandAvailable);
   g_damper_items[12] = MakeBack();
 
+  // Two switches rather than one mode: the extension port and the WiFi uplink
+  // read the same telemetry record and neither knows about the other, so they
+  // are not alternatives and a four-way enum would imply they were.
+  g_telemetry_items[0] = MakeToggle("Extension RS485", &s.telemetry_rs485);
+  g_telemetry_items[1] = MakeToggle("WiFi Grafana", &s.telemetry_wifi,
+                                    "Actif", "Inactif", WifiBuildAvailable);
+  g_telemetry_items[2] = MakeInfo("Reseau", WifiStateText);
+  g_telemetry_items[3] = MakeInfo("File", TelemetryQueueText);
+  g_telemetry_items[4] = MakeInfo("Envois/ech.", TelemetrySentText);
+  g_telemetry_items[5] = MakeBack();
+
   g_system_items[0] = MakeSubmenu("Registres", &g_damper_page);
   g_system_items[1] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,
                                   LoadClockFromRtc);
-  g_system_items[2] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
-  g_system_items[3] = MakeBack();
+  g_system_items[2] = MakeSubmenu("Telemetrie", &g_telemetry_page);
+  g_system_items[3] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
+  g_system_items[4] = MakeBack();
 
   g_root_items[0] = MakeSubmenu("Consignes", &g_setpoint_page);
   g_root_items[1] = MakeSubmenu("Sources", &g_source_page);

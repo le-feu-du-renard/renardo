@@ -22,6 +22,18 @@
 #include "TimeManager.h"
 #include "Logger.h"
 
+#if DRYER_WIFI
+#include "WifiLink.h"
+#include "NtpClock.h"
+#include "GrafanaClient.h"
+#include "MetricSamples.h"
+#include "MetricCatalog.h"
+// Gitignored, and deliberately without a fallback: a secrets header that
+// silently compiles empty is one that eventually ships. Copy
+// include/secrets.h.example and fill it in.
+#include "secrets.h"
+#endif
+
 // ========== GLOBAL OBJECTS ==========
 
 // I2C bus (optional RTC DS1307). On i2c0 rather than i2c1 since the two damper
@@ -65,6 +77,16 @@ Dryer dryer;
 // the extension port. It publishes a coherent snapshot that Core 0 reads
 // without blocking.
 
+#if DRYER_WIFI
+// Core 1 gets its own 8 KB stack rather than sharing Core 0's split.
+//
+// BearSSL's handshake is the deepest call chain in this firmware by a wide
+// margin, and it runs here. Core 0's own budget is already spoken for by
+// TFT_eSPI and the menu, and a stack overflow between two cores sharing one
+// region is not a fault that reports itself — it is a corrupted neighbour.
+bool core1_separate_stack = true;
+#endif
+
 static SharedSensorState g_sensor_state;
 
 // The hydraulic run permission travels the other way, Core 0 -> Core 1. A
@@ -74,8 +96,28 @@ static SharedSensorState g_sensor_state;
 static volatile bool  g_hydraulic_demand = false;
 static volatile float g_water_target = WATER_TARGET_DEFAULT;
 
+// Which uplinks are switched on, Core 0 -> Core 1, and plain bools for the same
+// reason: a torn read costs one cycle of telemetry, which is not load-bearing
+// for anything. Core 0 always fills the telemetry record; these decide only who
+// consumes it, so switching one off never stops the other being fed.
+static volatile bool g_telemetry_rs485 = true;
+static volatile bool g_telemetry_wifi  = false;
+
 // Extension port, Core 0 -> Core 1: what to report on the next exchange.
 static Seqlock<ExtensionTelemetryRecord> g_extension_telemetry;
+
+#if DRYER_WIFI
+// The Grafana Cloud uplink, owned by Core 1 in its entirety.
+//
+// **Nothing here may run on Core 0.** That core carries the control loop, the
+// screen, the inputs and the 8 s watchdog's only kick; a TLS handshake anywhere
+// near it is a reboot waiting for a slow gateway. Core 1's own claim on the
+// two RS485 segments is protected by GRAFANA_FLUSH_BUDGET_MS and by publishing
+// the probe snapshot before any of this runs — see loop1().
+static WifiLink      wifi(WIFI_SSID, WIFI_PASSWORD);
+static NtpClock      ntp(NTP_SERVER);
+static GrafanaClient grafana(GRAFANA_URL, GRAFANA_AUTHORIZATION, GRAFANA_CA_CERT);
+#endif
 
 // Extension port, Core 1 -> Core 0: the command found in the mailbox, with the
 // verdict Core 1 reached on it. Validation happens on the bus side, execution on
@@ -108,7 +150,69 @@ void setup1()
   modbus_sensors.Begin();
   hydraulic_remote.Begin();
   extension.Begin();
+
+#if DRYER_WIFI
+  // Started here rather than in setup(), so the radio belongs to this core from
+  // the first instruction — and after g_core0_ready, so nothing about it can
+  // delay the regulation coming up. Begin() launches the association without
+  // waiting for it; loop1() carries the attempt.
+  if (g_telemetry_wifi)
+  {
+    grafana.Begin();
+    wifi.Begin();
+  }
+#endif
 }
+
+#if DRYER_WIFI
+// One pass of the uplink: keep the radio associated, keep the clock honest,
+// turn the latest telemetry record into samples, and flush when due.
+//
+// The switch is read every pass rather than at boot, so turning the uplink on
+// from the menu does not need a reboot — and turning it off stops the radio
+// being touched at all, which is what "optional" has to mean on a machine whose
+// job is regulation.
+static void UpdateWifiUplink()
+{
+  if (!g_telemetry_wifi) return;
+
+  const uint32_t now = millis();
+
+  wifi.Update(now);
+
+  // Idempotent, and only once there is a route: SNTP has nothing to send over
+  // an unassociated radio.
+  if (wifi.IsAssociated()) ntp.Begin();
+  ntp.Update(now);
+
+  static uint32_t last_sample_ms = 0;
+  if ((now - last_sample_ms) >= SAMPLE_INTERVAL_MS)
+  {
+    last_sample_ms = now;
+
+    // No honest timestamp, no sample. OTLP has no server-side "stamp on
+    // arrival", so a point sent before the clock is synchronised would land
+    // somewhere in 1970 and stay there.
+    if (ntp.IsSynced())
+    {
+      ExtensionTelemetryRecord telemetry;
+      g_extension_telemetry.Read(telemetry);
+
+      MetricSample batch[kMetricSamplesPerRecord];
+      const size_t count =
+          CollectMetricSamples(telemetry, ntp.NowUnixMs(), batch, kMetricSamplesPerRecord);
+      for (size_t i = 0; i < count; i++)
+      {
+        grafana.Enqueue(batch[i]);
+      }
+    }
+  }
+
+  // Stateless, and compiled rather than built: no RAM table to keep anywhere.
+  static const MetricCatalog catalog;
+  grafana.Update(now, wifi.IsAssociated(), ntp.IsSynced(), catalog);
+}
+#endif
 
 void loop1()
 {
@@ -139,19 +243,30 @@ void loop1()
   hydraulic_remote.SetDryerAirTemperature(inlet.valid ? inlet.temperature : NAN);
   hydraulic_remote.Update();
 
-  ExtensionTelemetryRecord telemetry;
-  g_extension_telemetry.Read(telemetry);
-  telemetry.ack_sequence = g_extension_ack_sequence;
-  telemetry.ack_result   = g_extension_ack_result;
-  extension.SetTelemetry(telemetry);
-
-  if (extension.Update())
+  if (g_telemetry_rs485)
   {
-    ExtensionRequest request;
-    request.command = extension.GetPendingCommand();
-    request.result  = extension.GetPendingResult();
-    g_extension_request.Publish(request);
+    ExtensionTelemetryRecord telemetry;
+    g_extension_telemetry.Read(telemetry);
+    telemetry.ack_sequence = g_extension_ack_sequence;
+    telemetry.ack_result   = g_extension_ack_result;
+    extension.SetTelemetry(telemetry);
+
+    if (extension.Update())
+    {
+      ExtensionRequest request;
+      request.command = extension.GetPendingCommand();
+      request.result  = extension.GetPendingResult();
+      g_extension_request.Publish(request);
+    }
   }
+
+#if DRYER_WIFI
+  // Last, and on this core rather than Core 0. Everything above has already
+  // run and, crucially, the inlet snapshot was published at the top of this
+  // pass — so the worst a flush can do is age that reading by
+  // GRAFANA_FLUSH_BUDGET_MS, half of what it takes Core 0 to block the heating.
+  UpdateWifiUplink();
+#endif
 
   delay(SENSOR_UPDATE_INTERVAL);
 }
@@ -551,10 +666,45 @@ static uint32_t last_display_update = 0;
 
 // Applied whenever the menu commits a value: push the record into the live
 // managers, then persist it.
+static void ApplyTelemetrySettings()
+{
+  g_telemetry_rs485 = settings.telemetry_rs485;
+#if DRYER_WIFI
+  g_telemetry_wifi = settings.telemetry_wifi;
+#else
+  // Nothing to switch on: the uplink is not in this binary. Left false so the
+  // stored setting travels between a Pico and a Pico W untouched rather than
+  // being helpfully cleared by whichever board read the record last.
+  (void)0;
+#endif
+}
+
+// What the Telemetrie page reports. The counters are Core 1's, read without a
+// lock: they are four independent scalars behind a menu row refreshed twice a
+// second, and a torn read shows one stale figure for one frame.
+static bool ReadTelemetryStatus(MenuTelemetryStatus &status)
+{
+#if DRYER_WIFI
+  status.wifi_built  = true;
+  status.associated  = wifi.IsAssociated();
+  status.address     = wifi.GetAddress();
+  status.queue_depth = grafana.GetQueueDepth();
+  status.written     = grafana.GetWrittenCount();
+  status.failed      = grafana.GetFailedCount();
+#else
+  // Not "nothing to report" — no radio to report about. The page prints dashes
+  // rather than a row of zeros that would read as a link sitting perfectly idle.
+  status.wifi_built = false;
+  status.address    = "";
+#endif
+  return true;
+}
+
 static void OnSettingsChanged()
 {
   dryer.ApplySettings(settings, g_rtc_available);
   g_water_target = settings.water_target;
+  ApplyTelemetrySettings();
   settings_store.SaveSettings(settings);
 }
 
@@ -935,6 +1085,7 @@ void setup()
   settings_store.Begin();
   settings_store.LoadSettings(settings);
   dryer.ApplySettings(settings, g_rtc_available);
+  ApplyTelemetrySettings();
   g_water_target = settings.water_target;
 
   // --- Probing done; everything below is bounded and fast ---
@@ -942,6 +1093,7 @@ void setup()
   Logger::Info("Watchdog enabled (%u s)", kRuntimeWatchdogMs / 1000);
 
   MenuSetRtcAvailable(g_rtc_available);
+  MenuSetTelemetryHook(ReadTelemetryStatus);
   MenuSetClockHooks(ReadRtcClock, WriteRtcClock);
   MenuSetDamperHooks(ReadDamperReadback, CommandDamper);
   menu.Begin(&settings);

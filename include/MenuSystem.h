@@ -55,6 +55,22 @@ void MenuSetRtcAvailable(bool available);
 // the phase machine is already inside a programme, and there is no sensible
 // answer to being asked to change it halfway.
 void MenuSetSessionRunning(bool running);
+
+// The uplink's own report, for the read-only rows of the Telemetrie page:
+// whether this build has a radio at all, and what it has been doing. `state` is
+// a short phrase, `detail` a figure — both are produced by main.cpp, which owns
+// WifiLink and GrafanaClient, so the menu stays as unaware of them as it is of
+// RTClib and of the ADC.
+struct MenuTelemetryStatus
+{
+  bool        wifi_built;   // false on a plain Pico: the rows say so rather than lying
+  bool        associated;
+  const char *address;      // empty when not associated
+  uint16_t    queue_depth;
+  uint32_t    written;
+  uint32_t    failed;
+};
+void MenuSetTelemetryHook(bool (*read)(MenuTelemetryStatus &));
 void MenuSetClockHooks(bool (*read)(MenuClock &), void (*write)(const MenuClock &));
 
 // `index` is 0 for the extraction register, 1 for the recycling one. The command
