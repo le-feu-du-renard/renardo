@@ -119,16 +119,6 @@ void DrawRecycling(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
   Draw(canvas, icon, cx, cy, color, background);
 }
 
-void DrawEco(TFT_eSprite &canvas, int16_t cx, int16_t cy, uint16_t color,
-             uint16_t background)
-{
-  static_assert(kEcoBox == kIconEcoBox,
-                "the eco badge size no longer matches the generated bitmap");
-
-  const Icon icon = {kIconEcoAlpha, kIconEcoBox, kIconEcoStride};
-  Draw(canvas, icon, cx, cy, color, background);
-}
-
 void DrawSlash(TFT_eSprite &canvas, int16_t cx, int16_t cy, int16_t radius,
                uint16_t color)
 {

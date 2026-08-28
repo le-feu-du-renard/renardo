@@ -393,14 +393,11 @@ void TftDisplay::DrawHeader(const DisplayModel &model)
   // enabled it should never have to learn what the corner means.
   if (model.eco_enabled)
   {
-    // A leaf, a gap, then the word, right-aligned on the margin. The phase name
-    // stops around x=117 and the centred clock ends at 192, so this corner was
-    // the one piece of the layout with nothing in it — and like every other
-    // text cell here, the compiler is the one that checks it still fits.
+    // The word, right-aligned on the margin. The phase name stops around
+    // x=117 and the centred clock ends at 192, so this corner was the one
+    // piece of the layout with nothing in it.
     constexpr int16_t kLabelChars = 3; // "ECO"
-    constexpr int16_t kLeafGap    = 4;
-    constexpr int16_t kBadgeX = kWidth - kPad - kLabelChars * kMono12BAdvance -
-                                kLeafGap - UiIcons::kEcoBox;
+    constexpr int16_t kBadgeX = kWidth - kPad - kLabelChars * kMono12BAdvance;
 
     static_assert(kBadgeX > kWidth / 2 + (8 * kMono14BAdvance) / 2,
                   "eco badge runs into the clock");
@@ -408,8 +405,6 @@ void TftDisplay::DrawHeader(const DisplayModel &model)
     const uint16_t eco_color =
         model.eco_window ? UiTheme::kOk : UiTheme::kNeutral;
 
-    UiIcons::DrawEco(canvas, kBadgeX + UiIcons::kEcoBox / 2, center, eco_color,
-                     UiTheme::kPanelSunken);
     DrawText(canvas, &Mono12B, eco_color, TR_DATUM, "ECO", kWidth - kPad,
              UiLayout::CapTop(center, kMono12BBaseline, kMono12BCapHeight));
   }

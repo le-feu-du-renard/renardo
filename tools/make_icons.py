@@ -71,18 +71,16 @@ FAN_SPAN_DEG = 90.0
 #
 # The names below are the Nerd Font glyph names, which is what to search the
 # cheat sheet for if one of these ever needs replacing:
-#   md-fan, md-flash, md-export, md-recycle, md-leaf
+#   md-fan, md-flash, md-export, md-recycle
 #
 # Box sizes come from the layout, not from the glyphs: a device cell is 74 px
 # wide and its icon band runs from the top of the cell to the caption at y=40,
-# so 23 to 26 px is what there is. The eco badge shares the 19 px header band
-# with the clock, hence 13.
+# so 23 to 26 px is what there is.
 ICONS = [
     ("Fan",     0xF0210, 26, FAN_FRAMES),  # ventilation, spins
     ("Heat",    0xF0241, 24, 1),           # electric heating, a bolt
     ("Extract", 0xF0207, 23, 1),           # extraction: air leaving a box
     ("Recycle", 0xF044C, 23, 1),           # recirculation: the recycling loop
-    ("Eco",     0xF032A, 13, 1),           # eco mode badge, a leaf
 ]
 
 # Proof sheet only: the real colours the panel uses, so the sheet shows what
