@@ -1,0 +1,22 @@
+// Trimmed from OpenTelemetry's own opentelemetry/proto/common/v1/common.proto
+// — only the AnyValue variant this firmware ever sends (string_value) and the
+// KeyValue wrapper. Field numbers match the real schema for the fields kept,
+// so a real OTLP receiver decodes this exactly as if the untrimmed message
+// had been sent with every other field left at its default.
+syntax = "proto3";
+
+package otlp;
+
+message AnyValue
+{
+  oneof value
+  {
+    string string_value = 1;
+  }
+}
+
+message KeyValue
+{
+  string    key   = 1;
+  AnyValue  value = 2;
+}

@@ -1,0 +1,14 @@
+// Trimmed from
+// opentelemetry/proto/collector/metrics/v1/metrics_service.proto — the
+// request only; this firmware never parses the response body, just the HTTP
+// status.
+syntax = "proto3";
+
+package otlp;
+
+import "metrics.proto";
+
+message ExportMetricsServiceRequest
+{
+  repeated ResourceMetrics resource_metrics = 1;
+}

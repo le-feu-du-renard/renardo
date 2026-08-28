@@ -27,3 +27,4 @@
 
 # Personal preferences (not versioned)
 .code-preferences
+include/secrets.h

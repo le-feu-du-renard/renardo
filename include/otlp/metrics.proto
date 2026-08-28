@@ -1,0 +1,50 @@
+// Trimmed from opentelemetry/proto/metrics/v1/metrics.proto — only the
+// Gauge shape (one instantaneous NumberDataPoint carrying a double), since
+// every telemetry field this firmware emits is a point-in-time reading, not
+// a running total. Sum, Histogram, ExponentialHistogram, Summary and every
+// field not listed below are left out entirely, and InstrumentationScope
+// (ScopeMetrics.scope, field 1) is never set. Field numbers match the real
+// schema for the fields kept, so a real OTLP receiver decodes this exactly
+// as if the untrimmed message had been sent with every other field left at
+// its default.
+syntax = "proto3";
+
+package otlp;
+
+import "common.proto";
+import "resource.proto";
+
+message NumberDataPoint
+{
+  repeated KeyValue attributes    = 7;
+  fixed64           time_unix_nano = 3;
+  oneof value
+  {
+    double as_double = 4;
+  }
+}
+
+message Gauge
+{
+  repeated NumberDataPoint data_points = 1;
+}
+
+message Metric
+{
+  string name = 1;
+  oneof data
+  {
+    Gauge gauge = 5;
+  }
+}
+
+message ScopeMetrics
+{
+  repeated Metric metrics = 2;
+}
+
+message ResourceMetrics
+{
+  Resource              resource      = 1;
+  repeated ScopeMetrics scope_metrics = 2;
+}

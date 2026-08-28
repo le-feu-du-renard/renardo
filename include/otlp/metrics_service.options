@@ -1,0 +1,2 @@
+# One resource_metrics entry: this board is one Resource.
+otlp.ExportMetricsServiceRequest.resource_metrics max_count:1

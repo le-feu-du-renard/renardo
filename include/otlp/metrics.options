@@ -1,0 +1,19 @@
+# nanopb bounds for otlp/metrics.proto. Fixed-size, no heap.
+
+# device + source — two attributes per data point.
+otlp.NumberDataPoint.attributes max_count:2
+# One point per Metric, mirroring RemoteWriteBuilder's one-TimeSeries-per-
+# sample approach: the simplest correct mapping, not the smallest request.
+otlp.Gauge.data_points          max_count:1
+# "<GRAFANA_METRIC_PREFIX>_extraction_position" is the longest metric name
+# this firmware emits at 26 characters for the default "dryer" prefix; 40
+# leaves headroom for a longer deployment-specific prefix.
+otlp.Metric.name                max_size:40
+
+# One Metric per queued MetricSample, so one export holds at most one full
+# queue's worth. Must equal GRAFANA_QUEUE_CAPACITY in include/config.h —
+# test_otlp_metrics_builder asserts the two cannot drift apart.
+otlp.ScopeMetrics.metrics       max_count:128
+
+# One resource (this board), one scope group within it.
+otlp.ResourceMetrics.scope_metrics max_count:1

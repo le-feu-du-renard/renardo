@@ -1,0 +1,13 @@
+// Trimmed from opentelemetry/proto/resource/v1/resource.proto — attributes
+// only, dropped_attributes_count (field 2) is not something this firmware
+// ever has a nonzero value for.
+syntax = "proto3";
+
+package otlp;
+
+import "common.proto";
+
+message Resource
+{
+  repeated KeyValue attributes = 1;
+}

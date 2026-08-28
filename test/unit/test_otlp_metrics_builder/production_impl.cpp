@@ -1,0 +1,6 @@
+#include "../../../src/otlp/common.pb.c"
+#include "../../../src/otlp/resource.pb.c"
+#include "../../../src/otlp/metrics.pb.c"
+#include "../../../src/otlp/metrics_service.pb.c"
+#include "../../../src/ExtensionProtocol.cpp"
+#include "../../../src/OtlpMetricsBuilder.cpp"

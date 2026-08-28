@@ -1,0 +1,8 @@
+# nanopb bounds for otlp/common.proto. Fixed-size, no heap.
+
+# The longest string_value this firmware ever sends is a metric name (see
+# metrics.options) — 40 is shared with Metric.name for the same reason.
+otlp.AnyValue.string_value max_size:40
+# Attribute keys this firmware ever emits: "device", "source",
+# "service.name" — none past 12 characters.
+otlp.KeyValue.key          max_size:16

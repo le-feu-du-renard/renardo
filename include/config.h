@@ -601,6 +601,82 @@
 // Set this to ~5–10°C above the maximum expected operating setpoint.
 #define TEMPERATURE_SAFETY_MAX 50.0f // °C
 
+// ========== WIFI AND GRAFANA CLOUD (Pico W only) ==========
+//
+// Compiled in only under DRYER_WIFI, which the picow environment sets — see
+// platformio.ini. Credentials are **not** in this file: include/secrets.h
+// carries them and is gitignored, include/secrets.h.example is the committed
+// shape.
+//
+// Nothing here is load-bearing for regulation, and the whole pipeline runs on
+// core 1 for that reason: core 0 owns the control loop, the screen and the
+// watchdog, and a TLS handshake has no business anywhere near any of them.
+#if DRYER_WIFI
+
+// Association is retried on a backoff rather than in a loop: an access point
+// that is off for the evening must not turn the board into a busy wait, and the
+// CYW43's scan is not free. Doubling from the first figure up to the second,
+// which is where it stays.
+#define WIFI_RETRY_MIN_MS 5000
+#define WIFI_RETRY_MAX_MS 120000
+
+// How long one association attempt may take before it is called failed. Waited
+// out across successive loop1() passes, never inside one — see WifiLink.h.
+#define WIFI_CONNECT_TIMEOUT_MS 15000
+
+// NTP, so samples carry a real Unix-ns timestamp: OTLP has no server-side
+// "stamp on arrival". The DS1307 is not used for it — it is optional, it has no
+// timezone, and a dryer whose RTC was never set would silently publish a year
+// of readings into 2000.
+#define NTP_SERVER "pool.ntp.org"
+
+// How often accumulated samples are flushed. A batch costs one TCP connection
+// and one HTTPS round trip, so batching is most of the difference between a
+// board that spends its time on the radio and one that spends it on sockets.
+//
+// 30 s rather than the extension board's 15: this core also owns both RS485
+// segments, and every flush is time the inlet probe is not being polled. See
+// GRAFANA_FLUSH_BUDGET_MS.
+#define GRAFANA_FLUSH_INTERVAL_MS 30000
+
+// The hard ceiling on one flush, applied to both the TLS client and the HTTP
+// client, so a slow gateway cannot become a stale probe.
+//
+// This is the number that keeps the radio out of the regulation. Core 1 polls
+// the inlet probe and publishes it before flushing, so the reading can age by
+// at most one budget — half of SENSOR_TIMEOUT_MS (10 s), past which core 0
+// blocks the heating. Raising this without raising that is how a dashboard
+// starts switching off a heater.
+#define GRAFANA_FLUSH_BUDGET_MS 5000
+
+// How many samples may queue up while the server is unreachable. When it is
+// full the oldest is dropped: the newest reading is the one worth having, and a
+// queue that grows without limit takes the board down at precisely the moment
+// it is already in trouble.
+//
+// Each queued sample becomes one Protobuf Metric at flush time, so this is a
+// real memory budget line. Must match otlp.ScopeMetrics.metrics's max_count in
+// include/otlp/metrics.options — test_otlp_metrics_builder asserts the two
+// cannot drift apart.
+#define GRAFANA_QUEUE_CAPACITY 128
+
+// The prefix every metric name carries, e.g. "dryer_inlet_temp". The other half
+// comes from DryerMetricIds.h through MetricCatalog.
+#define GRAFANA_METRIC_PREFIX "dryer"
+
+// The `device` attribute on every point. The same readings can reach Grafana by
+// two roads at once — straight off this radio, and relayed by the extension
+// board, which stamps device="2" source="rs485" — and they must not land in one
+// series claiming to be a measurement taken twice.
+#define GRAFANA_DEVICE_ID "1"
+
+// How often a stored sample becomes an OTLP point. Faster than this and the
+// dashboard gains nothing: the control loop runs at 1 s and the telemetry
+// record is rebuilt every 2 s.
+#define SAMPLE_INTERVAL_MS 10000
+
+#endif // DRYER_WIFI
+
 // ===== Dehumidifier Parameters =====
 //
 // A dehumidifier condenses the water out of the air instead of throwing the air
