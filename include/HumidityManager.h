@@ -31,16 +31,36 @@ public:
   bool SetMode(Mode mode);
   Mode GetMode() const { return mode_; }
 
-  // Hold the damper open regardless of mode, to shed heat while the dryer is
-  // riding out a fault it may yet be brought down by.
+  // Why the damper is being held open against what the mode wants.
   //
+  //   kPurge      a fault the session may yet be brought down by: heat off,
+  //               extraction open to shed it, because the safety cutoff is
+  //               reading the same dead probe the fault came from.
+  //   kOverheat   a dehumidifier's waste heat has carried the chamber past the
+  //               setpoint, and outside air is the only way back down.
+  //   kAirRenewal a dehumidifier has dried the air below the target, so there
+  //               is nothing left in it to condense; renewing brings damp air
+  //               back and the drying continues.
+  //
+  // Ranked, not a set: only one register and one command, so the question is
+  // never which of two reasons applies but which one is being answered. kPurge
+  // outranks the other two because it is the safety and they are the
+  // regulation.
+  enum class ForceOpen : uint8_t { kNone, kPurge, kOverheat, kAirRenewal };
+
   // An override above the mode rather than a mode of its own, because the mode
-  // belongs to the phase and the phase has not ended: the purge is a thing
-  // happening *to* a session, not a stage of one. Update() is a pure function
-  // of mode every cycle, so clearing this restores whatever the phase wanted
-  // with nothing to save and nothing to put back.
-  void SetPurge(bool purge);
-  bool IsPurging() const { return purge_; }
+  // belongs to the phase and the phase has not ended: none of these is a stage
+  // of a session, each is a thing happening *to* one. Update() is a pure
+  // function of the mode every cycle, so clearing this restores whatever the
+  // phase wanted with nothing to save and nothing to put back.
+  //
+  // Returns true when the reason actually changed, which is the caller's cue
+  // that the register is about to travel and the air behind the probe to be
+  // replaced — the same contract as SetMode(), and for the same reason.
+  bool      SetForceOpen(ForceOpen reason);
+  ForceOpen GetForceOpen() const { return force_open_; }
+  bool      IsForcedOpen() const { return force_open_ != ForceOpen::kNone; }
+  static const char *ForceOpenName(ForceOpen reason);
 
   // Set humidity threshold (%RH) — used for kThreshold mode and transition logic.
   void  SetTargetHumidity(float target);
@@ -56,8 +76,8 @@ public:
 private:
   AirDamper *air_damper_;
 
-  Mode     mode_;
-  bool     purge_;
+  Mode      mode_;
+  ForceOpen force_open_;
   float    target_humidity_;
   float    current_inlet_humidity_;
   uint32_t action_next_allowed_ms_;

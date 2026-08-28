@@ -47,6 +47,18 @@ namespace
 bool RtcPresent() { return g_rtc_available; }
 bool AlwaysAvailable() { return true; }
 
+// The hydraulic module's water setpoint is meaningless with the source switched
+// off, and the extraction threshold is meaningless without a dehumidifier.
+bool HydraulicEnabled()
+{
+  return g_settings != nullptr && g_settings->hydraulic_enabled;
+}
+
+bool DehumidifierFitted()
+{
+  return g_settings != nullptr && g_settings->heat_source == HEAT_SOURCE_DEHUMIDIFIER;
+}
+
 // The recycling entries are greyed out, not hidden, on a dryer declaring a
 // single register — same rule as the ECO page without an RTC.
 bool SecondDamperFitted()
@@ -60,20 +72,20 @@ bool SecondDamperFitted()
 // no heap. Bindings are filled in Begin(), once g_settings is known.
 
 MenuItem g_setpoint_items[4];
-MenuItem g_source_items[3];
+MenuItem g_source_items[4];
 MenuItem g_eco_items[5];
 MenuItem g_phase_items[5];
-MenuItem g_control_items[7];
+MenuItem g_control_items[8];
 MenuItem g_clock_items[8];
 MenuItem g_system_items[4];
 MenuItem g_damper_items[13];
 MenuItem g_root_items[7];
 
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
-MenuPage g_source_page{"Sources", g_source_items, 3};
+MenuPage g_source_page{"Sources", g_source_items, 4};
 MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Phases", g_phase_items, 5};
-MenuPage g_control_page{"Regulation", g_control_items, 7};
+MenuPage g_control_page{"Regulation", g_control_items, 8};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
 MenuPage g_damper_page{"Registres", g_damper_items, 13};
 MenuPage g_system_page{"Systeme", g_system_items, 4};
@@ -110,6 +122,38 @@ MenuItem MakeToggle(const char *label, bool *binding,
   item.false_label  = false_label;
   item.is_available = available;
   return item;
+}
+
+// A two-way choice over a uint8_t, rendered and operated exactly as a toggle:
+// one click flips it, the labels say which way. The binding is not a bool
+// because these are stored as enums — HEAT_SOURCE_*, DRYER_PROGRAM_* — and
+// widening them to a third case later should be a change to this call, not a
+// change to the record.
+MenuItem MakeChoice(const char *label, uint8_t *binding,
+                    const char *false_label, const char *true_label,
+                    bool (*available)() = AlwaysAvailable)
+{
+  MenuItem item{};
+  item.label        = label;
+  item.kind         = MenuItemKind::kValue;
+  item.value_type   = MenuValueType::kUint8;
+  item.binding      = binding;
+  item.min_value    = 0.0f;
+  item.max_value    = 1.0f;
+  item.step         = 1.0f;
+  item.true_label   = true_label;
+  item.false_label  = false_label;
+  item.is_available = available;
+  return item;
+}
+
+// Whether an entry is one of those: a value with two named states rather than a
+// range to scroll through. Asked of the labels rather than of the type, so a
+// bool and a two-way enum behave identically without the three places below
+// having to know which is which.
+bool IsTwoWayChoice(const MenuItem &item)
+{
+  return item.kind == MenuItemKind::kValue && item.true_label != nullptr;
 }
 
 MenuItem MakeSubmenu(const char *label, const MenuPage *page,
@@ -321,12 +365,18 @@ void MenuSystem::Begin(DryerSettings *settings)
                                   TARGET_HUM_MIN, TARGET_HUM_MAX, 1.0f, " %HR");
   g_setpoint_items[2] = MakeValue("Eau (module)", MenuValueType::kFloat,
                                   &s.water_target,
-                                  WATER_TARGET_MIN, WATER_TARGET_MAX, 1.0f, " C");
+                                  WATER_TARGET_MIN, WATER_TARGET_MAX, 1.0f, " C",
+                                  HydraulicEnabled);
   g_setpoint_items[3] = MakeBack();
 
-  g_source_items[0] = MakeToggle("Chauffage elec.", &s.electric_enabled);
-  g_source_items[1] = MakeToggle("Hydraulique", &s.hydraulic_enabled);
-  g_source_items[2] = MakeBack();
+  // What is on the command output comes before whether it is allowed to run:
+  // the toggle below means two different machines depending on this row, and
+  // reading them the other way round would be reading the answer first.
+  g_source_items[0] = MakeChoice("Type source", &s.heat_source,
+                                 "Chauf. elec", "Deshu.");
+  g_source_items[1] = MakeToggle("Source active", &s.electric_enabled);
+  g_source_items[2] = MakeToggle("Hydraulique", &s.hydraulic_enabled);
+  g_source_items[3] = MakeBack();
 
   // Every ECO entry depends on a wall clock, so all of them are greyed out
   // together when no RTC answered at boot.
@@ -367,7 +417,15 @@ void MenuSystem::Begin(DryerSettings *settings)
                                  &s.air_renewal_window, 0.0f, 600.0f, 30.0f, " s");
   g_control_items[5] = MakeValue("Securite max", MenuValueType::kFloat,
                                  &s.safety_max, 30.0f, 70.0f, 1.0f, " C");
-  g_control_items[6] = MakeBack();
+  // How far past the setpoint a dehumidifier's own waste heat may carry the
+  // chamber before the register opens to shed it. Nothing reads it with a
+  // resistance fitted, which sheds its heat by extracting as a matter of course.
+  g_control_items[6] = MakeValue("Seuil extract.", MenuValueType::kFloat,
+                                 &s.dehum_extraction_threshold,
+                                 DEHUM_EXTRACTION_THRESHOLD_MIN,
+                                 DEHUM_EXTRACTION_THRESHOLD_MAX, 0.5f, " C",
+                                 DehumidifierFitted);
+  g_control_items[7] = MakeBack();
 
   // These entries edit the staging copy, not the RTC: nothing reaches the chip
   // until "Valider". Like the ECO page, they all depend on the clock and are
@@ -643,9 +701,9 @@ void MenuSystem::Activate()
     break;
 
   case MenuItemKind::kValue:
-    if (item.value_type == MenuValueType::kBool)
+    if (IsTwoWayChoice(item))
     {
-      // A boolean has nothing to scroll through, so a click just flips it.
+      // Two named states have nothing to scroll through, so a click just flips.
       WriteBinding(item, ReadBinding(item) != 0.0f ? 0.0f : 1.0f);
       if (on_change_ != nullptr)
       {
@@ -765,7 +823,7 @@ void MenuSystem::AdjustValue(int32_t detents)
   }
 
   const MenuItem &item = page->items[Cursor()];
-  if (item.kind != MenuItemKind::kValue || item.value_type == MenuValueType::kBool)
+  if (item.kind != MenuItemKind::kValue || IsTwoWayChoice(item))
   {
     return;
   }
@@ -794,7 +852,7 @@ void MenuSystem::FormatItemValue(const MenuItem &item, char *out, size_t length)
     break;
 
   case MenuItemKind::kValue:
-    if (item.value_type == MenuValueType::kBool)
+    if (IsTwoWayChoice(item))
     {
       bool on = ReadBinding(item) != 0.0f;
       snprintf(out, length, "%s", on ? item.true_label : item.false_label);

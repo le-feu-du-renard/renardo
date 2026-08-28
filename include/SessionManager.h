@@ -93,6 +93,16 @@ private:
     void EnterPhase(DryerPhase phase);
     void CheckPhaseTransition(float current_temperature, float current_humidity);
 
+    // Whether the Extraction phase means anything on this machine.
+    //
+    // It does not with a dehumidifier fitted. Extraction throws the chamber's
+    // air away to take the moisture with it; a dehumidifier condenses that
+    // moisture out and keeps the air, so a phase that periodically empties the
+    // circuit is working against the machine rather than with it. Brassage then
+    // simply repeats, and the register is driven by Dryer::UpdateForcedOpen()
+    // on temperature and humidity instead of by the clock.
+    bool ExtractionIsUsed() const;
+
     // Command the damper and, when it actually moves, tell the regulation the
     // air is about to be renewed. Every movement the session asks for goes
     // through here so none of them is missed.

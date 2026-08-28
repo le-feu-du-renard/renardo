@@ -116,6 +116,12 @@ private:
   float inlet_temperature_;
   float inlet_humidity_;
 
+  // How far above the setpoint a dehumidifier may carry the chamber before the
+  // register opens to cool it. Held here rather than in TemperatureParams
+  // because it is a fact about the register, not about the heat source: what it
+  // sets is when the air path opens, and nothing in the heating law reads it.
+  float dehum_extraction_threshold_;
+
   uint32_t last_control_update_ms_;
   static constexpr uint32_t kControlIntervalMs = CONTROL_LOOP_INTERVAL;
 
@@ -128,6 +134,12 @@ private:
 
   void UpdateControl();
   void UpdateFaultResponse();
+
+  // Whether a dehumidifier's register is being held open, and why — too hot, or
+  // too dry. See the definition; both are air renewals, and neither exists with
+  // a resistance fitted.
+  void UpdateForcedOpen();
+
   void EndPurge();
 };
 

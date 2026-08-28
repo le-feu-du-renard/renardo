@@ -5,7 +5,10 @@ TemperatureManager::TemperatureManager(ElectricHeater *electric_heater)
     : electric_heater_(electric_heater),
       params_(),
       current_temperature_(0.0f),
+      current_humidity_(NAN),
+      target_humidity_(0.0f),
       last_update_ms_(0),
+      heat_source_(static_cast<HeatSourceType>(HEAT_SOURCE_DEFAULT)),
       hydraulic_online_(false),
       hydraulic_enabled_(HYDRAULIC_ENABLED_DEFAULT),
       electric_enabled_(ELECTRIC_ENABLED_DEFAULT),
@@ -36,9 +39,10 @@ void TemperatureManager::Begin()
   Logger::Info("  air renewal window: %Fs", params_.air_renewal_window);
 }
 
-void TemperatureManager::Update(float current_temperature)
+void TemperatureManager::Update(float current_temperature, float current_humidity)
 {
   current_temperature_ = current_temperature;
+  current_humidity_    = current_humidity;
 
   uint32_t now = millis();
   float dt = (now - last_update_ms_) / 1000.0f;
@@ -68,6 +72,53 @@ void TemperatureManager::ForceAllOff()
   SetElectric(false);
   hydraulic_demand_ = false;
   electric_heater_->SetPower(0.0f);
+}
+
+float TemperatureManager::HumidityError() const
+{
+  if (target_humidity_ <= 0.0f) return NAN;
+  if (isnan(current_humidity_)) return NAN;
+  return current_humidity_ - target_humidity_;
+}
+
+// Should an idle source start? The band is the same figure under both laws —
+// it is the hysteresis the machine is allowed, not a property of what makes
+// the heat.
+bool TemperatureManager::SourceWanted(float error) const
+{
+  bool too_cold = error > params_.band_electric;
+  if (heat_source_ != HeatSourceType::kDehumidifier) return too_cold;
+
+  // A dehumidifier answers two calls, and either is enough. It is asked for
+  // both the water it removes and the heat that removal happens to produce.
+  float humidity_error = HumidityError();
+  bool  too_humid = !isnan(humidity_error) && humidity_error > DEHUM_HUMIDITY_BAND;
+  return too_humid || too_cold;
+}
+
+// Should a running source stop? Only when nothing is still asking for it.
+bool TemperatureManager::SourceSatisfied(float error, float temperature,
+                                         float setpoint, bool air_renewal) const
+{
+  if (heat_source_ == HeatSourceType::kDehumidifier)
+  {
+    // Both calls have to be answered, so an unsatisfied humidity holds a
+    // dehumidifier on past its temperature setpoint — which is exactly the case
+    // the extraction threshold exists to catch, in the register rather than
+    // here. There is no predictive shutoff: it is calibrated on the thermal
+    // step of a resistance, and a compressor whose heat is a by-product does
+    // not produce one.
+    float humidity_error = HumidityError();
+    bool  dry_enough = isnan(humidity_error) || humidity_error <= 0.0f;
+    return dry_enough && error <= 0.0f;
+  }
+
+  // Suspended for the air-renewal window. The recovery ramp once the register
+  // shuts is far steeper than any approach to setpoint the horizon was sized
+  // for, and reading it as an impending overshoot cuts the heater degrees short.
+  bool overshoot = !air_renewal && WillOvershoot(temperature, setpoint,
+                                                 params_.horizon_electric);
+  return error <= 0.0f || overshoot;
 }
 
 bool TemperatureManager::WillOvershoot(float temperature, float setpoint, float horizon) const
@@ -150,7 +201,14 @@ void TemperatureManager::UpdateHeating(float dt)
   // flag restate what the availability check already says.
   hydraulic_demand_ = hydraulic_enabled_;
 
-  // --- Electric: fine trim, narrow band, fast cycling ---
+  // --- The commanded source: narrow band, anti-short-cycle either side ---
+  //
+  // The timers and the interlocks are written once and hold under both laws.
+  // Only the two questions in the middle differ; see SourceWanted() and
+  // SourceSatisfied(). The minimum times matter more with a dehumidifier than
+  // they ever did with a resistance — a compressor short-cycled is a compressor
+  // damaged, where a heating element merely wastes a little.
+  const char *source = IsDehumidifier() ? "dehumidifier" : "electric";
   if (!elec_usable)
   {
     SetElectric(false);
@@ -161,24 +219,21 @@ void TemperatureManager::UpdateHeating(float dt)
     // front arriving is exactly when the heater is wanted, and making it sit out
     // a minute first is how the transient turns into a sag.
     bool off_time_met = air_renewal || elec_off_timer_ >= params_.electric_t_off_min;
-    if (off_time_met && error > params_.band_electric)
+    if (off_time_met && SourceWanted(error))
     {
       SetElectric(true);
-      Logger::Info("TempMgr: electric -> ON (err=%F%s)", error,
-                   air_renewal ? " air-renewal" : "");
+      Logger::Info("TempMgr: %s -> ON (err=%F rh_err=%F%s)", source, error,
+                   HumidityError(), air_renewal ? " air-renewal" : "");
     }
   }
   else
   {
-    // Suspended for the same window. The recovery ramp once the register shuts
-    // is far steeper than any approach to setpoint the horizon was sized for,
-    // and reading it as an impending overshoot cuts the heater degrees short.
-    bool overshoot = !air_renewal && WillOvershoot(T, setpoint, params_.horizon_electric);
-    if (elec_on_timer_ >= params_.electric_t_on_min && (error <= 0.0f || overshoot))
+    if (elec_on_timer_ >= params_.electric_t_on_min &&
+        SourceSatisfied(error, T, setpoint, air_renewal))
     {
       SetElectric(false);
-      Logger::Info("TempMgr: electric -> OFF (err=%F dT=%F overshoot=%d)",
-                   error, dT_dt_, (int)overshoot);
+      Logger::Info("TempMgr: %s -> OFF (err=%F rh_err=%F dT=%F)", source, error,
+                   HumidityError(), dT_dt_);
     }
   }
 
@@ -207,7 +262,7 @@ void TemperatureManager::UpdateHeating(float dt)
   {
     debug_log_timer_s_ = 0.0f;
     Logger::Info("TempMgr: [%s] sp=%FC T=%FC err=%F dT=%F/s hydro=%s elec=%s%s",
-                 GetControlStateName(control_state_), setpoint, T, error, dT_dt_,
+                 GetControlStateName(), setpoint, T, error, dT_dt_,
                  hydraulic_demand_ ? "RUN" : "OFF", electric_on_ ? "ON" : "OFF",
                  air_renewal ? " [air renewal]" : "");
     Logger::Debug("TempMgr: elec_on=%Fs elec_off=%Fs renewal=%Fs",
@@ -224,6 +279,46 @@ const char *TemperatureManager::GetControlStateName(ControlState state)
   case ControlState::ELECTRIC_ONLY:      return "ELEC_ONLY";
   default:                               return "OFF";
   }
+}
+
+// The enum names the *slot*, this names what is in it. Splitting them keeps
+// ControlState a statement about which sources are usable — which does not
+// change when a dehumidifier is fitted in the resistance's place — while the
+// log and the screen still say which machine is actually running.
+const char *TemperatureManager::GetControlStateName() const
+{
+  if (!IsDehumidifier()) return GetControlStateName(control_state_);
+  switch (control_state_)
+  {
+  case ControlState::HYDRAULIC_ELECTRIC: return "HYDRO+DESHU";
+  case ControlState::HYDRAULIC_ONLY:     return "HYDRO_ONLY";
+  case ControlState::ELECTRIC_ONLY:      return "DESHU_ONLY";
+  default:                               return "OFF";
+  }
+}
+
+void TemperatureManager::SetTargetHumidity(float humidity)
+{
+  humidity = constrain(humidity, 0.0f, 100.0f);
+  if (fabsf(humidity - target_humidity_) < 0.5f) return;
+  target_humidity_ = humidity;
+}
+
+void TemperatureManager::SetHeatSource(HeatSourceType source)
+{
+  if (heat_source_ == source) return;
+  heat_source_ = source;
+
+  // Cut at once rather than on the next tick. The two laws have nothing to hand
+  // over to each other, and a compressor left energised across the change would
+  // be running under a law that is no longer the one that started it. The
+  // anti-short-cycle timers are preserved: whatever is on that output has just
+  // been switched, and the next law does not get to pretend otherwise.
+  SetElectric(false);
+  electric_heater_->SetPower(0.0f);
+
+  Logger::Info("TemperatureManager: heat source -> %s",
+               IsDehumidifier() ? "dehumidifier" : "electric");
 }
 
 void TemperatureManager::NotifyAirRenewal()
@@ -257,7 +352,7 @@ void TemperatureManager::ResetControl()
 void TemperatureManager::PrintDebug() const
 {
   Logger::Info("[TempMgr] state=%s T=%FC sp=%FC dT=%F/s | hydro=%s | elec=%s on=%Fs off=%Fs | renewal=%Fs",
-               GetControlStateName(control_state_), current_temperature_,
+               GetControlStateName(), current_temperature_,
                GetEffectiveTargetTemperature(), dT_dt_,
                hydraulic_demand_ ? "RUN" : "OFF",
                electric_on_ ? "ON" : "OFF", elec_on_timer_, elec_off_timer_,

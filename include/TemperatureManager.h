@@ -11,9 +11,22 @@ enum class OperatingMode : uint8_t
   PERFORMANCE = 1,  // Full target at all times
 };
 
-// Which heat sources are usable this cycle. Reporting only — the electric is
-// the one source regulated here, and the hydraulic is not regulated at all, so
-// there is no mode to switch between.
+// What is wired to the command output on OUT_ELECTRIC_PIN.
+//
+// One relay drives either, so this is a setting rather than a second pin — and
+// it is not a preference. The two dry by opposite means: a resistance heats air
+// that is then thrown away carrying the moisture with it, a dehumidifier
+// condenses the moisture out and keeps the air. Everything downstream follows,
+// including which way the register earns its movements.
+enum class HeatSourceType : uint8_t
+{
+  kElectric      = HEAT_SOURCE_ELECTRIC,
+  kDehumidifier  = HEAT_SOURCE_DEHUMIDIFIER,
+};
+
+// Which heat sources are usable this cycle. Reporting only — the commanded
+// source is the one regulated here, and the hydraulic is not regulated at all,
+// so there is no mode to switch between.
 enum class ControlState : uint8_t
 {
   OFF                = 0,  // no source usable (fault, safety, fan off, all disabled)
@@ -83,11 +96,32 @@ public:
   explicit TemperatureManager(ElectricHeater *electric_heater);
 
   void Begin();
-  void Update(float current_temperature);
+
+  // Both readings, because with a dehumidifier fitted the humidity is a control
+  // input here and not only a transition test: the machine's whole reason to run
+  // is the water in the air, and the heat is a by-product. With a resistance the
+  // humidity is ignored, and the law is unchanged from the one that has always
+  // been here.
+  void Update(float current_temperature, float current_humidity);
 
   // Temperature target (set from the menu)
   void  SetTargetTemperature(float temperature);
   float GetTargetTemperature() const { return params_.temperature_target; }
+
+  // Humidity target, %RH — the same figure HumidityManager holds, pushed here
+  // so the dehumidifier's demand can be decided in one place with the rest of
+  // the source law. Zero means no humidity target is set, and the dehumidifier
+  // then runs on temperature alone.
+  void  SetTargetHumidity(float humidity);
+  float GetTargetHumidity() const { return target_humidity_; }
+
+  // What is wired to the command output. Switching it cuts the source at once:
+  // the two laws have nothing to hand over to each other, and leaving a
+  // compressor energised across the change would be running it under a law that
+  // is no longer the one that started it.
+  void           SetHeatSource(HeatSourceType source);
+  HeatSourceType GetHeatSource() const { return heat_source_; }
+  bool IsDehumidifier() const { return heat_source_ == HeatSourceType::kDehumidifier; }
 
   // Returns the currently active setpoint (reduced during the ECO night window)
   float GetEffectiveTargetTemperature() const;
@@ -138,6 +172,11 @@ public:
   ControlState GetControlState() const { return control_state_; }
   static const char *GetControlStateName(ControlState state);
 
+  // The same state, named for what is actually fitted: "DESHU_ONLY" rather than
+  // "ELEC_ONLY" when the output drives a dehumidifier. The enum names the slot
+  // and does not change; this names its occupant.
+  const char *GetControlStateName() const;
+
   // Operating mode (ECO requires an RTC; forced to PERFORMANCE without one)
   void          SetOperatingMode(OperatingMode mode);
   OperatingMode GetOperatingMode() const { return operating_mode_; }
@@ -176,7 +215,11 @@ private:
   TemperatureParams params_;
 
   float    current_temperature_;
+  float    current_humidity_;
+  float    target_humidity_;
   uint32_t last_update_ms_;
+
+  HeatSourceType heat_source_;
 
   bool hydraulic_online_;   // remote module reachable
   bool hydraulic_enabled_;  // menu toggle
@@ -213,6 +256,25 @@ private:
   // True when the temperature is rising fast enough that it would overshoot
   // the setpoint within `horizon` seconds if the source kept running.
   bool WillOvershoot(float temperature, float setpoint, float horizon) const;
+
+  // The two halves of the source law, split so the anti-short-cycle timers and
+  // the interlocks around them are written once and mean the same thing under
+  // either source.
+  //
+  //   SourceWanted    should an idle source start?
+  //   SourceSatisfied should a running source stop?
+  //
+  // Not each other's negation, and deliberately so: between them lies the
+  // hysteresis band, which is the whole point.
+  bool SourceWanted(float error) const;
+  bool SourceSatisfied(float error, float temperature, float setpoint,
+                       bool air_renewal) const;
+
+  // Humidity above target, %RH, positive when there is water to remove. NAN
+  // when no target is set or the reading is unusable — which a dehumidifier
+  // reads as "no humidity demand", degrading it to a heater rather than leaving
+  // it running against a number that is not there.
+  float HumidityError() const;
 
   void UpdateHeating(float dt);
 };

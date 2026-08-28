@@ -657,6 +657,7 @@ static void UpdateDisplay()
   model.fan_cooling       = !dryer.IsRunning() && dryer.GetFanOutput() > 0.0f;
   model.electric_on       = temperature_manager->GetElectricOn();
   model.electric_enabled  = temperature_manager->GetElectricEnabled();
+  model.heat_source       = static_cast<uint8_t>(temperature_manager->GetHeatSource());
   model.damper_open          = damper->IsOpen();
   model.extraction_position  = damper->Extraction().GetPositionPercent();
   model.extraction_moving    = damper->Extraction().IsMoving();

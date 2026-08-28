@@ -39,11 +39,25 @@ struct Harness
     manager.SetHydraulicOnline(hydraulic_online);
   }
 
+  // Fit a dehumidifier to the command output instead of a resistance, and give
+  // it a humidity target to work against.
+  void ArmDehumidifier(float target_humidity)
+  {
+    Arm();
+    manager.SetHeatSource(HeatSourceType::kDehumidifier);
+    manager.SetTargetHumidity(target_humidity);
+  }
+
+  // The humidity fed to every tick. NAN is the default so the electric tests,
+  // which predate the reading existing, drive the manager exactly as they did:
+  // no target, no reading, no humidity demand.
+  float humidity = NAN;
+
   // Advance the clock by `seconds` and run one control tick at `temperature`.
   void Tick(float temperature, uint32_t seconds = 1)
   {
     TestAdvanceMillis(seconds * 1000);
-    manager.Update(temperature);
+    manager.Update(temperature, humidity);
   }
 
   // Hold a steady temperature for `seconds`, one tick per second.
@@ -53,6 +67,13 @@ struct Harness
     {
       Tick(temperature, 1);
     }
+  }
+
+  // Hold both readings steady for `seconds`.
+  void Hold(float temperature, float inlet_humidity, uint32_t seconds)
+  {
+    humidity = inlet_humidity;
+    Hold(temperature, seconds);
   }
 };
 
@@ -547,6 +568,164 @@ void test_air_renewal_window_expires_while_heating_is_blocked(void)
   TEST_ASSERT_EQUAL_FLOAT(0.0f, h.manager.GetAirRenewalRemaining());
 }
 
+// --- The dehumidifier source ------------------------------------------------
+//
+// Same output, same anti-short-cycle timers, same interlocks — a different
+// question in the middle. A resistance is asked for heat; a dehumidifier is
+// asked for both the water it removes and the heat that removal happens to
+// produce, and either call is enough to start it.
+
+void test_dehumidifier_runs_on_humidity_alone(void)
+{
+  // At setpoint, so nothing is asking for heat. The water in the air is.
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(40.0f, 70.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_dehumidifier_runs_on_temperature_alone(void)
+{
+  // Dry enough, and cold. It is a heater too, and that is the whole reason the
+  // overheat threshold on the register has to exist.
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(30.0f, 20.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_dehumidifier_stops_only_when_both_are_satisfied(void)
+{
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  // Running on both calls.
+  h.Hold(30.0f, 70.0f, (uint32_t)CTRL_T_ON_MIN + 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // Temperature reached, humidity not: it keeps going, past its setpoint. This
+  // is the case the extraction threshold answers, in the register rather than
+  // here.
+  h.Hold(41.0f, 70.0f, 10);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // Humidity reached, temperature not: still going.
+  h.Hold(30.0f, 40.0f, 10);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // Both. Now it stops.
+  h.Hold(41.0f, 40.0f, 10);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+}
+
+void test_dehumidifier_has_no_predictive_shutoff(void)
+{
+  // The prediction is calibrated on the thermal step of a resistance. A
+  // compressor whose heat is a by-product does not produce one, so a steep rise
+  // towards the setpoint must not cut it short — the same ramp that fires the
+  // shutoff for an electric source.
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.humidity = 70.0f;
+  h.Hold(30.0f, (uint32_t)CTRL_T_ON_MIN + 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  // 0.5 C/s, far past CTRL_DT_PREDICT_MIN and enough to clear the horizon.
+  for (int i = 0; i < 10; i++)
+  {
+    h.Tick(30.0f + 0.5f * (i + 1), 1);
+  }
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_dehumidifier_without_a_humidity_target_is_a_heater(void)
+{
+  // Zero is the "no target set" convention the rest of the firmware uses. A
+  // dehumidifier reading it as "remove everything" would never stop.
+  Harness h;
+  h.ArmDehumidifier(0.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(41.0f, 90.0f, (uint32_t)CTRL_T_ON_MIN + 10);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+}
+
+void test_dehumidifier_with_a_dead_humidity_reading_is_a_heater(void)
+{
+  // Degrades to a heater rather than running against a number that is not
+  // there. The temperature interlocks are untouched and still govern it.
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(41.0f, NAN, (uint32_t)CTRL_T_ON_MIN + 10);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  h.Hold(30.0f, NAN, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_safety_cutoff_stops_a_dehumidifier_mid_demand(void)
+{
+  // The humidity call does not outrank the safety maximum. Nothing about the
+  // source changes what the cutoff is for.
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(30.0f, 90.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  h.Hold(TEMPERATURE_SAFETY_MAX + 1.0f, 90.0f, 2);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+  TEST_ASSERT_FALSE(h.manager.GetHydraulicDemand());
+}
+
+void test_dehumidifier_respects_the_minimum_off_time(void)
+{
+  // More important here than it ever was with a resistance: a compressor
+  // short-cycled is a compressor damaged.
+  Harness h;
+  h.ArmDehumidifier(50.0f);
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(30.0f, 70.0f, (uint32_t)CTRL_T_ON_MIN + 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  h.Hold(41.0f, 40.0f, 5);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  // Both calls come back at once, and it still has to sit out the off time.
+  h.Hold(30.0f, 90.0f, (uint32_t)CTRL_T_OFF_MIN - 10);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+
+  h.Hold(30.0f, 90.0f, 15);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+}
+
+void test_switching_the_source_cuts_the_output(void)
+{
+  // The two laws have nothing to hand over to each other. Leaving a compressor
+  // energised across the change would be running it under a law that is no
+  // longer the one that started it.
+  Harness h;
+  h.Arm();
+  h.manager.SetTargetTemperature(40.0f);
+
+  h.Hold(30.0f, 5);
+  TEST_ASSERT_TRUE(h.manager.GetElectricOn());
+
+  h.manager.SetHeatSource(HeatSourceType::kDehumidifier);
+  TEST_ASSERT_FALSE(h.manager.GetElectricOn());
+}
+
 // --- Session start ----------------------------------------------------------
 
 void test_reset_control_clears_everything(void)
@@ -611,6 +790,16 @@ int main(int argc, char **argv)
   RUN_TEST(test_air_renewal_window_expires_while_heating_is_blocked);
 
   // Session start
+  RUN_TEST(test_dehumidifier_runs_on_humidity_alone);
+  RUN_TEST(test_dehumidifier_runs_on_temperature_alone);
+  RUN_TEST(test_dehumidifier_stops_only_when_both_are_satisfied);
+  RUN_TEST(test_dehumidifier_has_no_predictive_shutoff);
+  RUN_TEST(test_dehumidifier_without_a_humidity_target_is_a_heater);
+  RUN_TEST(test_dehumidifier_with_a_dead_humidity_reading_is_a_heater);
+  RUN_TEST(test_safety_cutoff_stops_a_dehumidifier_mid_demand);
+  RUN_TEST(test_dehumidifier_respects_the_minimum_off_time);
+  RUN_TEST(test_switching_the_source_cuts_the_output);
+
   RUN_TEST(test_reset_control_clears_everything);
 
   return UNITY_END();

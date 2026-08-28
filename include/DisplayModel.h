@@ -49,6 +49,11 @@ struct DisplayModel
   bool fan_cooling;         // post-stop cooldown: icon blinks
   bool electric_on;
   bool electric_enabled;
+  // What is wired to that output — HEAT_SOURCE_ELECTRIC or
+  // HEAT_SOURCE_DEHUMIDIFIER. It changes the caption and nothing else, but the
+  // caption is the only thing on screen saying which machine the ON belongs to,
+  // and the two are not interchangeable to anyone standing in front of it.
+  uint8_t heat_source;
   bool damper_open;         // commanded air path: true = extraction
   // Measured opening of each register, %, NAN when there is no usable feedback.
   // Both are shown at once: the two registers are asymmetric, so one figure
@@ -102,6 +107,7 @@ struct DisplayModel
         fan_cooling(false),
         electric_on(false),
         electric_enabled(false),
+        heat_source(0),
         damper_open(false),
         extraction_position(NAN),
         extraction_moving(false),

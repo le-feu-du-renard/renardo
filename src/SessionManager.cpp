@@ -153,6 +153,11 @@ void SessionManager::SetDamperMode(HumidityManager::Mode mode)
   }
 }
 
+bool SessionManager::ExtractionIsUsed() const
+{
+  return !temperature_manager_->IsDehumidifier();
+}
+
 void SessionManager::CheckPhaseTransition(float current_temperature, float current_humidity)
 {
   uint32_t elapsed = GetPhaseElapsedTime();
@@ -161,8 +166,10 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
   {
     case DryerPhase::kInit:
     {
-      // Humidity check: if target reached, extract within init or transition to Extraction
-      if (user_target_humidity_ > 0.0f)
+      // Humidity check: if target reached, extract within init or transition to
+      // Extraction. Skipped entirely with a dehumidifier fitted, which has no
+      // use for either — see ExtractionIsUsed().
+      if (user_target_humidity_ > 0.0f && ExtractionIsUsed())
       {
         if (init_extraction_end_ms_ != 0)
         {
@@ -205,6 +212,11 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
     }
 
     case DryerPhase::kBrassage:
+      // With a dehumidifier there is nowhere to go: Brassage is the whole
+      // running state, and the register answers to temperature and humidity
+      // rather than to the phase clock.
+      if (!ExtractionIsUsed()) break;
+
       if (user_target_humidity_ > 0.0f && current_humidity >= user_target_humidity_)
       {
         Logger::Info("SessionManager: Brassage -> Extraction (humidity reached)");
@@ -219,6 +231,15 @@ void SessionManager::CheckPhaseTransition(float current_temperature, float curre
       break;
 
     case DryerPhase::kExtraction:
+      // A source swapped mid-session leaves the phase machine in a phase that
+      // no longer exists for it. Leave at once rather than serve out a duration
+      // that is now meaningless.
+      if (!ExtractionIsUsed())
+      {
+        Logger::Info("SessionManager: Extraction -> Brassage (dehumidifier fitted)");
+        EnterPhase(DryerPhase::kBrassage);
+        break;
+      }
       // Run for full duration to remove maximum moisture
       if (elapsed >= durations_.extraction)
       {

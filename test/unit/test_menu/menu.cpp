@@ -606,7 +606,7 @@ void test_boolean_entries_read_as_words(void)
 
   TEST_ASSERT_TRUE(SelectLabel(menu, "Sources"));
   menu.HandleClick();
-  TEST_ASSERT_TRUE(SelectLabel(menu, "Chauffage elec."));
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Source active"));
 
   const MenuItem &item = menu.GetCurrentPage()->items[menu.GetCursor()];
   char text[24];
@@ -618,6 +618,78 @@ void test_boolean_entries_read_as_words(void)
   g_test_settings.electric_enabled = false;
   menu.FormatItemValue(item, text, sizeof(text));
   TEST_ASSERT_EQUAL_STRING("Inactif", text);
+}
+
+void test_two_way_choice_reads_as_words_and_flips_on_a_click(void)
+{
+  // heat_source is a uint8_t enum, not a bool, and still has to behave exactly
+  // as a toggle does: named states, one click to flip, rotation doing nothing.
+  // Scrolling through "0" and "1" would be the alternative, and it says nothing.
+  MenuSystem menu;
+  Prepare(menu, true);
+
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Sources"));
+  menu.HandleClick();
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Type source"));
+
+  const MenuItem &item = menu.GetCurrentPage()->items[menu.GetCursor()];
+  char text[24];
+
+  g_test_settings.heat_source = HEAT_SOURCE_ELECTRIC;
+  menu.FormatItemValue(item, text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("Chauf. elec", text);
+
+  menu.HandleClick();
+  TEST_ASSERT_EQUAL_UINT8(HEAT_SOURCE_DEHUMIDIFIER, g_test_settings.heat_source);
+  TEST_ASSERT_FALSE(menu.IsEditing());
+  menu.FormatItemValue(item, text, sizeof(text));
+  TEST_ASSERT_EQUAL_STRING("Deshu.", text);
+
+  menu.HandleClick();
+  TEST_ASSERT_EQUAL_UINT8(HEAT_SOURCE_ELECTRIC, g_test_settings.heat_source);
+}
+
+void test_extraction_threshold_is_greyed_out_without_a_dehumidifier(void)
+{
+  // Same rule as the ECO page under a missing RTC: an entry that cannot mean
+  // anything is shown and skipped, never hidden.
+  MenuSystem menu;
+  Prepare(menu, true);
+
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Regulation"));
+  menu.HandleClick();
+
+  const MenuPage *page = menu.GetCurrentPage();
+  const MenuItem *threshold = nullptr;
+  for (uint8_t i = 0; i < page->count; i++)
+  {
+    if (strcmp(page->items[i].label, "Seuil extract.") == 0) threshold = &page->items[i];
+  }
+  TEST_ASSERT_NOT_NULL(threshold);
+
+  g_test_settings.heat_source = HEAT_SOURCE_ELECTRIC;
+  TEST_ASSERT_FALSE(threshold->is_available());
+
+  g_test_settings.heat_source = HEAT_SOURCE_DEHUMIDIFIER;
+  TEST_ASSERT_TRUE(threshold->is_available());
+}
+
+void test_water_setpoint_is_greyed_out_without_the_hydraulic(void)
+{
+  MenuSystem menu;
+  Prepare(menu, true);
+
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Consignes"));
+  menu.HandleClick();
+  TEST_ASSERT_TRUE(SelectLabel(menu, "Eau (module)"));
+
+  const MenuItem &item = menu.GetCurrentPage()->items[menu.GetCursor()];
+
+  g_test_settings.hydraulic_enabled = true;
+  TEST_ASSERT_TRUE(item.is_available());
+
+  g_test_settings.hydraulic_enabled = false;
+  TEST_ASSERT_FALSE(item.is_available());
 }
 
 void test_fractional_steps_keep_a_decimal(void)
@@ -671,6 +743,9 @@ int main(int argc, char **argv)
   RUN_TEST(test_the_clock_row_is_read_only);
 
   RUN_TEST(test_boolean_entries_read_as_words);
+  RUN_TEST(test_two_way_choice_reads_as_words_and_flips_on_a_click);
+  RUN_TEST(test_extraction_threshold_is_greyed_out_without_a_dehumidifier);
+  RUN_TEST(test_water_setpoint_is_greyed_out_without_the_hydraulic);
   RUN_TEST(test_fractional_steps_keep_a_decimal);
 
   return UNITY_END();

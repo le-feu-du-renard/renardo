@@ -307,6 +307,7 @@ bool TftDisplay::DevicesChanged(const DisplayModel &model) const
          model.fan_cooling != previous_.fan_cooling ||
          model.electric_on != previous_.electric_on ||
          model.electric_enabled != previous_.electric_enabled ||
+         model.heat_source != previous_.heat_source ||
          model.damper_open != previous_.damper_open ||
          model.extraction_moving != previous_.extraction_moving ||
          model.recycling_moving != previous_.recycling_moving ||
@@ -625,7 +626,8 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
 
   // --- Electric heating. Green when it is on, like every other running thing:
   // amber here would read as a warning, and a heater doing its job is not one.
-  DrawDeviceCell(canvas, x2, "CHAUFF.",
+  DrawDeviceCell(canvas, x2,
+                 model.heat_source == HEAT_SOURCE_DEHUMIDIFIER ? "DESHU." : "CHAUFF.",
                  !model.electric_enabled ? "DESACT." : (model.electric_on ? "ON" : "OFF"),
                  !model.electric_enabled ? UiTheme::kMuted
                  : (model.electric_on ? UiTheme::kOk : UiTheme::kNeutral));

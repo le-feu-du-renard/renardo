@@ -4,7 +4,7 @@
 HumidityManager::HumidityManager(AirDamper *air_damper)
     : air_damper_(air_damper),
       mode_(Mode::kDisabled),
-      purge_(false),
+      force_open_(ForceOpen::kNone),
       target_humidity_(0.0f),
       current_inlet_humidity_(0.0f),
       action_next_allowed_ms_(0) {}
@@ -12,7 +12,7 @@ HumidityManager::HumidityManager(AirDamper *air_damper)
 void HumidityManager::Begin()
 {
   mode_                   = Mode::kDisabled;
-  purge_                  = false;
+  force_open_             = ForceOpen::kNone;
   target_humidity_        = 0.0f;
   current_inlet_humidity_ = 0.0f;
   action_next_allowed_ms_ = 0;
@@ -24,9 +24,11 @@ void HumidityManager::Update(float inlet_humidity)
 {
   current_inlet_humidity_ = inlet_humidity;
 
-  // Above the mode, and before the threshold logic reads a humidity that is by
-  // definition not to be trusted while a purge is running.
-  if (purge_)
+  // Above the mode, and before the threshold logic gets a look at a reading it
+  // has no business acting on: under kPurge the humidity is by definition not to
+  // be trusted, and under the other two the register is already answering a
+  // question the mode did not ask.
+  if (force_open_ != ForceOpen::kNone)
   {
     air_damper_->Open();
     return;
@@ -80,22 +82,36 @@ bool HumidityManager::SetMode(Mode mode)
   return true;
 }
 
-void HumidityManager::SetPurge(bool purge)
+const char *HumidityManager::ForceOpenName(ForceOpen reason)
 {
-  if (purge == purge_) return;
-  purge_ = purge;
+  switch (reason)
+  {
+    case ForceOpen::kPurge:      return "purge";
+    case ForceOpen::kOverheat:   return "overheat";
+    case ForceOpen::kAirRenewal: return "air renewal";
+    default:                     return "none";
+  }
+}
 
-  // The cooldown is armed against threshold chatter, and the purge has just
-  // moved the damper without consulting it. Clearing it lets kThreshold act on
-  // the first good reading after the probe comes back rather than sitting on a
+bool HumidityManager::SetForceOpen(ForceOpen reason)
+{
+  if (reason == force_open_) return false;
+
+  ForceOpen previous = force_open_;
+  force_open_ = reason;
+
+  // The cooldown is armed against threshold chatter, and the override has just
+  // moved the register without consulting it. Clearing it lets kThreshold act on
+  // the first good reading after the reason lifts, rather than sitting on a
   // wide-open register for another ten seconds.
-  if (!purge_)
+  if (force_open_ == ForceOpen::kNone)
   {
     ResetCooldown();
   }
 
-  Logger::Info("HumidityManager: purge %s", purge_ ? "on — damper held open"
-                                                   : "off — mode resumes");
+  Logger::Info("HumidityManager: force open %s -> %s",
+               ForceOpenName(previous), ForceOpenName(force_open_));
+  return true;
 }
 
 void HumidityManager::SetTargetHumidity(float target)

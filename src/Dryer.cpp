@@ -9,6 +9,7 @@ Dryer::Dryer()
       session_manager_(&temperature_manager_, &humidity_manager_),
       inlet_temperature_(0.0f),
       inlet_humidity_(0.0f),
+      dehum_extraction_threshold_(DEHUM_EXTRACTION_THRESHOLD_DEFAULT),
       last_control_update_ms_(0),
       purging_(false),
       purge_since_ms_(0),
@@ -83,7 +84,7 @@ void Dryer::Stop()
   // to shed heat stays open for the fan to finish the job through.
   purging_     = false;
   purge_fault_ = DryerFault::kNone;
-  humidity_manager_.SetPurge(false);
+  humidity_manager_.SetForceOpen(HumidityManager::ForceOpen::kNone);
 
   temperature_manager_.SetFanActive(false);
   session_manager_.Stop();
@@ -146,7 +147,7 @@ void Dryer::UpdateFaultResponse()
       // the extraction is the one heat-removal action left that does not depend
       // on knowing the temperature.
       temperature_manager_.AllOff();
-      humidity_manager_.SetPurge(true);
+      humidity_manager_.SetForceOpen(HumidityManager::ForceOpen::kPurge);
       Logger::Error("Dryer: %s — heat off, extraction open, stopping in %u s",
                     FaultName(fault), holdoff / 1000U);
     }
@@ -171,7 +172,7 @@ void Dryer::EndPurge()
   // it — and on the path where the session ends instead, that update never
   // comes, so the register stays open through the fan cooldown, which is where
   // an open extraction was wanted anyway.
-  humidity_manager_.SetPurge(false);
+  humidity_manager_.SetForceOpen(HumidityManager::ForceOpen::kNone);
 
   // The register is about to travel back to whatever the phase wanted, and the
   // chamber to climb out of however far the purge let it fall. That is an air
@@ -193,8 +194,76 @@ void Dryer::UpdateControl()
     session_manager_.Update(inlet_temperature_, inlet_humidity_);
   }
 
-  temperature_manager_.Update(inlet_temperature_);
+  temperature_manager_.Update(inlet_temperature_, inlet_humidity_);
+
+  // After the temperature manager, so the reason is decided against this
+  // cycle's own effective setpoint, and before the humidity manager, which is
+  // what acts on it.
+  UpdateForcedOpen();
+
   humidity_manager_.Update(inlet_humidity_);
+}
+
+// Why, if at all, a dehumidifier's register is being held open against the
+// phase. Both reasons are air renewals; neither exists with a resistance
+// fitted, which throws its air away as a matter of course.
+//
+// The purge is not decided here — it is a safety, it outranks both of these,
+// and UpdateFaultResponse() owns it. Reaching this function at all means no
+// purge is running, since a purge suspends the control loop's phase machine but
+// not the loop, and the ranking is enforced by simply not touching the override
+// while purging_ is set.
+void Dryer::UpdateForcedOpen()
+{
+  using ForceOpen = HumidityManager::ForceOpen;
+
+  if (purging_) return;
+
+  if (!temperature_manager_.IsDehumidifier())
+  {
+    if (humidity_manager_.SetForceOpen(ForceOpen::kNone))
+    {
+      temperature_manager_.NotifyAirRenewal();
+    }
+    return;
+  }
+
+  const float setpoint = temperature_manager_.GetEffectiveTargetTemperature();
+  const float target_humidity = humidity_manager_.GetTargetHumidity();
+  const ForceOpen current = humidity_manager_.GetForceOpen();
+
+  ForceOpen wanted = ForceOpen::kNone;
+
+  // Too hot. Opens at setpoint + threshold, closes at the setpoint itself, so
+  // the threshold *is* the hysteresis — a separate return value would be a
+  // second setting saying the same thing.
+  if (!isnan(inlet_temperature_))
+  {
+    bool open_now = (current == ForceOpen::kOverheat)
+                        ? inlet_temperature_ > setpoint
+                        : inlet_temperature_ > setpoint + dehum_extraction_threshold_;
+    if (open_now) wanted = ForceOpen::kOverheat;
+  }
+
+  // Too dry. Below the target there is no water left to condense and the
+  // machine has nothing to work on; renewing brings damp air back in and the
+  // drying continues. Ranked under overheating, which is the more urgent of the
+  // two and wants the same register anyway.
+  if (wanted == ForceOpen::kNone && target_humidity > 0.0f && !isnan(inlet_humidity_))
+  {
+    bool open_now = (current == ForceOpen::kAirRenewal)
+                        ? inlet_humidity_ < target_humidity + DEHUM_RENEWAL_BAND
+                        : inlet_humidity_ < target_humidity;
+    if (open_now) wanted = ForceOpen::kAirRenewal;
+  }
+
+  if (humidity_manager_.SetForceOpen(wanted))
+  {
+    // The register is about to travel and the air behind the probe to be
+    // replaced. Every movement the dryer commands says so; these are the two
+    // that used to be able to happen without anyone being told.
+    temperature_manager_.NotifyAirRenewal();
+  }
 }
 
 const char *Dryer::GetPhaseName() const
@@ -226,6 +295,7 @@ void Dryer::SetTargetHumidity(float humidity)
 {
   humidity_manager_.SetTargetHumidity(humidity);
   session_manager_.SetTargetHumidity(humidity);
+  temperature_manager_.SetTargetHumidity(humidity);
 }
 
 float Dryer::GetTargetTemperature() const
@@ -250,6 +320,10 @@ void Dryer::ApplySettings(const DryerSettings &settings, bool rtc_available)
 
   temperature_manager_.SetHydraulicEnabled(settings.hydraulic_enabled);
   temperature_manager_.SetElectricEnabled(settings.electric_enabled);
+  temperature_manager_.SetHeatSource(
+      settings.heat_source == HEAT_SOURCE_DEHUMIDIFIER ? HeatSourceType::kDehumidifier
+                                                       : HeatSourceType::kElectric);
+  dehum_extraction_threshold_ = settings.dehum_extraction_threshold;
 
   TemperatureParams &params = temperature_manager_.GetParams();
   params.band_electric      = settings.band_electric;
@@ -295,6 +369,8 @@ void Dryer::CaptureSettings(DryerSettings &settings) const
 
   settings.hydraulic_enabled = temperature_manager_.GetHydraulicEnabled();
   settings.electric_enabled  = temperature_manager_.GetElectricEnabled();
+  settings.heat_source       = static_cast<uint8_t>(temperature_manager_.GetHeatSource());
+  settings.dehum_extraction_threshold = dehum_extraction_threshold_;
 
   settings.band_electric      = params.band_electric;
   settings.horizon_electric   = params.horizon_electric;
