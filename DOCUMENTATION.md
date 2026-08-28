@@ -2,9 +2,11 @@
 
 ## Table of Contents
 
+- [Programmes](#programmes)
 - [Drying Sequence](#drying-sequence)
 - [Temperature Control](#temperature-control)
 - [Safety Interlocks](#safety-interlocks)
+- [Heat Sources](#heat-sources)
 - [Humidity and Air Damper](#humidity-and-air-damper)
 - [Operator Interface](#operator-interface)
 - [ECO Mode](#eco-mode)
@@ -13,10 +15,43 @@
 
 ---
 
+## Programmes
+
+A dryer and a climate chamber are the same machine asked two different
+questions, and the answer is one setting: **Phases > Programme**.
+
+| | Sechage | Climat |
+|---|---|---|
+| Phases | `Init → [Brassage → Extraction] ×∞` | one, `Climat` |
+| Clock | four configurable durations | none |
+| Register | driven by the phase | driven by the humidity threshold |
+| Ends | on STOP | on STOP |
+
+The whole of the difference is in `SessionManager`. Everything under it — the
+interlocks, the safety cutoff, the air-renewal window, the source law — is
+common, and never learns which programme is running.
+
+**Climat is what `HumidityManager::Mode::kThreshold` was written for.** The mode
+has existed since v3 and was selected by nothing: open while the air is too
+damp, shut once it is not, with a 5 %RH deadband and a 10 s cooldown between
+movements. Holding a climate is exactly that and nothing more.
+
+The four phase durations are greyed out under Climat, and the programme itself
+is greyed out while a session runs — the phase machine is already inside one,
+and `SessionManager` refuses the change from its own side as well, because the
+menu is not the only way in.
+
+With a dehumidifier fitted, Climat leaves the register shut instead of putting
+it on the threshold: that machine takes the water out without opening anything,
+and a threshold underneath would be a second opinion on the same vane. See
+[Heat Sources](#heat-sources).
+
+---
+
 ## Drying Sequence
 
-A fixed three-phase cycle. Durations are configurable from the menu and
-persisted; `config.h` only supplies the factory defaults.
+The `Sechage` programme. A fixed three-phase cycle; durations are configurable
+from the menu and persisted, and `config.h` only supplies the factory defaults.
 
 ```
 Init ──► Brassage ──► Extraction ──► Brassage ──► Extraction ──► ...
@@ -202,14 +237,92 @@ in `AirDamper`, which is why it is covered by host tests.
 
 ---
 
+## Heat Sources
+
+Three of them, and only two are commanded here.
+
+**Hydraulic** — a remote module on RS485 @10, which owns its own start, its
+circulator and its water loop. What leaves the dryer is a run permission and a
+setpoint. See [The hydraulic is not regulated here](#the-hydraulic-is-not-regulated-here).
+
+**The command output**, `OUT_ELECTRIC_PIN`, which drives either a resistance or
+a dehumidifier. One relay, so which one is fitted is a setting — **Sources >
+Type source** — and not a second pin. A machine carries one or the other, never
+both.
+
+It is not a preference. The two dry by opposite means: a resistance heats air
+that is then thrown away carrying the moisture with it, a dehumidifier condenses
+the moisture out and keeps the air. Getting the setting wrong does not degrade
+the regulation, it inverts it.
+
+| | Chauffage electrique | Deshumidificateur |
+|---|---|---|
+| Starts when | `error > band` | `error > band` **or** `RH > target + 2 %` |
+| Stops when | `error ≤ 0` or predicted overshoot | `error ≤ 0` **and** `RH ≤ target` |
+| Predictive shutoff | yes | **no** |
+| Register | follows the phase | recirculation, except as below |
+| Extraction phase | yes | **skipped** |
+
+The predictive shutoff is calibrated on the thermal step of a resistance. A
+compressor whose heat is a by-product does not produce one, and cutting it
+degrees short on a ramp it did not cause is simply wrong. The minimum on and off
+times, by contrast, matter more here than they ever did: a compressor
+short-cycled is a compressor damaged.
+
+Both calls must be answered before a dehumidifier stops, so an unmet humidity
+holds it running past its temperature setpoint. That is deliberate, and it is
+what the register threshold below exists to catch.
+
+### A dehumidifier's register opens for two reasons, and both are air renewals
+
+The circuit stays in recirculation: the machine condenses the water out rather
+than throwing the air away, so the register is not what removes moisture.
+
+| | Opens | Closes |
+|---|---|---|
+| Too hot | `T > setpoint + Seuil extract.` | `T ≤ setpoint` |
+| Too dry | `RH < target` | `RH ≥ target + 3 %` |
+
+The first is the only case where the register is a cooling device: the machine's
+own waste heat has carried the chamber past the setpoint and outside air is the
+only way down. The threshold *is* the hysteresis — a separate return value would
+be a second setting saying one thing.
+
+The second is the drying loop itself, and it runs the opposite way round from
+the electric's. Below the humidity target there is nothing left in the air to
+condense and the machine has nothing to work on; renewing brings damp air back
+in and the drying continues. **The electric throws out air that has become
+humid; the dehumidifier renews air that has become dry.**
+
+Overheating outranks dry air. They want the same register, so the question is
+never which applies but which is being answered, and a fault purge outranks them
+both — that is a safety, these are regulation.
+
+Every one of these movements calls `NotifyAirRenewal()`. They were the last two
+the dryer could command with nothing anywhere being told, which is the exact
+fault [that window](#air-renewal--the-two-minutes-the-loop-is-told-to-ignore)
+was introduced to fix.
+
+The Extraction phase is skipped entirely with a dehumidifier fitted. A phase
+that periodically empties the circuit works against a machine that condenses out
+of it; Brassage simply repeats. A source swapped mid-session leaves Extraction
+at once rather than serving out a duration that no longer means anything.
+
+---
+
 ## Humidity and Air Damper
 
-The damper is strictly binary — recirculation or extraction — driven by the
-current phase. `HumidityManager` operates it in two modes: `kDisabled` (closed,
-Init and Brassage) and `kForceOpen` (Extraction and the Init sub-extraction).
+The damper is strictly binary — recirculation or extraction. Under the drying
+programme it follows the phase: `HumidityManager` runs `kDisabled` (closed, Init
+and Brassage) and `kForceOpen` (Extraction and the Init sub-extraction). Under
+the climate programme it runs `kThreshold` on the humidity target. Above the
+mode sits one ranked override, `ForceOpen` — `kPurge`, `kOverheat`,
+`kAirRenewal` — for the three things that happen *to* a session rather than
+being a stage of one.
 
-Humidity does not modulate the damper; it decides **phase transitions**. The
-target is compared against the inlet reading to leave Brassage early.
+Under the drying programme, humidity does not modulate the damper; it decides
+**phase transitions**. The target is compared against the inlet reading to leave
+Brassage early.
 
 A dryer has one or two registers, set from the menu (`Nb registres`). With two
 they are complementary — one relay drives both, one of them travelling the other
@@ -283,8 +396,19 @@ of flash all told, on 1.5 MB.
 | 4–23 | Header | phase dot and name (left), elapsed time (centred) |
 | 32–107 | Cards | INJECTION · CONSIGNE |
 | 112–145 | Strip | hydraulic state, circulating and tank water temperatures |
-| 150–221 | Devices | fan (animated), electric heating, extraction, recycling |
+| 150–221 | Devices | fan (animated), heating or dehumidifier, extraction, recycling |
 | 226–239 | Hint | empty, or the highest-ranked active alarm |
+
+**With the hydraulic switched off the strip is not blanked — it is gone**, and
+its 38 px are given back: the cards run to 126 and the device row from 131 to
+220. Three cells reporting a water loop that is not fitted are a third of the
+usable height spent on nothing. Only the vertical figures change between the two
+variants; every width is shared, which is what leaves all nine assertions about
+text fitting its cell true as written. A change of variant forces a full
+repaint, because per-region diffing cannot chase a band whose region has moved.
+
+The second device cell is captioned `CHAUFF.` or `DESHU.` after what is actually
+wired to the command output.
 
 Every block centres its contents. Each card carries a label and two figures, and
 each figure carries its own unit — `42.3°` and `38%` — so the captions that named
@@ -401,7 +525,15 @@ cursor stops at the ends rather than wrapping.
 
 Pages: Consignes, Sources, Mode ECO, Phases, Régulation, Système. Seven rows fit
 between the header and the hint bar, so the root page is on screen whole and the
-most-used page never scrolls.
+most-used page never scrolls — which is why `Programme` is the first row of
+Phases and `Télémétrie` lives under Système rather than either becoming an
+eighth root entry.
+
+Two rows are two-way choices rather than numbers, operated exactly as booleans
+are: `Sources > Type source` and `Phases > Programme`. Type source comes above
+the toggle it governs, because that toggle means two different machines
+depending on it and reading them the other way round is reading the answer
+first.
 
 A hint bar along the bottom says what the knob does — `TOURNER naviguer · CLIC
 ouvrir`, `CLIC modifier` on a value, `TOURNER regler · CLIC valider` while
@@ -416,7 +548,24 @@ highlight alone might not.
 
 Entries that make no sense in the current configuration are greyed out and
 skipped rather than hidden, so the menu keeps the same shape whatever hardware
-is fitted.
+is fitted. What is gated, and on what:
+
+| Entry | Available when |
+|---|---|
+| Mode ECO, Date / Heure | an RTC answered at boot |
+| Consignes > Eau (module) | the hydraulic source is switched on |
+| Régulation > Seuil extract. | a dehumidifier is fitted |
+| Phases > Init … Ouv. registre | the programme is Séchage |
+| Phases > Programme | no session is running |
+| Télémétrie > WiFi Grafana | this is a Pico W build |
+| Registres > recycling rows | two registers are declared |
+
+`Système > Télémétrie` carries the two uplink switches — the RS485 extension
+port and, on a Pico W, the Grafana Cloud link — and four read-only rows
+reporting the latter: network state and address, queue depth, writes and
+failures. They print dashes rather than zeros when there is no radio to report
+about: `0 sent, 0 failed` reads exactly like a link sitting perfectly idle. See
+[DEVELOPMENT.md](DEVELOPMENT.md) for what the Pico W build needs.
 
 `Système > Registres` holds everything about the air path the firmware cannot
 measure for itself: how many registers the dryer has, which end of the feedback
