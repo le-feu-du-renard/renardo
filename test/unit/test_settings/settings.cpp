@@ -20,7 +20,6 @@ void test_defaults_are_sealed_and_valid(void)
 
   TEST_ASSERT_TRUE(IsRecordValid(settings, static_cast<uint16_t>(SETTINGS_VERSION)));
   TEST_ASSERT_EQUAL_FLOAT(TEMPERATURE_TARGET, settings.target_temperature);
-  TEST_ASSERT_EQUAL_FLOAT(WATER_TARGET_DEFAULT, settings.water_target);
 }
 
 void test_v6_defaults(void)

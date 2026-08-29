@@ -31,8 +31,7 @@
 enum HydraulicCommandRegister : uint8_t
 {
   kHydroCmdRegState        = 0,
-  kHydroCmdRegWaterTarget  = 1,
-  kHydroCmdRegDryerAirTemp = 2,
+  kHydroCmdRegDryerAirTemp = 1,
 };
 
 // Registers of the telemetry block, offsets from HYDRO_REG_WATER_TEMP.
@@ -91,17 +90,19 @@ struct HydraulicCommand
   // do nothing for hours.
   bool run_permitted;
 
-  // Fixed water setpoint the module is to hold, in C.
-  float water_target;
-
   // The dryer's inlet air temperature, so the module can tell whether
   // circulating would actually move heat into the dryer rather than out of it.
-  // NAN when the dryer has no fresh reading — the interlock then falls back to
-  // the water setpoint alone, which is correct but more cautious.
+  // NAN when the dryer has no fresh reading — the module's interlock then falls
+  // back to its own water setpoint alone, which is correct but more cautious.
+  //
+  // This is the only measurement that crosses, and it crosses because the module
+  // cannot take it: the water setpoint used to travel here too, and did not
+  // survive the question of who owns it. The module holds its own loop, so the
+  // module holds its own setpoint.
   float dryer_air_temperature;
 
   HydraulicCommand()
-      : run_permitted(false), water_target(NAN), dryer_air_temperature(NAN) {}
+      : run_permitted(false), dryer_air_temperature(NAN) {}
 };
 
 // What the module reports back, in engineering units. NAN means "no reading".

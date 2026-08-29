@@ -39,7 +39,12 @@
 // rather than inserted, but the length still changes, so the consequence is the
 // same one a third time: **every stored record is discarded and the register
 // calibration has to be captured again from the menu after this upgrade.**
-#define SETTINGS_VERSION 6
+// v7 dropped the hydraulic module's water setpoint. It was the last thing the
+// dryer still told the module about its own loop, and the module regulates that
+// loop — so it now holds its own setpoint, and HYDRO_REG_WATER_TARGET left the
+// wire with it. Same consequence as v4, v5 and v6: every stored record is
+// discarded and the register calibration has to be captured again.
+#define SETTINGS_VERSION 7
 #define SESSION_VERSION 1
 
 // Everything the menu can change.
@@ -50,7 +55,6 @@ struct DryerSettings
   // Setpoints
   float target_temperature;
   float target_humidity;
-  float water_target;        // fixed setpoint pushed to the hydraulic module
 
   // Sources. `hydraulic_enabled` is a run permission, not a regulation input:
   // the module handles its own start and its own water loop, so there is

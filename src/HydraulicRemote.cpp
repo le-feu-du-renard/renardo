@@ -7,7 +7,6 @@ HydraulicRemote::HydraulicRemote(Rs485Bus *bus)
     : RemoteModule(bus, MODBUS_HYDRAULIC_ADDRESS, "HydraulicRemote",
                    kTimeoutMs, kRetryMs),
       enabled_(false),
-      water_target_(WATER_TARGET_DEFAULT),
       dryer_air_temperature_(NAN),
       water_temperature_(NAN),
       tank_temperature_(NAN),
@@ -16,23 +15,17 @@ HydraulicRemote::HydraulicRemote(Rs485Bus *bus)
 
 void HydraulicRemote::Begin()
 {
-  Logger::Info("HydraulicRemote: module @%d on bus %s, water target %F C",
-               GetAddress(), bus()->GetName(), water_target_);
-}
-
-void HydraulicRemote::SetWaterTarget(float celsius)
-{
-  water_target_ = constrain(celsius, WATER_TARGET_MIN, WATER_TARGET_MAX);
+  Logger::Info("HydraulicRemote: module @%d on bus %s",
+               GetAddress(), bus()->GetName());
 }
 
 bool HydraulicRemote::Update()
 {
-  // Command block: permission, water setpoint and dryer air temperature,
+  // Command block: permission and dryer air temperature,
   // written in one FC16 transaction so the module never sees the permission
   // raised with a stale setpoint.
   HydraulicCommand command;
   command.run_permitted         = enabled_;
-  command.water_target           = water_target_;
   command.dryer_air_temperature = dryer_air_temperature_;
 
   uint16_t command_regs[HYDRO_COMMAND_COUNT];

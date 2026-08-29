@@ -8,7 +8,6 @@ void DryerSettings::Reset()
 
   target_temperature = TEMPERATURE_TARGET;
   target_humidity    = 50.0f;
-  water_target       = WATER_TARGET_DEFAULT;
 
   hydraulic_enabled = HYDRAULIC_ENABLED_DEFAULT;
   electric_enabled  = ELECTRIC_ENABLED_DEFAULT;

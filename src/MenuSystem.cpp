@@ -51,13 +51,7 @@ namespace
 bool RtcPresent() { return g_rtc_available; }
 bool AlwaysAvailable() { return true; }
 
-// The hydraulic module's water setpoint is meaningless with the source switched
-// off, and the extraction threshold is meaningless without a dehumidifier.
-bool HydraulicEnabled()
-{
-  return g_settings != nullptr && g_settings->hydraulic_enabled;
-}
-
+// The extraction threshold is meaningless without a dehumidifier.
 bool DehumidifierFitted()
 {
   return g_settings != nullptr && g_settings->heat_source == HEAT_SOURCE_DEHUMIDIFIER;
@@ -151,7 +145,7 @@ bool SecondDamperFitted()
 // Declared as file-scope arrays so the tree is visible in one place and costs
 // no heap. Bindings are filled in Begin(), once g_settings is known.
 
-MenuItem g_setpoint_items[4];
+MenuItem g_setpoint_items[3];
 MenuItem g_source_items[4];
 MenuItem g_eco_items[5];
 MenuItem g_phase_items[6];
@@ -162,7 +156,7 @@ MenuItem g_telemetry_items[6];
 MenuItem g_damper_items[13];
 MenuItem g_root_items[9];
 
-MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
+MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 3};
 MenuPage g_source_page{"Sources", g_source_items, 4};
 MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Programme", g_phase_items, 6};
@@ -445,11 +439,7 @@ void MenuSystem::Begin(DryerSettings *settings)
   g_setpoint_items[1] = MakeValue("Hygrometrie", MenuValueType::kFloat,
                                   &s.target_humidity,
                                   TARGET_HUM_MIN, TARGET_HUM_MAX, 1.0f, " %HR");
-  g_setpoint_items[2] = MakeValue("Eau (module)", MenuValueType::kFloat,
-                                  &s.water_target,
-                                  WATER_TARGET_MIN, WATER_TARGET_MAX, 1.0f, " C",
-                                  HydraulicEnabled);
-  g_setpoint_items[3] = MakeBack();
+  g_setpoint_items[2] = MakeBack();
 
   // What is on the command output comes before whether it is allowed to run:
   // the toggle below means two different machines depending on this row, and

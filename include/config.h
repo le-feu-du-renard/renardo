@@ -411,9 +411,8 @@
 // before dividing, because the water loop legitimately reads below zero. A
 // reading the module does not have is INT16_MIN, never a zero.
 #define HYDRO_REG_STATE 0x0000          // write: 0 = stand down, 1 = cleared to run
-#define HYDRO_REG_WATER_TARGET 0x0001   // write: water setpoint x10 (C)
-#define HYDRO_REG_DRYER_AIR_TEMP 0x0002 // write: inlet air temperature x10, signed
-#define HYDRO_COMMAND_COUNT 3
+#define HYDRO_REG_DRYER_AIR_TEMP 0x0001 // write: inlet air temperature x10, signed
+#define HYDRO_COMMAND_COUNT 2
 
 #define HYDRO_REG_WATER_TEMP 0x0010 // read: circulating water temperature x10
 #define HYDRO_REG_TANK_TEMP 0x0011  // read: storage tank temperature x10
@@ -493,11 +492,6 @@
 #define TARGET_TEMP_MAX 45.0f // °C
 #define TARGET_HUM_MIN 0.0f   // %RH
 #define TARGET_HUM_MAX 100.0f // %RH
-
-// Hydraulic module water setpoint (fixed value pushed to the remote module)
-#define WATER_TARGET_DEFAULT 55.0f // °C
-#define WATER_TARGET_MIN 30.0f     // °C
-#define WATER_TARGET_MAX 70.0f     // °C
 
 // Heat source enable defaults — these are the factory values of the two menu
 // toggles, not a statement about whether the hardware is present. Actual

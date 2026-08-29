@@ -89,12 +89,10 @@ bool core1_separate_stack = true;
 
 static SharedSensorState g_sensor_state;
 
-// The hydraulic run permission travels the other way, Core 0 -> Core 1. A
-// single bool and a float are each written by one core and read by the other,
-// so they need no seqlock: a torn read simply means the permission applies one
-// cycle later.
+// The hydraulic run permission travels the other way, Core 0 -> Core 1. One
+// bool, written by one core and read by the other, so it needs no seqlock: a
+// torn read simply means the permission applies one cycle later.
 static volatile bool  g_hydraulic_demand = false;
-static volatile float g_water_target = WATER_TARGET_DEFAULT;
 
 // Which uplinks are switched on, Core 0 -> Core 1, and plain bools for the same
 // reason: a torn read costs one cycle of telemetry, which is not load-bearing
@@ -239,7 +237,6 @@ void loop1()
   g_sensor_state.Publish(snapshot);
 
   hydraulic_remote.SetEnabled(g_hydraulic_demand);
-  hydraulic_remote.SetWaterTarget(g_water_target);
   hydraulic_remote.SetDryerAirTemperature(inlet.valid ? inlet.temperature : NAN);
   hydraulic_remote.Update();
 
@@ -703,7 +700,6 @@ static bool ReadTelemetryStatus(MenuTelemetryStatus &status)
 static void OnSettingsChanged()
 {
   dryer.ApplySettings(settings, g_rtc_available);
-  g_water_target = settings.water_target;
   ApplyTelemetrySettings();
   settings_store.SaveSettings(settings);
 }
@@ -719,7 +715,6 @@ static bool g_settings_dirty = false;
 static void OnSettingsChangedDeferred()
 {
   dryer.ApplySettings(settings, g_rtc_available);
-  g_water_target = settings.water_target;
   g_settings_dirty = true;
 }
 
@@ -1086,7 +1081,6 @@ void setup()
   settings_store.LoadSettings(settings);
   dryer.ApplySettings(settings, g_rtc_available);
   ApplyTelemetrySettings();
-  g_water_target = settings.water_target;
 
   // --- Probing done; everything below is bounded and fast ---
   watchdog_enable(kRuntimeWatchdogMs, 1);

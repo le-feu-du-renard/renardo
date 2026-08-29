@@ -152,23 +152,22 @@ void test_command_block_round_trip(void)
 {
   HydraulicCommand sent;
   sent.run_permitted         = true;
-  sent.water_target          = 55.0f;
   sent.dryer_air_temperature = 38.5f;
 
   uint16_t registers[HYDRO_COMMAND_COUNT];
   HydroEncodeCommand(sent, registers);
 
-  // The setpoint has to land as plain tenths: this is the one register the
-  // dryer already wrote before the map was extended, and it must not change
-  // meaning.
+  // Two registers, not three: the water setpoint left the block when the module
+  // took ownership of the loop it belongs to, and the air temperature moved
+  // down into the hole rather than a reserved word being left behind.
+  TEST_ASSERT_EQUAL_UINT16(2, HYDRO_COMMAND_COUNT);
   TEST_ASSERT_EQUAL_UINT16(1, registers[kHydroCmdRegState]);
-  TEST_ASSERT_EQUAL_UINT16(550, registers[kHydroCmdRegWaterTarget]);
+  TEST_ASSERT_EQUAL_UINT16(385, registers[kHydroCmdRegDryerAirTemp]);
 
   HydraulicCommand received;
   HydroDecodeCommand(registers, received);
 
   TEST_ASSERT_TRUE(received.run_permitted);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 55.0f, received.water_target);
   TEST_ASSERT_FLOAT_WITHIN(0.05f, 38.5f, received.dryer_air_temperature);
 }
 
@@ -179,7 +178,6 @@ void test_command_carries_an_absent_air_temperature(void)
 {
   HydraulicCommand sent;
   sent.run_permitted         = true;
-  sent.water_target          = 50.0f;
   sent.dryer_air_temperature = NAN;
 
   uint16_t registers[HYDRO_COMMAND_COUNT];
@@ -188,8 +186,8 @@ void test_command_carries_an_absent_air_temperature(void)
   HydraulicCommand received;
   HydroDecodeCommand(registers, received);
 
+  TEST_ASSERT_TRUE(received.run_permitted);
   TEST_ASSERT_TRUE(isnan(received.dryer_air_temperature));
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 50.0f, received.water_target);
 }
 
 void test_telemetry_block_round_trip(void)
@@ -237,8 +235,16 @@ void test_telemetry_carries_absent_readings(void)
 // side and never read by the other.
 void test_block_sizes_match_the_register_map(void)
 {
-  TEST_ASSERT_EQUAL_UINT8(3, HYDRO_COMMAND_COUNT);
+  TEST_ASSERT_EQUAL_UINT8(2, HYDRO_COMMAND_COUNT);
   TEST_ASSERT_EQUAL_UINT8(4, HYDRO_TELEMETRY_COUNT);
+
+  // The command block is contiguous too, which is why removing the water
+  // setpoint from the middle of it moved the air temperature down rather than
+  // leaving 0x0001 reserved: the dryer writes the whole block with one FC16,
+  // and a hole would be a register written every cycle and read by nobody.
+  TEST_ASSERT_EQUAL_UINT8(0, kHydroCmdRegState);
+  TEST_ASSERT_EQUAL_UINT8(1, kHydroCmdRegDryerAirTemp);
+  TEST_ASSERT_EQUAL_UINT16(HYDRO_REG_STATE + 1, HYDRO_REG_DRYER_AIR_TEMP);
 
   TEST_ASSERT_EQUAL_UINT8(HYDRO_COMMAND_COUNT - 1, kHydroCmdRegDryerAirTemp);
   TEST_ASSERT_EQUAL_UINT8(HYDRO_TELEMETRY_COUNT - 1, kHydroRegPumpSpeed);

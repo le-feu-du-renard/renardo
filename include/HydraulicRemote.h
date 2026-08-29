@@ -39,10 +39,6 @@ public:
   void SetEnabled(bool enabled) { enabled_ = enabled; }
   bool GetEnabled() const { return enabled_; }
 
-  // Fixed water setpoint in C, set from the menu.
-  void  SetWaterTarget(float celsius);
-  float GetWaterTarget() const { return water_target_; }
-
   // Dryer inlet air temperature, so the module can tell whether circulating
   // would move heat into the dryer or out of it. NAN when the dryer has no
   // fresh reading.
@@ -59,7 +55,6 @@ public:
 
 private:
   bool  enabled_;
-  float water_target_;
   float dryer_air_temperature_;
 
   float    water_temperature_;

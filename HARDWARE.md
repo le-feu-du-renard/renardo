@@ -673,8 +673,7 @@ one FC03, every poll cycle.
 | Register | Direction | Contents |
 |---|---|---|
 | `0x0000` | write | run permission, 0 = stand down, 1 = cleared to run |
-| `0x0001` | write | water setpoint ×10 (°C) |
-| `0x0002` | write | dryer inlet air temperature ×10, signed |
+| `0x0001` | write | dryer inlet air temperature ×10, signed |
 | `0x0010` | read | circulating water temperature ×10, signed |
 | `0x0011` | read | storage tank temperature ×10, signed |
 | `0x0012` | read | status bits |
@@ -685,9 +684,16 @@ dividing, because the water loop legitimately reads below zero. A value the
 module does not have is `INT16_MIN`, never a zero — and the speed, whose 0 and
 100 are both legal, uses `0xFFFF` for the same purpose.
 
-`0x0002` is what lets the module tell whether circulating would move heat *into*
+`0x0001` is what lets the module tell whether circulating would move heat *into*
 the dryer rather than out of it. While it reads as the sentinel the module falls
-back to the water setpoint alone, which is correct but more cautious.
+back to its own water setpoint alone, which is correct but more cautious.
+
+It is also the only *measurement* that crosses, and it crosses because the
+module cannot take it. The water setpoint used to travel here too, on `0x0001`,
+and did not survive the question of who owns it: the module regulates that loop,
+so the module holds its setpoint. The command block is contiguous — one FC16
+writes the lot — so the air temperature moved down into the hole rather than
+`0x0001` being left reserved for a value nobody sends.
 
 Status bits:
 

@@ -88,8 +88,6 @@ void HydroDecodeStatus(uint16_t bits, HydraulicTelemetry &telemetry)
 void HydroEncodeCommand(const HydraulicCommand &command, uint16_t *registers)
 {
   registers[kHydroCmdRegState] = command.run_permitted ? 1 : 0;
-  registers[kHydroCmdRegWaterTarget] =
-      static_cast<uint16_t>(HydroEncodeValue(command.water_target));
   registers[kHydroCmdRegDryerAirTemp] =
       static_cast<uint16_t>(HydroEncodeValue(command.dryer_air_temperature));
 }
@@ -101,8 +99,6 @@ void HydroDecodeCommand(const uint16_t *registers, HydraulicCommand &command)
   // direction for a reason nobody could see on the wire.
   command.run_permitted = registers[kHydroCmdRegState] != 0;
 
-  command.water_target =
-      HydroDecodeValue(static_cast<int16_t>(registers[kHydroCmdRegWaterTarget]));
   command.dryer_air_temperature =
       HydroDecodeValue(static_cast<int16_t>(registers[kHydroCmdRegDryerAirTemp]));
 }

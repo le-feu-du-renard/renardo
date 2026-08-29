@@ -574,7 +574,6 @@ is fitted. What is gated, and on what:
 | Entry | Available when |
 |---|---|
 | Mode ECO, Date / Heure | an RTC answered at boot |
-| Consignes > Eau (module) | the hydraulic source is switched on |
 | Régulation > Seuil extract. | a dehumidifier is fitted |
 | Programme > Init … Ouv. registre | the programme is Séchage |
 | Programme > Programme | no session is running |
@@ -819,10 +818,6 @@ since the first version and has never been read. The drying cycle loops
 `Brassage -> Extraction` until someone presses STOP. Whether a dryer should be
 able to finish unattended is a question about the food in it, not about the
 firmware.
-
-**Should the water setpoint follow the clock?** The hydraulic module is given
-one fixed setpoint. With an RTC fitted, a day/night pair would cost two settings
-and one comparison — the same shape ECO already has for the air target.
 
 **Init exits on the raw setpoint, not the ECO-effective one.** Init ends when
 the temperature reaches `GetTargetTemperature()`, while the loop underneath is
