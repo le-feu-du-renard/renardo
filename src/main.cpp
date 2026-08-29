@@ -384,9 +384,10 @@ static bool ReadDamperReadback(uint8_t index, MenuDamperReadback &readback)
   const DamperFeedback &feedback =
       index == 0 ? damper->Extraction() : damper->Recycling();
 
-  readback.raw        = feedback.GetRawPosition();
-  readback.percent    = feedback.GetPositionPercent();
-  readback.has_signal = feedback.HasSignal();
+  readback.raw         = feedback.GetRawPosition();
+  readback.percent     = feedback.GetPositionPercent();
+  readback.has_signal  = feedback.HasSignal();
+  readback.target_open = feedback.GetTargetOpen();
   return true;
 }
 

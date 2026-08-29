@@ -43,8 +43,9 @@ struct MenuClock
 struct MenuDamperReadback
 {
   uint16_t raw;
-  float    percent;     // NAN when there is nothing usable to report
-  bool     has_signal;  // the channel is carrying a signal at all
+  float    percent;      // NAN when there is nothing usable to report
+  bool     has_signal;   // the channel is carrying a signal at all
+  bool     target_open;  // where the current command is sending this register
 };
 
 // Declared here rather than ad hoc in each .cpp: the menu stays unaware of

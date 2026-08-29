@@ -1,7 +1,9 @@
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "UiTheme.h"
+#include "config.h"
 
 namespace UiTheme
 {
@@ -70,21 +72,19 @@ void FormatDamperState(float position, bool target_open, char *out, size_t lengt
     return;
   }
 
-  // Rounded before the end stops are tested, so that a register reading 99.6 %
-  // is called OUVERT rather than "OUV. 100%", which would claim to be part way
-  // and print a full opening in the same breath.
+  // Rounded before arrival is tested, so that a register reading 99.6 % is
+  // called OUVERT rather than "OUV.100%", which would claim to be part way and
+  // print a full opening in the same breath.
   int opening = static_cast<int>(lroundf(position));
-  if (opening <= 0)
+  int target  = target_open ? 100 : 0;
+
+  if (abs(opening - target) <= static_cast<int>(DAMPER_POSITION_TOLERANCE))
   {
-    snprintf(out, length, "FERME");
-  }
-  else if (opening >= 100)
-  {
-    snprintf(out, length, "OUVERT");
+    snprintf(out, length, target_open ? "OUVERT" : "FERME");
   }
   else
   {
-    snprintf(out, length, target_open ? "OUV. %d%%" : "FER. %d%%", opening);
+    snprintf(out, length, target_open ? "OUV.%d%%" : "FER.%d%%", opening);
   }
 }
 

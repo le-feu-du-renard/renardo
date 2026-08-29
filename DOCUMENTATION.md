@@ -334,8 +334,18 @@ carries its own mechanical direction switch that the firmware cannot read.
 The Belimo's 2-10 V position feedback is read on its own ADC channel per
 register. It drives the display, showing the vane travelling during its ~150 s
 stroke, and one safety decision: the airflow interlock above. Calibration is two
-ordered raw marks per register (`mini`, `maxi`) plus one `Sens signal` flag
-shared by all of them, all captured from the menu.
+ordered raw marks per register (`mini`, `maxi`) plus the `Sens signal` flag,
+captured from the menu.
+
+That flag is the actuator model's sense, not the register's: the direction switch
+mirrors the position feedback as well as the travel, so a complementary pair puts
+out the *same* voltage on both channels with one register open and the other
+shut. Each register's real sense is `Sens signal` turned round again wherever its
+own direction flag is set — combined once, in `AirDamper::ApplyConfig()`. The two
+signal rows on the Registres page read out `ouvert` / `ferme`, or `ouverture` /
+`fermeture` while a register travels, beside the raw count — so the pair can be
+checked from that page alone, and without sitting through the 150 s stroke; see
+HARDWARE.md.
 
 ---
 
@@ -517,10 +527,17 @@ of a duct with a vane in it, which is the one thing two neighbouring status
 cells must not do — it makes the operator read the caption to learn which is
 which, every time.
 
-What the vane's angle used to say, the words below it say instead: `FERME`,
-`OUVERT`, `OUV. nn%` or `--` from the measured position. A feedback that has
-become unusable, which the vaneless duct used to signal by absence, raises
-`RECOPIE REGISTRE HS` in the hint bar, where it gets a full line.
+What the vane's angle used to say, the words below it say instead: `OUVERT`,
+`FERME`, `OUV.nn%` / `FER.nn%` or `--`, from the measured position **judged
+against the commanded end**. That last part is what stops the cell contradicting
+the command that has just been given: a register commanded open sits at 0 % for
+the first seconds of its 150 s stroke, and testing the two ends on their own —
+which is what this did — printed `FERME` there, indistinguishable from a
+register refusing to move. Arrival uses the same `DAMPER_POSITION_TOLERANCE` as
+`IsMoving()`, so the word and the cell's amber in-transit colour turn over
+together. A feedback that has become unusable, which the vaneless duct used to
+signal by absence, raises `RECOPIE REGISTRE HS` in the hint bar, where it gets a
+full line.
 
 Rendering stays region-based: each frame is compared against the previous model
 and only the regions whose contents changed are redrawn, each through its own

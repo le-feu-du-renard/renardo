@@ -160,7 +160,7 @@ void test_damper_end_stops_are_words(void)
   TEST_ASSERT_EQUAL_STRING("OUVERT", out);
 
   UiTheme::FormatDamperState(65.0f, true, out, sizeof(out));
-  TEST_ASSERT_EQUAL_STRING("OUV. 65%", out);
+  TEST_ASSERT_EQUAL_STRING("OUV.65%", out);
 }
 
 void test_damper_verb_follows_the_command_not_the_number(void)
@@ -170,22 +170,47 @@ void test_damper_verb_follows_the_command_not_the_number(void)
   // same 40 % reads two ways depending on which way it is going.
   char out[16];
   UiTheme::FormatDamperState(40.0f, true, out, sizeof(out));
-  TEST_ASSERT_EQUAL_STRING("OUV. 40%", out);
+  TEST_ASSERT_EQUAL_STRING("OUV.40%", out);
 
   UiTheme::FormatDamperState(40.0f, false, out, sizeof(out));
-  TEST_ASSERT_EQUAL_STRING("FER. 40%", out);
+  TEST_ASSERT_EQUAL_STRING("FER.40%", out);
+}
 
-  // The end stops are past arguing about, and say the same word either way.
+void test_damper_at_the_wrong_end_is_not_called_arrived(void)
+{
+  // The defect this replaces, and it showed on the dashboard the moment the air
+  // path was commanded: the two ends used to be tested on their own, so a
+  // register commanded open but still sitting at 0 % — the first seconds of
+  // every 150 s stroke — printed FERME. The cell answered the command that had
+  // just been given with its own opposite, and looked exactly like a register
+  // refusing to move.
+  char out[16];
+  UiTheme::FormatDamperState(0.0f, true, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("OUV.0%", out);
+
   UiTheme::FormatDamperState(100.0f, false, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("FER.100%", out);
+}
+
+void test_damper_arrival_matches_the_travel_indicator(void)
+{
+  // Same tolerance DamperFeedback::IsMoving() applies, so the word and the amber
+  // in-transit colour of the cell turn over on the same reading. A register the
+  // firmware already considers arrived must not still be printing a percentage.
+  char out[16];
+  UiTheme::FormatDamperState(96.0f, true, out, sizeof(out));
   TEST_ASSERT_EQUAL_STRING("OUVERT", out);
 
-  UiTheme::FormatDamperState(0.0f, true, out, sizeof(out));
+  UiTheme::FormatDamperState(4.0f, false, out, sizeof(out));
   TEST_ASSERT_EQUAL_STRING("FERME", out);
+
+  UiTheme::FormatDamperState(90.0f, true, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("OUV.90%", out);
 }
 
 void test_damper_rounds_before_testing_the_end_stops(void)
 {
-  // 99.6 % must not come out as "OUV. 100%", which would claim to be part way
+  // 99.6 % must not come out as "OUV.100%", which would claim to be part way
   // and print a full opening in the same breath.
   char out[16];
   UiTheme::FormatDamperState(99.6f, true, out, sizeof(out));
@@ -241,6 +266,8 @@ int main(int argc, char **argv)
   RUN_TEST(test_percent_fits_its_reserved_width);
   RUN_TEST(test_damper_end_stops_are_words);
   RUN_TEST(test_damper_verb_follows_the_command_not_the_number);
+  RUN_TEST(test_damper_at_the_wrong_end_is_not_called_arrived);
+  RUN_TEST(test_damper_arrival_matches_the_travel_indicator);
   RUN_TEST(test_damper_rounds_before_testing_the_end_stops);
   RUN_TEST(test_damper_without_feedback_is_not_closed);
   RUN_TEST(test_damper_state_fits_the_cell);

@@ -93,17 +93,33 @@ void FormatRounded(float value, char *out, size_t length);
 // The same with a percent sign, e.g. "38%" or "--%".
 void FormatPercent(float percent, char *out, size_t length);
 
-// A register's opening as words: "FERME" at 0, "OUVERT" at 100, "OUV. nn%" or
-// "FER. nn%" in between, "--" with no usable feedback.
+// A register's opening as words: "OUVERT" or "FERME" once it has arrived where
+// the command sent it, "OUV.nn%" or "FER.nn%" while it has not, "--" with no
+// usable feedback.
 //
-// The percentage is deliberately absent at the end stops. It is only useful
-// while a register is part way, and a permanent "OUVERT 100%" is two readings
-// of the same fact competing for a cell 74 px wide.
+// Arrival is measured **against the commanded end**, with the same
+// DAMPER_POSITION_TOLERANCE that DamperFeedback::IsMoving() uses, so the word
+// and the amber "in transit" colour of the cell change on the same reading
+// rather than a few percent apart.
 //
-// `target_open` picks the verb for that in-between reading: a register caught
-// mid-travel is equally "40% open" and "60% closed", and printing "OUV." while
-// it heads for FERME reads as if it were opening. The verb follows where it is
-// bound, not the number, which stays the measured opening throughout.
+// It used to test the two ends on their own — 0 was FERME and 100 was OUVERT,
+// whatever the command — on the grounds that an end stop is past arguing about.
+// It is not, in the one moment the cell is watched hardest. A register commanded
+// open sits at 0 % for the first seconds of a 150 s stroke, and the dashboard
+// answered that command with a cell reading FERME. True about the position, the
+// opposite of the truth about what was happening, and indistinguishable at a
+// glance from a register that had refused to move.
+//
+// The percentage is deliberately absent once arrived. It is only useful while a
+// register is part way, and a permanent "OUVERT 100%" is two readings of the
+// same fact competing for a cell 74 px wide. That cell holds eight glyphs, which
+// is why the verb has no space after it: a register commanded shut but still
+// reading fully open — a real and worth-seeing fault — needs all of "FER.100%".
+//
+// The verb follows where the register is bound, not the number: caught
+// mid-travel it is equally "40% open" and "60% closed", and printing "OUV."
+// while it heads for FERME reads as if it were opening. The number stays the
+// measured opening throughout.
 void FormatDamperState(float position, bool target_open, char *out, size_t length);
 
 } // namespace UiTheme

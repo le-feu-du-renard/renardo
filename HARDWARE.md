@@ -334,7 +334,7 @@ Système → Registres:
 | Setting | What it describes | Factory |
 |---|---|---|
 | `Nb registres` | how many registers the dryer has | 1 |
-| `Sens signal` | which end of the 2-10 V output means open — **common to every register**, since they are the same actuator model | `Bas=ouvert` |
+| `Sens signal` | which end of the 2-10 V output means open, **on a register whose switch is `Normal`** — the actuator model's own sense | `Bas=ouvert` |
 | `Sens extrac.` / `Sens recycl.` | where each actuator's own mechanical direction switch is set | `Normal` / `Inverse` |
 | `Extrac./Recycl. mini`, `maxi` | the two raw ADC marks at the ends of that register's travel | 641 / 3179 |
 
@@ -342,6 +342,53 @@ The direction switch on each Belimo is the one the firmware cannot read and must
 be told about: it decides which end of its travel a register goes to under the
 single command. Get it wrong in the menu and travel detection chases the wrong
 end, and the interlock misreads which reading means shut.
+
+### The direction switch turns the feedback round as well
+
+This is the part that is easy to get wrong, and it was wrong here. The Belimo's
+U output does **not** report a mechanical angle in some absolute frame. It
+reports position in the actuator's own frame, and the direction switch mirrors
+that frame along with the travel.
+
+So a correctly wired complementary pair — extraction on `1`, recycling on `0`,
+one command driving both — puts out the **same voltage on both feedback
+channels**. At 10 V of command the extraction register is wide open and the
+recycling register is shut, and both read 3179. That is the healthy state, not a
+fault.
+
+`Sens signal` therefore cannot be the last word for a register: it is the
+actuator model's sense, and each register's real sense is that flag turned round
+again wherever its own direction switch is `Inverse`. `AirDamper::ApplyConfig()`
+combines the two and pushes one resolved flag into each `DamperFeedback`, in the
+same place it pushes the targets, so both halves of what the switch does are
+decided together.
+
+Before this, one dryer-wide flag was pushed into both registers unchanged, and
+the consequences were exactly what you would expect once you know the two
+channels carry the same voltage: both registers reported the *same* opening, the
+airflow interlock saw two shut registers through half of every session, and the
+pair could not be configured from the menu at all — the calibration marks are
+ordered, so there was no way to enter one register backwards to compensate.
+
+**How to check it on the machine.** Open Registres, drive the air path with
+`Vers extraction` and `Vers recirc.`, and read the two signal rows. Each shows
+the raw count, the opening and a word — `ouvert`, `ferme`, or `ouverture` /
+`fermeture` while it travels. The word is the measured opening judged against
+the *commanded* end, so it is on screen the instant you send a command rather
+than 150 s later: a pair configured right shows one register opening against the
+other closing, settling into one `ouvert` against one `ferme`, and swaps them
+when you send the other command.
+
+The word is not read off the position alone, and that distinction matters. A
+register commanded open sits at 0 % for the first seconds of its stroke; a row
+that tested the two ends independently would answer `ferme` to the command just
+given, and hold that answer long enough to look settled — true about the
+position, and the exact opposite of the truth about what was happening.
+
+Both rows moving the same way means a direction flag is wrong — and it is also
+what the airflow interlock will stop the dryer over, thirty seconds later. A row
+still reading `fermeture` well past the stroke is the other fault: a register
+that is not getting there.
 
 ### The feedback runs backwards, and that is now a setting
 

@@ -681,8 +681,9 @@ void TftDisplay::DrawDevices(const DisplayModel &model)
   // to learn which is which, every time.
   //
   // What the vane's angle used to say, the words below say instead.
-  // FormatDamperState writes FERME, OUVERT, OUV./FER. nn% or -- from the
-  // measured position, so the opening is still on screen; and an unusable feedback,
+  // FormatDamperState writes OUVERT, FERME, OUV./FER.nn% or -- from the measured
+  // position judged against the commanded end, so the opening is still on screen
+  // and the word never contradicts the command just given; and an unusable feedback,
   // which the vaneless duct used to signal, raises RECOPIE REGISTRE HS in the
   // hint bar, where it gets a full line rather than an absence to be noticed.
   //

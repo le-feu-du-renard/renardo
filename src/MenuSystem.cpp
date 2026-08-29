@@ -337,6 +337,44 @@ void ApplyClockToRtc()
 
 // --- Registres page helpers -------------------------------------------------
 
+// The word the opening comes down to: where the register has arrived, or which
+// way it is going while it has not.
+//
+// The stroke is about 150 s, which is far too long to stand in front of the
+// screen waiting to find out whether the direction flags were entered right. The
+// answer is already there the moment the register starts to move — it is in the
+// commanded end, which is what the direction flags decide — so the row says it
+// straight away rather than making the reader infer it from a number creeping in
+// one direction.
+//
+// Arrival is measured **against the commanded end**, the same rule and the same
+// DAMPER_POSITION_TOLERANCE that DamperFeedback::IsMoving() applies, so the row
+// and the travel indicator on the main screen can never disagree.
+//
+// Testing the two ends independently instead — shut below one threshold, open
+// above another, whatever the command — reads plausibly and is wrong in the one
+// moment the row is looked at hardest. A register commanded open is still
+// sitting at 0 % for the first seconds of its stroke, so the row answered
+// "ferme" to the command that had just been given, and went on answering it for
+// long enough to look settled. It said the truth about the position and the
+// opposite of the truth about what was happening.
+//
+// What is measured is still measured: "ouvert" means the feedback reads the open
+// end, not that the command asked for it. A register that never gets there keeps
+// saying "ouverture" instead of quietly claiming to have arrived — which is the
+// other fault worth seeing on this page.
+const char *DamperStateWord(float percent, bool target_open)
+{
+  float target  = target_open ? 100.0f : 0.0f;
+  bool  arrived = fabsf(percent - target) <= DAMPER_POSITION_TOLERANCE;
+
+  if (arrived)
+  {
+    return target_open ? "ouvert" : "ferme";
+  }
+  return target_open ? "ouverture" : "fermeture";
+}
+
 // Shared by both signal rows: FormatItemValue copies the string out before the
 // next row is drawn, so one buffer serves them all.
 const char *DamperSignalText(uint8_t index)
@@ -362,11 +400,19 @@ const char *DamperSignalText(uint8_t index)
     // A live signal the calibration cannot turn into an opening — which is
     // exactly the state you are in while capturing the two marks, so the raw
     // value still has to be readable.
-    snprintf(text, sizeof(text), "%u = ?", static_cast<unsigned>(readback.raw));
+    snprintf(text, sizeof(text), "%u=?", static_cast<unsigned>(readback.raw));
     return text;
   }
-  snprintf(text, sizeof(text), "%u = %d%%", static_cast<unsigned>(readback.raw),
-           static_cast<int>(readback.percent + 0.5f));
+  // The word is what makes this page usable on its own: driving the air path
+  // from the two rows below and watching one register say "ouvert" while the
+  // other says "ferme" is the whole check, with no trip back to the dashboard to
+  // find out whether the direction flags were entered the right way round.
+  // Longest this can get is "4095=100% ouverture", 19 characters — 152 px at
+  // 8 px per cell, against the 182 px between the longest label on the page and
+  // the right margin.
+  snprintf(text, sizeof(text), "%u=%d%% %s", static_cast<unsigned>(readback.raw),
+           static_cast<int>(readback.percent + 0.5f),
+           DamperStateWord(readback.percent, readback.target_open));
   return text;
 }
 
@@ -536,6 +582,17 @@ void MenuSystem::Begin(DryerSettings *settings)
   g_damper_items[0] = MakeValue("Nb registres", MenuValueType::kUint8,
                                 &s.damper_count, 1.0f, (float)DAMPER_COUNT_MAX,
                                 1.0f, "");
+  //
+  // "Sens signal" is the actuator model's own sense, read on a register whose
+  // switch is Normal. It is not the last word for either register: the Belimo's
+  // direction switch mirrors the position feedback as well as the travel, so
+  // "Sens extrac." and "Sens recycl." turn it round again on the register they
+  // belong to. Which is why the two signal rows read out a word as well as a
+  // percentage — command the air path from the two rows at the bottom, and a
+  // pair configured right shows one register opening against the other closing,
+  // settling into one "ouvert" against one "ferme". Both moving the same way
+  // means a direction flag is wrong, and it is also what the airflow interlock
+  // will stop the dryer over.
   g_damper_items[1] = MakeToggle("Sens signal", &s.damper_feedback_low_is_open,
                                  "Bas=ouvert", "Bas=ferme");
 
