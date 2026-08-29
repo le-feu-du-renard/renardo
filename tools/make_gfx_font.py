@@ -53,11 +53,36 @@ SUBSTITUTIONS = {0x7E: "°"}
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(REPO_ROOT, "include", "fonts")
 
-# Hack is a terminal monospace very close to the JetBrains Mono of the design
-# mock-up, and it ships with macOS developer tooling, so no download is needed.
-FONT_DIR = os.path.expanduser("~/Library/Fonts")
-REGULAR = os.path.join(FONT_DIR, "HackNerdFontMono-Regular.ttf")
-BOLD = os.path.join(FONT_DIR, "HackNerdFontMono-Bold.ttf")
+# DejaVu Sans Mono, vendored beside this script rather than looked up in the
+# user's font folder.
+#
+# **Chosen for its hinting, not its shape.** Everything below rasterises in
+# FreeType's monochrome mode, where the outline barely matters and the hinting
+# instructions decide everything: they are what snaps a stem onto a whole pixel
+# instead of letting it fall as grey across two. DejaVu inherits Bitstream
+# Vera's hand-written hinting, which is about the best there is in a free
+# monospace, and it shows exactly where it matters — at 12 and 14 px the stems
+# come out solid and even, where Hack's came out thin and mottled and the
+# degree sign collapsed into a blob.
+#
+# It replaced Hack, which was picked for resembling the mock-up's JetBrains
+# Mono. That was choosing a screen font by how it looks on a monitor. Compared
+# on a magnified proof at the four sizes actually used, Hack was the weakest of
+# the four candidates tried, and Terminus — a bitmap font, and the obvious
+# suggestion for a panel this size — is only pixel-perfect at its own native
+# sizes, of which 26 is not one, so it thinned out badly at the largest.
+#
+# **The metrics did not move.** DejaVu's advance is identical to Hack's at all
+# four sizes (7, 8, 11, 16 px), and its cap heights match to within a pixel, so
+# every static_assert in TftDisplay.cpp about text fitting its cell held
+# unchanged across the swap. Two boxes came out a pixel shorter.
+#
+# Vendored because the previous arrangement pointed at ~/Library/Fonts and so
+# only regenerated on one machine. The headers are committed either way, but a
+# generator that cannot be re-run is a generator that will not be.
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+REGULAR = os.path.join(FONT_DIR, "DejaVuSansMono.ttf")
+BOLD = os.path.join(FONT_DIR, "DejaVuSansMono-Bold.ttf")
 
 # (header name, ttf path, em size in pixels).
 #
@@ -70,7 +95,7 @@ BOLD = os.path.join(FONT_DIR, "HackNerdFontMono-Bold.ttf")
 # cut. That buys back legibility the mock-up's own scale cannot give at this
 # physical size.
 #
-# Bold throughout, including the captions: at 12 px Hack Bold still has open
+# Bold throughout, including the captions: at 12 px DejaVu Bold still has open
 # counters, and weight does more for legibility at this pixel count than any
 # choice of typeface does.
 FONTS = [

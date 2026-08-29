@@ -222,17 +222,17 @@ void TftDisplay::RenderMain(const DisplayModel &model)
 
   // Both variants checked by the compiler rather than by whoever last edited
   // the numbers.
-  static_assert(kLayoutHydraulic.Fits(kCardY, kHintY),
-                "hydraulic layout overruns the screen");
-  static_assert(kLayoutNoHydraulic.Fits(kCardY, kHintY),
-                "no-hydraulic layout overruns the screen");
+  static_assert(kLayoutHydraulic.Fits(kCardY, kHintY, kGutter),
+                "hydraulic layout is not on the gutter rhythm");
+  static_assert(kLayoutNoHydraulic.Fits(kCardY, kHintY, kGutter),
+                "no-hydraulic layout is not on the gutter rhythm");
 
   // The strip's whole height plus its gutter goes somewhere, or the point of
   // removing it was missed — and nothing else may absorb it silently either.
   // These two figures are what the reclaimed pixels were spent on.
   static_assert(kLayoutNoHydraulic.card_h - kLayoutHydraulic.card_h == 19,
                 "the cards did not take their share of the reclaimed strip");
-  static_assert(kLayoutNoHydraulic.device_h - kLayoutHydraulic.device_h == 18,
+  static_assert(kLayoutNoHydraulic.device_h - kLayoutHydraulic.device_h == 19,
                 "the device row did not take its share of the reclaimed strip");
 
   // The whole lower half moves when the hydraulic is switched at the menu, and

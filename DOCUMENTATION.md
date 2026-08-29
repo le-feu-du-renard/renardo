@@ -18,7 +18,7 @@
 ## Programmes
 
 A dryer and a climate chamber are the same machine asked two different
-questions, and the answer is one setting: **Phases > Programme**.
+questions, and the answer is one setting: **Programme > Programme**.
 
 | | Sechage | Climat |
 |---|---|---|
@@ -36,7 +36,9 @@ has existed since v3 and was selected by nothing: open while the air is too
 damp, shut once it is not, with a 5 %RH deadband and a 10 s cooldown between
 movements. Holding a climate is exactly that and nothing more.
 
-The four phase durations are greyed out under Climat, and the programme itself
+The page is named for the choice rather than for the mechanism — "Phases" named
+what the drying programme happens to be made of, which is exactly what a climate
+has none of. The four phase durations are greyed out under Climat, and the programme itself
 is greyed out while a session runs — the phase machine is already inside one,
 and `SessionManager` refuses the change from its own side as well, because the
 menu is not the only way in.
@@ -394,14 +396,22 @@ of flash all told, on 1.5 MB.
 |---|---|---|
 | 0–3 | Progress | how far the running phase has gone, in the phase colour |
 | 4–23 | Header | phase dot and name (left), elapsed time (centred) |
-| 32–107 | Cards | INJECTION · CONSIGNE |
+| 28–107 | Cards | INJECTION · CONSIGNE |
 | 112–145 | Strip | hydraulic state, circulating and tank water temperatures |
 | 150–221 | Devices | fan (animated), heating or dehumidifier, extraction, recycling |
 | 226–239 | Hint | empty, or the highest-ranked active alarm |
 
+Every gap between bands is one gutter, 4 px — the same figure that separates the
+cells inside a row, so the screen reads on one rhythm vertically and
+horizontally. The progress bar is the deliberate exception: it is a full-bleed
+hairline in the phase colour and sits flush under the top edge and against the
+header, which is what makes it read as the header's own edge rather than a band
+of its own. The rhythm is asserted at compile time, not merely checked for
+overlaps.
+
 **With the hydraulic switched off the strip is not blanked — it is gone**, and
-its 38 px are given back: the cards run to 126 and the device row from 131 to
-220. Three cells reporting a water loop that is not fitted are a third of the
+its 38 px are given back, 19 to each: the cards run to 126 and the device row
+from 131 to 221. Three cells reporting a water loop that is not fitted are a third of the
 usable height spent on nothing. Only the vertical figures change between the two
 variants; every width is shared, which is what leaves all nine assertions about
 text fitting its cell true as written. A change of variant forces a full
@@ -523,14 +533,14 @@ Rotation moves the cursor, a click enters or edits, and each page ends with an
 explicit `< Retour` — there is no long press. Booleans flip on a click. The
 cursor stops at the ends rather than wrapping.
 
-Pages: Consignes, Sources, Mode ECO, Phases, Régulation, Système. Seven rows fit
+Pages: Consignes, Sources, Mode ECO, Programme, Régulation, Système. Seven rows fit
 between the header and the hint bar, so the root page is on screen whole and the
-most-used page never scrolls — which is why `Programme` is the first row of
-Phases and `Télémétrie` lives under Système rather than either becoming an
-eighth root entry.
+most-used page never scrolls — which is why the programme is the first row of
+its own page and `Télémétrie` lives under Système, rather than either becoming
+an eighth root entry.
 
 Two rows are two-way choices rather than numbers, operated exactly as booleans
-are: `Sources > Type source` and `Phases > Programme`. Type source comes above
+are: `Sources > Type source` and `Programme > Programme`. Type source comes above
 the toggle it governs, because that toggle means two different machines
 depending on it and reading them the other way round is reading the answer
 first.
@@ -555,8 +565,8 @@ is fitted. What is gated, and on what:
 | Mode ECO, Date / Heure | an RTC answered at boot |
 | Consignes > Eau (module) | the hydraulic source is switched on |
 | Régulation > Seuil extract. | a dehumidifier is fitted |
-| Phases > Init … Ouv. registre | the programme is Séchage |
-| Phases > Programme | no session is running |
+| Programme > Init … Ouv. registre | the programme is Séchage |
+| Programme > Programme | no session is running |
 | Télémétrie > WiFi Grafana | this is a Pico W build |
 | Registres > recycling rows | two registers are declared |
 

@@ -165,7 +165,7 @@ MenuItem g_root_items[7];
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
 MenuPage g_source_page{"Sources", g_source_items, 4};
 MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
-MenuPage g_phase_page{"Phases", g_phase_items, 6};
+MenuPage g_phase_page{"Programme", g_phase_items, 6};
 MenuPage g_control_page{"Regulation", g_control_items, 8};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
 MenuPage g_damper_page{"Registres", g_damper_items, 13};
@@ -594,7 +594,7 @@ void MenuSystem::Begin(DryerSettings *settings)
   g_root_items[0] = MakeSubmenu("Consignes", &g_setpoint_page);
   g_root_items[1] = MakeSubmenu("Sources", &g_source_page);
   g_root_items[2] = MakeSubmenu("Mode ECO", &g_eco_page);
-  g_root_items[3] = MakeSubmenu("Phases", &g_phase_page);
+  g_root_items[3] = MakeSubmenu("Programme", &g_phase_page);
   g_root_items[4] = MakeSubmenu("Regulation", &g_control_page);
   g_root_items[5] = MakeSubmenu("Systeme", &g_system_page);
   g_root_items[6] = MakeBack();

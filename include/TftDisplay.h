@@ -93,7 +93,11 @@ private:
   static constexpr int16_t kHeaderY = 4;
   static constexpr int16_t kHeaderH = 20;
 
-  static constexpr int16_t kCardY = 32;
+  // One gutter below the header, like every other gap between bands. The
+  // progress bar above it is the deliberate exception: it is a full-bleed
+  // hairline in the phase colour, and sitting flush is what makes it read as
+  // the top edge of the header rather than a band of its own.
+  static constexpr int16_t kCardY = kHeaderY + kHeaderH + kGutter;
 
   // The measurement card is the wider of the two: it carries four figures and
   // two gauges against the setpoint card's two figures.
@@ -144,15 +148,20 @@ private:
     // the cell rather than pooled at the bottom, so the icon, the caption and
     // the state word stay evenly spread instead of huddling at the top over a
     // gap.
-    // Bands may not overlap and may not run into the hint bar, which the menu
-    // also draws into and which is therefore not ours to grow over. Takes its
-    // two bounds as arguments because the enclosing class is still incomplete
-    // where the assertions below are written.
-    constexpr bool Fits(int16_t card_y, int16_t hint_y) const
+    // Every gap between bands is exactly one gutter — not merely "they do not
+    // overlap", which is what this used to check and what let the header sit
+    // eight pixels off the cards while every other gap was four. Asserting the
+    // rhythm rather than the absence of a collision is the difference between a
+    // layout that is even and one that happens not to be broken.
+    //
+    // Takes its bounds as arguments because the enclosing class is still
+    // incomplete where the assertions below are written.
+    constexpr bool Fits(int16_t card_y, int16_t hint_y, int16_t gutter) const
     {
-      return card_y + card_h <= (has_strip ? strip_y : device_y) &&
-             (!has_strip || strip_y + strip_h <= device_y) &&
-             device_y + device_h <= hint_y;
+      return (has_strip ? (card_y + card_h + gutter == strip_y &&
+                           strip_y + strip_h + gutter == device_y)
+                        : (card_y + card_h + gutter == device_y)) &&
+             device_y + device_h + gutter == hint_y;
     }
 
     constexpr int16_t Extra() const { return device_h - 72; }
@@ -163,12 +172,12 @@ private:
 
   //   progress   0..  3
   //   header     4.. 23
-  //   cards     32..107 | 32..126
+  //   cards     28..107 | 28..126
   //   strip    112..145 | -
-  //   devices  150..221 | 131..220
+  //   devices  150..221 | 131..221
   //   hint     226..239
-  static constexpr Layout kLayoutHydraulic{true, 76, 112, 34, 150, 72};
-  static constexpr Layout kLayoutNoHydraulic{false, 95, 0, 0, 131, 90};
+  static constexpr Layout kLayoutHydraulic{true, 80, 112, 34, 150, 72};
+  static constexpr Layout kLayoutNoHydraulic{false, 99, 0, 0, 131, 91};
 
   // Both are checked, in RenderMain: a nested type's constexpr members are not
   // usable in a constant expression until the enclosing class is complete, and
