@@ -13,7 +13,7 @@
 struct DamperConfig
 {
   uint8_t  count;                 // 1 or DAMPER_COUNT_MAX
-  bool     feedback_low_is_open;  // shared: same actuator model everywhere
+  bool     feedback_low_is_open;  // actuator model, read on a Normal register
   bool     extraction_inverted;   // each actuator's own direction switch
   bool     recycling_inverted;
   uint16_t extraction_raw_min;
@@ -38,6 +38,17 @@ struct DamperConfig
 // calibration and reports its own opening: see DamperFeedback. Control of the
 // air path depends on none of it — but the airflow interlock does, and that is
 // the one place a reading has ever been allowed to stop the dryer.
+//
+// The direction switch also turns the feedback round. That is the Belimo's
+// behaviour and it is easy to get wrong: the U output does not report a
+// mechanical angle in some absolute frame, it reports the position *in the
+// actuator's own frame*, which the switch mirrors along with the travel. A
+// complementary pair therefore puts out the **same** voltage on both channels —
+// one register wide open, the other shut, both reading 10.10V. So the open end
+// of the signal is not one setting for the whole dryer: it is the actuator
+// model's sense, turned round again on each register whose switch is inverted.
+// That combination is applied in ApplyConfig(), next to PushTargets(), so both
+// halves of what the switch does are decided in the same place.
 class AirDamper
 {
 public:
@@ -52,6 +63,7 @@ public:
   // command.
   void    ApplyConfig(const DamperConfig &config);
   uint8_t GetCount() const { return count_; }
+  bool    GetFeedbackLowIsOpen() const { return feedback_low_is_open_; }
   bool    GetExtractionInverted() const { return extraction_inverted_; }
   bool    GetRecyclingInverted() const { return recycling_inverted_; }
 
@@ -85,6 +97,7 @@ public:
 private:
   bool           is_open_;
   uint8_t        count_;
+  bool           feedback_low_is_open_;
   bool           extraction_inverted_;
   bool           recycling_inverted_;
   DamperFeedback extraction_;

@@ -15,9 +15,11 @@
 // of being re-derived at every call site.
 //
 // The calibration is two **ordered marks**, min and max, plus a flag saying
-// which end is the open one. The flag is not this register's business — it is a
-// property of the actuator model, shared by all of them — but it is stored here
-// because this is where the arithmetic that uses it lives. Naming the two marks
+// which end is the open one. That flag is per register, not per dryer: the
+// actuator model decides it, and then each actuator's mechanical direction
+// switch turns it round again, since the switch mirrors the feedback along with
+// the travel. AirDamper combines the two and pushes the answer down here — this
+// class only ever sees the register's own sense. Naming the two marks
 // "closed" and "open" instead put the direction inside the order of the pair,
 // where entering them the wrong way round reported every opening inside out
 // while looking entirely plausible.
@@ -37,7 +39,7 @@ public:
   // Two-point calibration, set from the menu by driving this register to each
   // end of its travel and capturing the raw value there: `raw_min` is the
   // smaller of the two readings, `raw_max` the larger. `low_is_open` says which
-  // one is the open end, and is the same for every register on the dryer.
+  // one is the open end *for this register*, direction switch included.
   void     SetCalibration(uint16_t raw_min, uint16_t raw_max, bool low_is_open);
   uint16_t GetRawMin() const { return raw_min_; }
   uint16_t GetRawMax() const { return raw_max_; }

@@ -397,7 +397,10 @@ void Dryer::CaptureSettings(DryerSettings &settings) const
   settings.extraction_damper_open_duration = durations.extraction_damper_open;
 
   settings.damper_count                = air_damper_.GetCount();
-  settings.damper_feedback_low_is_open = air_damper_.Extraction().GetLowIsOpen();
+  // Not Extraction().GetLowIsOpen(): that one already has the extraction
+  // register's direction switch folded into it, and writing it back would flip
+  // the setting every time an inverted extraction register was saved.
+  settings.damper_feedback_low_is_open = air_damper_.GetFeedbackLowIsOpen();
   settings.damper_extraction_inverted  = air_damper_.GetExtractionInverted();
   settings.damper_recycling_inverted   = air_damper_.GetRecyclingInverted();
 

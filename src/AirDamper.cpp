@@ -4,6 +4,7 @@
 AirDamper::AirDamper()
     : is_open_(false),
       count_(DAMPER_COUNT_DEFAULT),
+      feedback_low_is_open_(DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT),
       extraction_inverted_(DAMPER_EXTRACTION_INVERTED_DEFAULT),
       recycling_inverted_(DAMPER_RECYCLING_INVERTED_DEFAULT),
       extraction_("extraction"),
@@ -21,13 +22,22 @@ void AirDamper::ApplyConfig(const DamperConfig &config)
 {
   count_ = config.count < 1 ? 1
            : (config.count > DAMPER_COUNT_MAX ? DAMPER_COUNT_MAX : config.count);
-  extraction_inverted_ = config.extraction_inverted;
-  recycling_inverted_  = config.recycling_inverted;
+  feedback_low_is_open_ = config.feedback_low_is_open;
+  extraction_inverted_  = config.extraction_inverted;
+  recycling_inverted_   = config.recycling_inverted;
 
+  // The direction switch mirrors the feedback as well as the travel, so a
+  // register set the other way round reports the other end of its signal as the
+  // open one. Without this the two channels of a complementary pair — which put
+  // out the same voltage, since each reports position in its own mirrored frame
+  // — resolve to the same opening, and the dryer believes both registers are
+  // shut for half of every session. `feedback_low_is_open` describes the
+  // actuator on a register whose switch is Normal; each register's own sense is
+  // that, turned round again if its switch is not.
   extraction_.SetCalibration(config.extraction_raw_min, config.extraction_raw_max,
-                             config.feedback_low_is_open);
+                             config.feedback_low_is_open != config.extraction_inverted);
   recycling_.SetCalibration(config.recycling_raw_min, config.recycling_raw_max,
-                            config.feedback_low_is_open);
+                            config.feedback_low_is_open != config.recycling_inverted);
 
   // A direction changed from the menu must reach the registers now, not at the
   // next command: travel detection and the interlock both read these targets.

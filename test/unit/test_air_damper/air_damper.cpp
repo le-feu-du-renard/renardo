@@ -20,8 +20,14 @@ void tearDown(void) {}
 namespace
 {
 
-// The complementary pair the dryer has always run, with both feedbacks the
-// intuitive way round unless a test says otherwise.
+// The complementary pair the dryer has always run, with the actuator model's
+// signal the intuitive way round unless a test says otherwise.
+//
+// Note what that means for the recycling register, and it is the whole point of
+// the pair: its switch is inverted, so its feedback is mirrored too, and raw
+// 4000 — wide open on the extraction register — is *shut* on this one. Both
+// channels carrying the same voltage is the normal state of a complementary
+// pair, not a fault.
 DamperConfig TwoRegisters(bool low_is_open = false)
 {
   DamperConfig config{};
@@ -293,12 +299,53 @@ void test_recycling_travels_the_other_way(void)
 
   // Commanding extraction sends the recycling register to *closed*, so a
   // recycling register sitting wide open is the one that is still travelling.
+  // Wide open, on this mirrored channel, is raw 800.
   damper.Open();
-  damper.Recycling().SetRawPosition(4000);
+  damper.Recycling().SetRawPosition(800);
   TEST_ASSERT_TRUE(damper.Recycling().IsMoving());
 
-  damper.Recycling().SetRawPosition(800);
+  damper.Recycling().SetRawPosition(4000);
   TEST_ASSERT_FALSE(damper.Recycling().IsMoving());
+}
+
+void test_the_direction_switch_turns_the_feedback_round_too(void)
+{
+  // The bug this pair of assertions exists for: the Belimo's U output reports
+  // position in the actuator's own frame, which the direction switch mirrors, so
+  // a complementary pair reads the *same* voltage on both channels. Resolving
+  // that with one dryer-wide signal sense gave both registers the same opening —
+  // a screen showing two registers shut, an airflow interlock tripping through
+  // half of every session, and no way at all to configure the pair from the
+  // menu, since the calibration marks are ordered and cannot be entered
+  // backwards to compensate.
+  AirDamper damper;
+  damper.ApplyConfig(TwoRegisters());
+
+  damper.Extraction().SetRawPosition(4000);
+  damper.Recycling().SetRawPosition(4000);
+
+  TEST_ASSERT_EQUAL_FLOAT(100.0f, damper.Extraction().GetPositionPercent());
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, damper.Recycling().GetPositionPercent());
+
+  damper.Extraction().SetRawPosition(800);
+  damper.Recycling().SetRawPosition(800);
+
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, damper.Extraction().GetPositionPercent());
+  TEST_ASSERT_EQUAL_FLOAT(100.0f, damper.Recycling().GetPositionPercent());
+}
+
+void test_the_signal_sense_setting_survives_a_round_trip(void)
+{
+  // The per-register sense is derived, so the setting it is derived from has to
+  // be kept: reading it back off the extraction register would fold that
+  // register's switch into it and flip the stored value on every save.
+  AirDamper damper;
+  DamperConfig config = TwoRegisters(true);
+  config.extraction_inverted = true;
+  damper.ApplyConfig(config);
+
+  TEST_ASSERT_TRUE(damper.GetFeedbackLowIsOpen());
+  TEST_ASSERT_FALSE(damper.Extraction().GetLowIsOpen());
 }
 
 void test_damper_is_moving_while_either_register_travels(void)
@@ -311,7 +358,7 @@ void test_damper_is_moving_while_either_register_travels(void)
   damper.Recycling().SetRawPosition(2400);  // still on its way to closed
   TEST_ASSERT_TRUE(damper.IsMoving());
 
-  damper.Recycling().SetRawPosition(800);   // arrived too
+  damper.Recycling().SetRawPosition(4000);  // arrived too — mirrored channel
   TEST_ASSERT_FALSE(damper.IsMoving());
 }
 
@@ -327,7 +374,7 @@ void test_a_register_the_dryer_does_not_have_is_not_consulted(void)
 
   damper.Open();
   damper.Extraction().SetRawPosition(4000); // arrived
-  damper.Recycling().SetRawPosition(4000);  // stale, and pointing the wrong way
+  damper.Recycling().SetRawPosition(800);   // stale, and pointing the wrong way
 
   TEST_ASSERT_FALSE(damper.IsMoving());
   TEST_ASSERT_TRUE(damper.IsFeedbackUsable());
@@ -343,7 +390,7 @@ void test_one_dead_feedback_does_not_hide_the_other(void)
 
   damper.Open(); // recycling should close
   damper.Extraction().SetRawPosition(1005);
-  damper.Recycling().SetRawPosition(4000); // still fully open
+  damper.Recycling().SetRawPosition(800); // still fully open
 
   TEST_ASSERT_FALSE(damper.Extraction().IsMoving());
   TEST_ASSERT_TRUE(damper.Recycling().IsMoving());
@@ -369,10 +416,14 @@ void test_arrival_tolerance_absorbs_actuator_slop(void)
 
 void test_both_registers_shut_blocks_the_airflow(void)
 {
+  // Both shut is not both channels at the same voltage — that is the normal
+  // complementary state. It is each channel at the shut end of *its own*
+  // mirrored signal: 800 on the extraction register, 4000 on the recycling one.
+  // What puts a pair there is one of them failing to travel.
   AirDamper damper;
   damper.ApplyConfig(TwoRegisters());
 
-  SettleBothAt(damper, 800, 800);
+  SettleBothAt(damper, 800, 4000);
   TEST_ASSERT_TRUE(damper.IsAirflowBlocked());
 }
 
@@ -385,7 +436,7 @@ void test_the_interlock_waits_for_confirmation(void)
   damper.ApplyConfig(TwoRegisters());
 
   damper.Extraction().SetRawPosition(800);
-  damper.Recycling().SetRawPosition(800);
+  damper.Recycling().SetRawPosition(4000);
   damper.UpdateInterlock();
   TEST_ASSERT_FALSE(damper.IsAirflowBlocked());
 
@@ -403,7 +454,9 @@ void test_one_open_register_is_enough_for_air_to_move(void)
   AirDamper damper;
   damper.ApplyConfig(TwoRegisters());
 
-  SettleBothAt(damper, 800, 4000);
+  // Both channels at the same voltage: the healthy complementary pair, one
+  // register shut and the other wide open.
+  SettleBothAt(damper, 800, 800);
   TEST_ASSERT_FALSE(damper.IsAirflowBlocked());
 }
 
@@ -416,7 +469,7 @@ void test_a_single_register_can_never_block_the_airflow(void)
   config.count = 1;
   damper.ApplyConfig(config);
 
-  SettleBothAt(damper, 800, 800);
+  SettleBothAt(damper, 800, 4000);
   TEST_ASSERT_FALSE(damper.IsAirflowBlocked());
 }
 
@@ -428,10 +481,10 @@ void test_the_fault_clears_itself_when_a_register_opens(void)
   AirDamper damper;
   damper.ApplyConfig(TwoRegisters());
 
-  SettleBothAt(damper, 800, 800);
+  SettleBothAt(damper, 800, 4000);
   TEST_ASSERT_TRUE(damper.IsAirflowBlocked());
 
-  damper.Recycling().SetRawPosition(4000);
+  damper.Recycling().SetRawPosition(800);
   damper.UpdateInterlock();
   TEST_ASSERT_FALSE(damper.IsAirflowBlocked());
 }
@@ -489,6 +542,8 @@ int main(int argc, char **argv)
   RUN_TEST(test_a_signal_that_comes_back_is_believed_again);
   RUN_TEST(test_moving_while_travelling_to_the_commanded_end);
   RUN_TEST(test_recycling_travels_the_other_way);
+  RUN_TEST(test_the_direction_switch_turns_the_feedback_round_too);
+  RUN_TEST(test_the_signal_sense_setting_survives_a_round_trip);
   RUN_TEST(test_damper_is_moving_while_either_register_travels);
   RUN_TEST(test_a_register_the_dryer_does_not_have_is_not_consulted);
   RUN_TEST(test_one_dead_feedback_does_not_hide_the_other);

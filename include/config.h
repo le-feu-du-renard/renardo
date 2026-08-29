@@ -240,9 +240,8 @@
 #define DAMPER_COUNT_DEFAULT 1
 #define DAMPER_COUNT_MAX 2
 
-// Which end of the feedback signal means "open" — one setting for every
-// register, because it is a property of the actuator model and its linkage, not
-// of an individual register.
+// Which end of the feedback signal means "open" on a register whose direction
+// switch is Normal — the actuator model's own sense, before the switch.
 //
 // On this dryer the signal runs backwards: the Belimo puts out 10.10V with the
 // register shut and 2.00V with it open, so the *low* end is the open one. That
@@ -250,6 +249,13 @@
 // two values the wrong way round reported every opening inside out while looking
 // entirely plausible. The pair is now two ordered marks, min and max, and this
 // flag alone says what they mean.
+//
+// It is deliberately *not* the final answer for a given register. The Belimo's
+// direction switch mirrors its U output as well as its travel, so the feedback
+// reports position in the actuator's own frame: a complementary pair puts out
+// the same voltage on both channels, one register open and the other shut. The
+// per-register sense is therefore this flag turned round again wherever
+// DAMPER_*_INVERTED is set, which AirDamper::ApplyConfig() is what does.
 #define DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT true
 
 // Which way each actuator travels under the single command — one flag per
@@ -260,6 +266,10 @@
 // tells the airflow interlock which reading means shut. The factory values are
 // the complementary pair the dryer has always run: the extraction register opens
 // on the extraction command, the recycling one closes.
+//
+// They carry a second job, described at DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT: the
+// switch turns the position feedback round as well, so these also decide which
+// end of each register's signal is the open one.
 #define DAMPER_EXTRACTION_INVERTED_DEFAULT false
 #define DAMPER_RECYCLING_INVERTED_DEFAULT true
 
@@ -335,12 +345,14 @@
 // stopped if it is already running. One register cannot do it — hence the
 // interlock only exists at DAMPER_COUNT_MAX.
 //
-// The confirmation delay costs nothing legitimate. Complementary registers pass
-// each other mid-travel, one climbing while the other falls, and are never both
-// under the closed threshold at the same time. Two actuators whose direction
-// switches are set the same way do settle there, and that is precisely the fault
-// this catches — but only after they have had time to arrive, so the delay is
-// generous rather than tight.
+// The confirmation delay costs nothing legitimate. A correctly declared
+// complementary pair reads one opening and its complement, and is never both
+// under the closed threshold at the same time. What does settle there is a
+// register that has not travelled — a stalled actuator, or a vane parted from
+// its shaft, since the feedback reports the shaft's real position — and two
+// actuators whose direction switches are both set the same way. Those are the
+// faults this catches, and it only catches them after they have had time to
+// arrive, so the delay is generous rather than tight.
 #define DAMPER_CLOSED_THRESHOLD 10.0f    // % at or below which a register is shut
 #define DAMPER_BLOCKED_CONFIRM_MS 30000  // both shut this long = no airflow
 
