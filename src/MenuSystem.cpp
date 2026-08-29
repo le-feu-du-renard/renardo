@@ -157,10 +157,10 @@ MenuItem g_eco_items[5];
 MenuItem g_phase_items[6];
 MenuItem g_control_items[8];
 MenuItem g_clock_items[8];
-MenuItem g_system_items[5];
+MenuItem g_system_items[3];
 MenuItem g_telemetry_items[6];
 MenuItem g_damper_items[13];
-MenuItem g_root_items[7];
+MenuItem g_root_items[9];
 
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 4};
 MenuPage g_source_page{"Sources", g_source_items, 4};
@@ -169,9 +169,9 @@ MenuPage g_phase_page{"Programme", g_phase_items, 6};
 MenuPage g_control_page{"Regulation", g_control_items, 8};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
 MenuPage g_damper_page{"Registres", g_damper_items, 13};
-MenuPage g_system_page{"Systeme", g_system_items, 5};
+MenuPage g_system_page{"Systeme", g_system_items, 3};
 MenuPage g_telemetry_page{"Telemetrie", g_telemetry_items, 6};
-MenuPage g_root_page{"Menu", g_root_items, 7};
+MenuPage g_root_page{"Menu", g_root_items, 9};
 
 MenuItem MakeValue(const char *label, MenuValueType type, void *binding,
                    float min_value, float max_value, float step, const char *unit,
@@ -584,20 +584,31 @@ void MenuSystem::Begin(DryerSettings *settings)
   g_telemetry_items[4] = MakeInfo("Envois/ech.", TelemetrySentText);
   g_telemetry_items[5] = MakeBack();
 
-  g_system_items[0] = MakeSubmenu("Registres", &g_damper_page);
-  g_system_items[1] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,
+  g_system_items[0] = MakeSubmenu("Date / Heure", &g_clock_page, RtcPresent,
                                   LoadClockFromRtc);
-  g_system_items[2] = MakeSubmenu("Telemetrie", &g_telemetry_page);
-  g_system_items[3] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
-  g_system_items[4] = MakeBack();
+  g_system_items[1] = MakeAction("Reinit. usine", ResetToFactoryDefaults);
+  g_system_items[2] = MakeBack();
 
+  // Ordered by how often a page is reached and by what depends on what: the
+  // setpoints first, then what is fitted to serve them, then the programme that
+  // runs them — above ECO, which only shifts a setpoint the programme has
+  // already been given. Régulation and the two pages that used to sit under
+  // Système follow, and Système keeps only what is left: the clock and the
+  // factory reset.
+  //
+  // Registres and Télémétrie came out because neither is a system setting.
+  // One describes the air path, which is the machine; the other is where
+  // readings go. Filing them under a page named for the firmware was filing
+  // them by who wrote them rather than by what they are.
   g_root_items[0] = MakeSubmenu("Consignes", &g_setpoint_page);
   g_root_items[1] = MakeSubmenu("Sources", &g_source_page);
-  g_root_items[2] = MakeSubmenu("Mode ECO", &g_eco_page);
-  g_root_items[3] = MakeSubmenu("Programme", &g_phase_page);
+  g_root_items[2] = MakeSubmenu("Programme", &g_phase_page);
+  g_root_items[3] = MakeSubmenu("Mode ECO", &g_eco_page);
   g_root_items[4] = MakeSubmenu("Regulation", &g_control_page);
-  g_root_items[5] = MakeSubmenu("Systeme", &g_system_page);
-  g_root_items[6] = MakeBack();
+  g_root_items[5] = MakeSubmenu("Registres", &g_damper_page);
+  g_root_items[6] = MakeSubmenu("Telemetrie", &g_telemetry_page);
+  g_root_items[7] = MakeSubmenu("Systeme", &g_system_page);
+  g_root_items[8] = MakeBack();
 
   stack_[0] = &g_root_page;
   cursor_stack_[0] = 0;

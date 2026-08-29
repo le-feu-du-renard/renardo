@@ -67,14 +67,10 @@ bool SelectLabel(MenuSystem &menu, const char *label)
   return false;
 }
 
-// Walks into Systeme > Registres, where every register test starts.
+// Walks into Registres, where every register test starts. A root entry now:
+// the air path describes the machine, not the firmware.
 bool OpenDamperPage(MenuSystem &menu)
 {
-  if (!SelectLabel(menu, "Systeme"))
-  {
-    return false;
-  }
-  menu.HandleClick();
   if (!SelectLabel(menu, "Registres"))
   {
     return false;
@@ -315,10 +311,7 @@ void test_narrow_bindings_do_not_overflow_their_field(void)
   // The damper calibration entries bind to uint16_t fields and the ECO hours to
   // uint8_t. If a binding declared a wider type, writing a large value here
   // would run past the field and corrupt its neighbour in the record.
-  TEST_ASSERT_TRUE(SelectLabel(menu, "Systeme"));
-  menu.HandleClick();
-  TEST_ASSERT_TRUE(SelectLabel(menu, "Registres"));
-  menu.HandleClick();
+  TEST_ASSERT_TRUE(OpenDamperPage(menu));
   TEST_ASSERT_TRUE(SelectLabel(menu, "Extrac. maxi"));
   menu.HandleClick();
   menu.HandleRotation(10000);

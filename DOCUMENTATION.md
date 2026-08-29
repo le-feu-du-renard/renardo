@@ -533,11 +533,22 @@ Rotation moves the cursor, a click enters or edits, and each page ends with an
 explicit `< Retour` — there is no long press. Booleans flip on a click. The
 cursor stops at the ends rather than wrapping.
 
-Pages: Consignes, Sources, Mode ECO, Programme, Régulation, Système. Seven rows fit
-between the header and the hint bar, so the root page is on screen whole and the
-most-used page never scrolls — which is why the programme is the first row of
-its own page and `Télémétrie` lives under Système, rather than either becoming
-an eighth root entry.
+Root page, in order: Consignes, Sources, Programme, Mode ECO, Régulation,
+Registres, Télémétrie, Système. Ordered by how often a page is reached and by
+what depends on what — the setpoints first, then what is fitted to serve them,
+then the programme that runs them, above ECO, which only shifts a setpoint the
+programme has already been given.
+
+Registres and Télémétrie are root entries rather than living under Système:
+neither is a system setting. One describes the air path, which is the machine;
+the other is where readings go. Filing them under a page named for the firmware
+was filing them by who wrote them rather than by what they are. Système keeps
+the clock and the factory reset.
+
+Seven rows fit between the header and the hint bar, so the root page is now two
+rows taller than the screen and scrolls — a deliberate trade for a flatter tree,
+since the two pages that came up were each a click deeper than they were worth.
+The scroll thumb on the right says so.
 
 Two rows are two-way choices rather than numbers, operated exactly as booleans
 are: `Sources > Type source` and `Programme > Programme`. Type source comes above
