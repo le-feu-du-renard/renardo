@@ -44,7 +44,10 @@
 // loop — so it now holds its own setpoint, and HYDRO_REG_WATER_TARGET left the
 // wire with it. Same consequence as v4, v5 and v6: every stored record is
 // discarded and the register calibration has to be captured again.
-#define SETTINGS_VERSION 7
+// v8 added the register command's polarity — which relay state the actuators
+// read as extraction. Same consequence again: every stored record is discarded
+// and the register calibration has to be captured again.
+#define SETTINGS_VERSION 8
 #define SESSION_VERSION 1
 
 // Everything the menu can change.
@@ -110,7 +113,12 @@ struct DryerSettings
   // The calibration is two ordered marks per register, min then max, with
   // `damper_feedback_low_is_open` saying which end is the open one — the
   // direction is deliberately not folded back into the order of the pair.
+  //
+  // `damper_command_inverted` is the odd one out and the only one that moves
+  // anything: the others describe how a reading is to be read, this one is the
+  // polarity of the single relay both registers hang off.
   uint8_t  damper_count;
+  bool     damper_command_inverted;
   bool     damper_feedback_low_is_open;
   bool     damper_extraction_inverted;
   bool     damper_recycling_inverted;

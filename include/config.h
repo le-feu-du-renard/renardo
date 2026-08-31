@@ -273,6 +273,27 @@
 #define DAMPER_EXTRACTION_INVERTED_DEFAULT false
 #define DAMPER_RECYCLING_INVERTED_DEFAULT true
 
+// Which relay state the actuators read as extraction.
+//
+// The two flags above are about the *feedback and the expected travel* of each
+// register; neither of them can move a vane, because both registers hang off a
+// single relay and the firmware has exactly one bit to give them. This is that
+// bit's polarity, and it is the only setting that changes where the air
+// actually goes.
+//
+// Normal is the relay energised for extraction, so a machine at rest — powered
+// off, or between sessions — recirculates. Inverted is the other loom: the
+// actuators are fed through the relay's normally-closed contact, or their two
+// control wires are swapped, and the register that opens with the relay at rest
+// is the extraction one. On such a dryer the firmware would otherwise start
+// every session by extracting while announcing recirculation, which is both the
+// wrong air path and the wrong story about it.
+//
+// It is a setting rather than a rebuild because it is a property of one
+// machine's wiring, discovered on the machine, usually after the loom is
+// already in the wall.
+#define DAMPER_COMMAND_INVERTED_DEFAULT false
+
 // Below this raw value, that channel is carrying no signal at all.
 //
 // This works because the divider's R2 = 3.3k sits between the tap and ground: a

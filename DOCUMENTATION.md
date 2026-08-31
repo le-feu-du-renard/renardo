@@ -331,6 +331,12 @@ they are complementary — one relay drives both, one of them travelling the oth
 way — and which way each one travels is itself a setting, because each Belimo
 carries its own mechanical direction switch that the firmware cannot read.
 
+Which relay state that single command means is a setting too (`Sens commande`),
+and it is the only one that decides where the air goes: the direction flags
+describe travel and feedback, and no combination of them can move a vane. It
+stops at the output layer — `Dryer::GetDamperOutput()` is the pin, and everything
+above it reads `GetDamperOpen()`, the commanded air path.
+
 The Belimo's 2-10 V position feedback is read on its own ADC channel per
 register. It drives the display, showing the vane travelling during its ~150 s
 stroke, and one safety decision: the airflow interlock above. Calibration is two
@@ -605,10 +611,13 @@ about: `0 sent, 0 failed` reads exactly like a link sitting perfectly idle. See
 [DEVELOPMENT.md](DEVELOPMENT.md) for what the Pico W build needs.
 
 `Système > Registres` holds everything about the air path the firmware cannot
-measure for itself: how many registers the dryer has, which end of the feedback
-signal means open (one flag for all of them — same actuator model everywhere),
-where each actuator's own direction switch is set, and the two raw calibration
-marks per register. Two read-only rows show each channel's live raw value and
+measure for itself: how many registers the dryer has, which relay state means
+extraction (`Sens commande`), which end of the feedback signal means open (one
+flag for all of them — same actuator model everywhere), where each actuator's own
+direction switch is set, and the two raw calibration marks per register.
+`Sens commande` sits first because it is the only one of them that moves a vane —
+the rest describe how a reading is read, and a dryer whose air goes the wrong way
+is wired the other way round, not calibrated wrong. Two read-only rows show each channel's live raw value and
 opening, which is how the marks are captured; `absent` there means the channel is
 carrying no signal at all. Two actions, `Vers extraction` and `Vers recirc.`,
 drive the air path from the menu — needed both to send a register to its stops

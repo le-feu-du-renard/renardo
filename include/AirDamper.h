@@ -13,6 +13,7 @@
 struct DamperConfig
 {
   uint8_t  count;                 // 1 or DAMPER_COUNT_MAX
+  bool     command_inverted;      // relay polarity: which state is extraction
   bool     feedback_low_is_open;  // actuator model, read on a Normal register
   bool     extraction_inverted;   // each actuator's own direction switch
   bool     recycling_inverted;
@@ -33,6 +34,11 @@ struct DamperConfig
 // happens in PushTargets() and nowhere else — v3's mistake was inverting the
 // damper in two separate places, which made the real direction impossible to
 // follow.
+//
+// Which relay state that single command means is itself a setting, and it is
+// the only one here that decides where the air goes: the direction flags below
+// describe travel and feedback, and no combination of them can move a vane,
+// because the two registers share one bit. See GetRelayOutput().
 //
 // The registers are **asymmetric** in geometry, so each carries its own
 // calibration and reports its own opening: see DamperFeedback. Control of the
@@ -58,11 +64,22 @@ public:
   void Close();  // recirculation
   bool IsOpen() const { return is_open_; }
 
+  // What the relay is to be set to for the commanded air path.
+  //
+  // Separate from IsOpen() on purpose. IsOpen() is where the air is going, and
+  // it is what the regulation, the screen and the telemetry all mean; this is a
+  // wire's polarity on one machine, and nothing above the output layer should
+  // ever have to know about it. The two differ on a dryer whose actuators are
+  // fed through the relay's normally-closed contact — the loom that used to
+  // make the dryer extract while announcing recirculation.
+  bool GetRelayOutput() const { return is_open_ != command_inverted_; }
+
   // Apply a wiring configuration. Targets are re-pushed immediately, so a
   // direction changed from the menu takes effect without waiting for the next
   // command.
   void    ApplyConfig(const DamperConfig &config);
   uint8_t GetCount() const { return count_; }
+  bool    GetCommandInverted() const { return command_inverted_; }
   bool    GetFeedbackLowIsOpen() const { return feedback_low_is_open_; }
   bool    GetExtractionInverted() const { return extraction_inverted_; }
   bool    GetRecyclingInverted() const { return recycling_inverted_; }
@@ -97,6 +114,7 @@ public:
 private:
   bool           is_open_;
   uint8_t        count_;
+  bool           command_inverted_;
   bool           feedback_low_is_open_;
   bool           extraction_inverted_;
   bool           recycling_inverted_;

@@ -153,7 +153,7 @@ MenuItem g_control_items[8];
 MenuItem g_clock_items[8];
 MenuItem g_system_items[3];
 MenuItem g_telemetry_items[6];
-MenuItem g_damper_items[13];
+MenuItem g_damper_items[14];
 MenuItem g_root_items[9];
 
 MenuPage g_setpoint_page{"Consignes", g_setpoint_items, 3};
@@ -162,7 +162,7 @@ MenuPage g_eco_page{"Mode ECO", g_eco_items, 5};
 MenuPage g_phase_page{"Programme", g_phase_items, 6};
 MenuPage g_control_page{"Regulation", g_control_items, 8};
 MenuPage g_clock_page{"Date / Heure", g_clock_items, 8};
-MenuPage g_damper_page{"Registres", g_damper_items, 13};
+MenuPage g_damper_page{"Registres", g_damper_items, 14};
 MenuPage g_system_page{"Systeme", g_system_items, 3};
 MenuPage g_telemetry_page{"Telemetrie", g_telemetry_items, 6};
 MenuPage g_root_page{"Menu", g_root_items, 9};
@@ -593,32 +593,45 @@ void MenuSystem::Begin(DryerSettings *settings)
   // settling into one "ouvert" against one "ferme". Both moving the same way
   // means a direction flag is wrong, and it is also what the airflow interlock
   // will stop the dryer over.
-  g_damper_items[1] = MakeToggle("Sens signal", &s.damper_feedback_low_is_open,
+  // "Sens commande" is the polarity of the single relay both actuators hang
+  // off, and the only row on this page that moves a vane. Normal is the relay
+  // energised for extraction, so a dryer at rest recirculates; Inverse is the
+  // loom where the actuators sit on the normally-closed contact, or their two
+  // control wires are swapped, and a machine at rest is extracting instead.
+  //
+  // Above the three "Sens" rows that follow, because it is the one to try first
+  // when the air is going the wrong way: those describe how each register's
+  // feedback is read and where it is expected to travel, and no combination of
+  // them can move anything.
+  g_damper_items[1] = MakeToggle("Sens commande", &s.damper_command_inverted,
+                                 "Inverse", "Normal");
+
+  g_damper_items[2] = MakeToggle("Sens signal", &s.damper_feedback_low_is_open,
                                  "Bas=ouvert", "Bas=ferme");
 
-  g_damper_items[2] = MakeToggle("Sens extrac.", &s.damper_extraction_inverted,
+  g_damper_items[3] = MakeToggle("Sens extrac.", &s.damper_extraction_inverted,
                                  "Inverse", "Normal");
-  g_damper_items[3] = MakeValue("Extrac. mini", MenuValueType::kUint16,
+  g_damper_items[4] = MakeValue("Extrac. mini", MenuValueType::kUint16,
                                 &s.extraction_raw_min, 0.0f, 4095.0f, 10.0f, "");
-  g_damper_items[4] = MakeValue("Extrac. maxi", MenuValueType::kUint16,
+  g_damper_items[5] = MakeValue("Extrac. maxi", MenuValueType::kUint16,
                                 &s.extraction_raw_max, 0.0f, 4095.0f, 10.0f, "");
-  g_damper_items[5] = MakeInfo("Signal extrac.", ExtractionSignalText);
+  g_damper_items[6] = MakeInfo("Signal extrac.", ExtractionSignalText);
 
-  g_damper_items[6] = MakeToggle("Sens recycl.", &s.damper_recycling_inverted,
+  g_damper_items[7] = MakeToggle("Sens recycl.", &s.damper_recycling_inverted,
                                  "Inverse", "Normal", SecondDamperFitted);
-  g_damper_items[7] = MakeValue("Recycl. mini", MenuValueType::kUint16,
+  g_damper_items[8] = MakeValue("Recycl. mini", MenuValueType::kUint16,
                                 &s.recycling_raw_min, 0.0f, 4095.0f, 10.0f,
                                 "", SecondDamperFitted);
-  g_damper_items[8] = MakeValue("Recycl. maxi", MenuValueType::kUint16,
+  g_damper_items[9] = MakeValue("Recycl. maxi", MenuValueType::kUint16,
                                 &s.recycling_raw_max, 0.0f, 4095.0f, 10.0f,
                                 "", SecondDamperFitted);
-  g_damper_items[9] = MakeInfo("Signal recycl.", RecyclingSignalText);
+  g_damper_items[10] = MakeInfo("Signal recycl.", RecyclingSignalText);
 
-  g_damper_items[10] = MakeAction("Vers extraction", CommandExtraction,
+  g_damper_items[11] = MakeAction("Vers extraction", CommandExtraction,
                                   DamperCommandAvailable);
-  g_damper_items[11] = MakeAction("Vers recirc.", CommandRecirculation,
+  g_damper_items[12] = MakeAction("Vers recirc.", CommandRecirculation,
                                   DamperCommandAvailable);
-  g_damper_items[12] = MakeBack();
+  g_damper_items[13] = MakeBack();
 
   // Two switches rather than one mode: the extension port and the WiFi uplink
   // read the same telemetry record and neither knows about the other, so they

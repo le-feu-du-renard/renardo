@@ -58,7 +58,10 @@ public:
   float GetHeaterOutput()      const;  // electric 0.0/1.0
   bool  GetHydraulicDemand()   const { return temperature_manager_.GetHydraulicDemand(); }
   float GetFanOutput()      const { return session_manager_.IsFanActive() ? 1.0f : 0.0f; }
-  bool  GetDamperOutput()   const { return air_damper_.IsOpen(); }
+  // The relay level, wiring polarity included — for the pin and nothing else.
+  // Everything that means "the air path is extracting" wants GetDamperOpen().
+  bool  GetDamperOutput()   const { return air_damper_.GetRelayOutput(); }
+  bool  GetDamperOpen()     const { return air_damper_.IsOpen(); }
 
   // Air path faults, for the radio telemetry, which reports the two conditions
   // separately rather than as one ranked reason.

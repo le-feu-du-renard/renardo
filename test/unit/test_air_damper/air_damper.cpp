@@ -69,6 +69,33 @@ void test_command_is_binary(void)
   TEST_ASSERT_FALSE(damper.IsOpen());
 }
 
+void test_command_polarity_only_moves_the_relay(void)
+{
+  // The one setting on the register page that changes where the air goes. It
+  // belongs to the wire, so it stops at the relay: the air path, the targets and
+  // everything above them read the same on either polarity.
+  AirDamper damper;
+  DamperConfig config = TwoRegisters();
+
+  config.command_inverted = false;
+  damper.ApplyConfig(config);
+  damper.Open();
+  TEST_ASSERT_TRUE(damper.GetRelayOutput());
+  damper.Close();
+  TEST_ASSERT_FALSE(damper.GetRelayOutput());
+
+  config.command_inverted = true;
+  damper.ApplyConfig(config);
+  TEST_ASSERT_TRUE(damper.GetRelayOutput());  // at rest, and extracting
+  TEST_ASSERT_FALSE(damper.IsOpen());         // which the dryer still calls shut
+  TEST_ASSERT_FALSE(damper.Extraction().GetTargetOpen());
+  TEST_ASSERT_TRUE(damper.Recycling().GetTargetOpen());
+
+  damper.Open();
+  TEST_ASSERT_FALSE(damper.GetRelayOutput());
+  TEST_ASSERT_TRUE(damper.IsOpen());
+}
+
 void test_registers_are_complementary(void)
 {
   AirDamper damper;
@@ -526,6 +553,7 @@ int main(int argc, char **argv)
 {
   UNITY_BEGIN();
   RUN_TEST(test_command_is_binary);
+  RUN_TEST(test_command_polarity_only_moves_the_relay);
   RUN_TEST(test_registers_are_complementary);
   RUN_TEST(test_direction_switch_decides_where_a_register_goes);
   RUN_TEST(test_a_direction_change_reaches_the_registers_at_once);

@@ -38,6 +38,7 @@ void DryerSettings::Reset()
   // exactly as the firmware did before the count was a setting, and declaring
   // the second one is a deliberate act by whoever landed its wire.
   damper_count                = DAMPER_COUNT_DEFAULT;
+  damper_command_inverted     = DAMPER_COMMAND_INVERTED_DEFAULT;
   damper_feedback_low_is_open = DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT;
   damper_extraction_inverted  = DAMPER_EXTRACTION_INVERTED_DEFAULT;
   damper_recycling_inverted   = DAMPER_RECYCLING_INVERTED_DEFAULT;

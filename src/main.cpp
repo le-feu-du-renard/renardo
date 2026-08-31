@@ -930,7 +930,9 @@ static void UpdateExtensionTelemetry()
   ExtPutMetricValue(telemetry, kMetricElectricOn, dryer.GetHeaterOutput() > 0.5f ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricHydraulicDemand, dryer.GetHydraulicDemand() ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricHydraulicOnline, g_sensors.hydraulic_available ? 1.0f : 0.0f);
-  ExtPutMetricValue(telemetry, kMetricDamperOpen, dryer.GetDamperOutput() ? 1.0f : 0.0f);
+  // The air path, not the relay: a dryer wired the other way round would
+  // otherwise report every one of its recirculations as an extraction.
+  ExtPutMetricValue(telemetry, kMetricDamperOpen, dryer.GetDamperOpen() ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricSensorFault, !g_inlet_fresh ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricAirflowFault, dryer.GetAirflowBlocked() ? 1.0f : 0.0f);
   ExtPutMetricValue(telemetry, kMetricFeedbackFault, dryer.GetDamperFeedbackFault() ? 1.0f : 0.0f);

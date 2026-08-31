@@ -326,7 +326,7 @@ signal floor, and a calibration that was never captured leaves a degenerate span
 Either way the register reports "no position" rather than 0 %. One dead wire does
 not mask the other register: they are evaluated independently.
 
-### Four settings, and why each is a setting
+### Five settings, and why each is a setting
 
 Everything about the registers that the firmware cannot measure is on
 Système → Registres:
@@ -334,6 +334,7 @@ Système → Registres:
 | Setting | What it describes | Factory |
 |---|---|---|
 | `Nb registres` | how many registers the dryer has | 1 |
+| `Sens commande` | which relay state the actuators read as extraction | `Normal` |
 | `Sens signal` | which end of the 2-10 V output means open, **on a register whose switch is `Normal`** — the actuator model's own sense | `Bas=ouvert` |
 | `Sens extrac.` / `Sens recycl.` | where each actuator's own mechanical direction switch is set | `Normal` / `Inverse` |
 | `Extrac./Recycl. mini`, `maxi` | the two raw ADC marks at the ends of that register's travel | 641 / 3179 |
@@ -342,6 +343,21 @@ The direction switch on each Belimo is the one the firmware cannot read and must
 be told about: it decides which end of its travel a register goes to under the
 single command. Get it wrong in the menu and travel detection chases the wrong
 end, and the interlock misreads which reading means shut.
+
+`Sens commande` is the odd one out, and the only row on the page that changes
+where the air actually goes. The other four say how a reading is to be read;
+none of them can move a vane, because both registers hang off one relay and the
+firmware has one bit to give them. This is that bit's polarity. `Normal` is the
+relay energised for extraction, so a machine at rest — powered off, or between
+sessions — recirculates. `Inverse` is the loom where the actuators are fed
+through the normally-closed contact, or their two control wires are swapped: the
+dryer would otherwise start every session extracting while announcing
+recirculation. **If the air is going the wrong way, this is the setting to try
+first** — the three `Sens` rows below it cannot fix it.
+
+It stops at the relay. The screen, the telemetry and the regulation all read the
+commanded air path, not the pin, so an inverted machine reports its own
+extractions and recirculations the right way round.
 
 ### The direction switch turns the feedback round as well
 

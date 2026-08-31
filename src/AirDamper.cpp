@@ -4,6 +4,7 @@
 AirDamper::AirDamper()
     : is_open_(false),
       count_(DAMPER_COUNT_DEFAULT),
+      command_inverted_(DAMPER_COMMAND_INVERTED_DEFAULT),
       feedback_low_is_open_(DAMPER_FEEDBACK_LOW_IS_OPEN_DEFAULT),
       extraction_inverted_(DAMPER_EXTRACTION_INVERTED_DEFAULT),
       recycling_inverted_(DAMPER_RECYCLING_INVERTED_DEFAULT),
@@ -22,6 +23,16 @@ void AirDamper::ApplyConfig(const DamperConfig &config)
 {
   count_ = config.count < 1 ? 1
            : (config.count > DAMPER_COUNT_MAX ? DAMPER_COUNT_MAX : config.count);
+  // Announced, because it is the one damper setting that changes where the air
+  // goes, and the log is where someone works out afterwards why a machine that
+  // said recirculation was extracting.
+  if (config.command_inverted != command_inverted_)
+  {
+    Logger::Info("AirDamper: command polarity -> %s",
+                 config.command_inverted ? "inverted" : "normal");
+  }
+  command_inverted_ = config.command_inverted;
+
   feedback_low_is_open_ = config.feedback_low_is_open;
   extraction_inverted_  = config.extraction_inverted;
   recycling_inverted_   = config.recycling_inverted;
